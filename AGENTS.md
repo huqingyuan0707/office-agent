@@ -45,12 +45,14 @@
 ```bash
 # 后端（仓库根）
 ruff check .
-python -m pytest packages -q          # 门禁脚本适配前：先跑 packages 内既有 pytest
+python -m pytest packages -q          # packages 内既有 pytest
+python skills/naming-check/scripts/check_naming.py   # 命名质量门禁（棘轮：存量只准减不准增）
+python skills/anti-shit-code/scripts/check_arch.py   # 架构健康门禁（分层/体量，12 处 baseline 债务）
 # 前端
 cd apps/web && npm run build
 ```
 
-## 6. 待办登记（门禁脚本适配）
+## 6. 待办登记
 
-- [ ] `naming-check` / `anti-shit-code` 脚本本体适配：扫描根 `backend/app`→`office_agent`+`packages/server/office_agent`、前端 `frontend/src`→`apps/web/src`，ratchet baseline 重新初始化（规则口径不变，见两 SKILL.md）。
+- [x] `naming-check` / `anti-shit-code` 脚本本体适配：扫描根改 `office_agent`+`packages`、前端 `apps/web/src`、ratchet baseline 初始化（naming 0 债务；arch 12 处 endpoint-db-op 入基线，触碰对应文件时优先抽 service 层偿还）。
 - [ ] pre-commit（ruff 钉版 0.16.7）+ commitlint 引入。
