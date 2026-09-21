@@ -1,0 +1,6 @@
+# pnpm 设置文件：允许 esbuild 运行安装脚本（postinstall 校验平台二进制）
+# allowBuilds 为 pnpm 12 新配置；onlyBuiltDependencies 兼容 pnpm 10/11
+allowBuilds:
+  esbuild: true
+onlyBuiltDependencies:
+  - esbuild

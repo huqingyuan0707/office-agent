@@ -1,0 +1,459 @@
+/* 职责：全局浅色样式（系统字体栈、克制圆角与阴影）——登录卡 / 顶栏 / 卡片 / 表格 / 徽标 / 弹窗 */
+:root {
+  --bg: #f4f5f7;
+  --fg: #24292f;
+  --muted: #8b949e;
+  --sub: #57606a;
+  --line: #e4e7eb;
+  --line-strong: #d0d7de;
+  --brand: #1f6feb;
+  --brand-dark: #1a5fd0;
+  --ok: #1a7f37;
+  --ok-bg: #f0f9f0;
+  --ok-line: #bfe3bf;
+  --warn: #9a6700;
+  --warn-bg: #fff8e6;
+  --warn-line: #ecd9a0;
+  --danger: #c0362c;
+  --danger-bg: #fdecea;
+  --danger-line: #f5c6c2;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+body {
+  margin: 0;
+  background: var(--bg);
+  color: var(--fg);
+  font-size: 14px;
+  line-height: 1.6;
+  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', 'PingFang SC',
+    'Hiragino Sans GB', 'Microsoft YaHei', sans-serif;
+}
+
+h1,
+h2 {
+  margin: 0 0 12px;
+}
+h2 {
+  font-size: 16px;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+/* 键盘可达：统一可见焦点环（鼠标点击不打扰） */
+:focus-visible {
+  outline: 2px solid var(--brand);
+  outline-offset: 1px;
+}
+
+.muted {
+  color: var(--muted);
+  margin: 4px 0;
+}
+.center {
+  text-align: center;
+}
+.mono {
+  font-family: Consolas, 'Courier New', monospace;
+  font-size: 13px;
+}
+
+/* 卡片：白底 + 细边框 + 一像素级阴影 */
+.card {
+  background: #fff;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  padding: 16px;
+  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.04);
+}
+
+/* 红条错误提示：左侧文字 + 右侧关闭 */
+.err-bar {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 8px;
+  background: var(--danger-bg);
+  border: 1px solid var(--danger-line);
+  color: var(--danger);
+  border-radius: 6px;
+  padding: 8px 12px;
+  margin-bottom: 12px;
+}
+.err-text {
+  flex: 1;
+  word-break: break-all;
+}
+.err-close {
+  border: none;
+  background: transparent;
+  color: inherit;
+  font-size: 18px;
+  line-height: 1;
+  padding: 0 2px;
+  cursor: pointer;
+  opacity: 0.7;
+}
+.err-close:hover {
+  opacity: 1;
+}
+
+/* 表单 */
+.field {
+  display: block;
+  margin-bottom: 12px;
+}
+.field span {
+  display: block;
+  margin-bottom: 4px;
+  color: var(--sub);
+}
+.field input,
+.field textarea {
+  width: 100%;
+  padding: 8px 10px;
+  border: 1px solid var(--line-strong);
+  border-radius: 6px;
+  font: inherit;
+  background: #fff;
+  color: inherit;
+}
+.field textarea {
+  resize: vertical;
+  font-family: Consolas, 'Courier New', monospace;
+  font-size: 13px;
+}
+.field input:focus,
+.field textarea:focus {
+  outline: none;
+  border-color: var(--brand);
+}
+.field input::placeholder,
+.field textarea::placeholder {
+  color: #b3bac1;
+}
+
+/* 按钮 */
+.btn {
+  font: inherit;
+  padding: 7px 14px;
+  border-radius: 6px;
+  border: 1px solid var(--line-strong);
+  background: #f6f8fa;
+  color: var(--fg);
+  cursor: pointer;
+  transition: background 0.15s, border-color 0.15s;
+}
+.btn:hover:not(:disabled) {
+  background: #eef1f4;
+}
+.btn:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+.btn.primary {
+  background: var(--brand);
+  border-color: var(--brand);
+  color: #fff;
+}
+.btn.primary:hover:not(:disabled) {
+  background: var(--brand-dark);
+  border-color: var(--brand-dark);
+}
+.btn.danger {
+  color: var(--danger);
+  border-color: #e0b4b0;
+  background: #fff;
+}
+.btn.danger:hover:not(:disabled) {
+  background: var(--danger-bg);
+}
+.btn.ghost {
+  background: transparent;
+  border-color: transparent;
+  color: var(--sub);
+}
+.btn.ghost:hover:not(:disabled) {
+  background: #eef1f4;
+}
+.btn.small {
+  padding: 3px 10px;
+  font-size: 12px;
+}
+.btn.block {
+  width: 100%;
+}
+
+/* 空态 / 加载态占位（列表为空或加载中都用它，避免布局跳动） */
+.empty {
+  padding: 18px 8px;
+  text-align: center;
+  color: var(--muted);
+}
+.empty .muted {
+  display: block;
+  font-size: 13px;
+}
+
+/* 登录卡 */
+.login-wrap {
+  min-height: 100vh;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 16px;
+}
+.login-card {
+  width: 360px;
+  padding: 24px;
+}
+.login-title {
+  font-size: 20px;
+  margin: 0;
+}
+.brand {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  margin-bottom: 20px;
+}
+.brand-mark {
+  flex: none;
+  width: 40px;
+  height: 40px;
+  border-radius: 8px;
+  background: var(--brand);
+  color: #fff;
+  font-weight: 700;
+  font-size: 14px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  letter-spacing: 0.5px;
+}
+.brand-mark.small {
+  width: 22px;
+  height: 22px;
+  border-radius: 5px;
+  font-size: 10px;
+  margin-right: 8px;
+}
+
+/* 主面板 */
+.panel {
+  max-width: 1080px;
+  margin: 0 auto;
+  padding: 16px;
+}
+/* 顶栏吸顶：长列表滚动时仍能看到当前用户与退出 */
+.topbar {
+  position: sticky;
+  top: 0;
+  z-index: 10;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin: 0 -16px 16px;
+  padding: 12px 16px;
+  background: rgba(244, 245, 247, 0.94);
+  border-bottom: 1px solid var(--line);
+  backdrop-filter: blur(4px);
+}
+.topbar-title {
+  display: inline-flex;
+  align-items: center;
+  font-size: 18px;
+  font-weight: 600;
+}
+.topbar-right {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.user {
+  color: var(--sub);
+  max-width: 180px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 16px;
+  margin-bottom: 16px;
+  align-items: start;
+}
+.block-gap {
+  margin-bottom: 16px;
+}
+@media (max-width: 860px) {
+  .grid {
+    grid-template-columns: 1fr;
+  }
+}
+
+/* 工具卡片 */
+.tool-card {
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  padding: 10px 12px;
+  margin-bottom: 10px;
+  cursor: pointer;
+  transition: background 0.15s, border-color 0.15s;
+}
+.tool-card:last-child {
+  margin-bottom: 0;
+}
+.tool-card:hover {
+  background: #f6f8fa;
+}
+/* 选中态：与右侧调用表单里的工具名保持一致，避免不知道当前在调哪个 */
+.tool-card.active {
+  border-color: var(--brand);
+  background: #f2f7ff;
+}
+.tool-head {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+.tool-card .muted {
+  font-size: 13px;
+  margin-bottom: 0;
+}
+
+/* 徽标 */
+.badge {
+  font-size: 12px;
+  padding: 1px 8px;
+  border-radius: 10px;
+  background: #eef1f4;
+  color: var(--sub);
+  border: 1px solid #e0e4e8;
+  white-space: nowrap;
+}
+.badge.warn {
+  background: var(--warn-bg);
+  color: var(--warn);
+  border-color: var(--warn-line);
+}
+.badge.ok {
+  background: var(--ok-bg);
+  color: var(--ok);
+  border-color: var(--ok-line);
+}
+.badge.danger {
+  background: var(--danger-bg);
+  color: var(--danger);
+  border-color: var(--danger-line);
+}
+/* trace 串较长：限制宽度并省略，完整值在 title 里 */
+.badge.trace {
+  max-width: 200px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+/* 调用结果：成功绿 / 失败红 */
+.result {
+  margin-top: 12px;
+  border-radius: 6px;
+  padding: 10px 12px;
+  font-size: 13px;
+}
+.result.ok {
+  background: var(--ok-bg);
+  border: 1px solid var(--ok-line);
+  color: var(--ok);
+}
+.result.ok pre {
+  margin: 8px 0 0;
+  padding: 10px;
+  max-height: 320px;
+  overflow: auto;
+  background: #fff;
+  border: 1px solid var(--ok-line);
+  border-radius: 6px;
+  color: var(--fg);
+  white-space: pre-wrap;
+  word-break: break-all;
+  font-family: Consolas, 'Courier New', monospace;
+}
+.result.fail {
+  background: var(--danger-bg);
+  border: 1px solid var(--danger-line);
+  color: var(--danger);
+  word-break: break-all;
+}
+/* 数据出处：跨系统取数的可见性 */
+.provenance {
+  margin: 8px 0 0;
+  font-size: 13px;
+}
+.provenance code {
+  font-family: Consolas, 'Courier New', monospace;
+  background: #fff;
+  border: 1px solid var(--ok-line);
+  border-radius: 4px;
+  padding: 0 4px;
+}
+
+/* 表格（窄屏横向滚动，不挤压列） */
+.table-wrap {
+  overflow-x: auto;
+}
+table {
+  width: 100%;
+  border-collapse: collapse;
+  margin-top: 4px;
+}
+th,
+td {
+  text-align: left;
+  padding: 8px 10px;
+  border-bottom: 1px solid #eef0f2;
+  white-space: nowrap;
+}
+th {
+  color: var(--sub);
+  font-weight: 500;
+  background: #fafbfc;
+}
+tbody tr:hover {
+  background: #fafbfc;
+}
+.ops {
+  white-space: nowrap;
+}
+.ops .btn.small + .btn.small {
+  margin-left: 6px;
+}
+
+/* 弹窗（驳回理由） */
+.modal-mask {
+  position: fixed;
+  inset: 0;
+  z-index: 30;
+  background: rgba(36, 41, 47, 0.4);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 16px;
+}
+.modal {
+  width: 420px;
+  max-width: 100%;
+}
+.modal-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 8px;
+  margin-top: 4px;
+}

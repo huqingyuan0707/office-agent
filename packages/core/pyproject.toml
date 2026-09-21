@@ -1,0 +1,52 @@
+[project]
+name = "office-agent-core"
+version = "0.1.0"
+description = "office-agent 领域无关内核：工具注册中心 / 策略闸门 / 执行审计 / 跨系统联动"
+requires-python = ">=3.11"
+dependencies = [
+    "httpx>=0.27",
+    "pydantic>=2.7",
+    "pydantic-settings>=2.4",
+]
+
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[tool.setuptools.packages.find]
+include = ["office_agent_core*"]
+
+[tool.ruff]
+line-length = 100
+target-version = "py311"
+extend-exclude = ["__pycache__", ".venv", "venv"]
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "N", "UP", "B", "C4", "SIM", "ASYNC", "TID", "C901", "RUF"]
+ignore = [
+    "E501",    # 行长交给 formatter
+    "RUF001",  # 中文文案必需全角标点
+    "RUF002",  # 中文 docstring 同上
+    "RUF003",  # 中文注释同上
+]
+
+[tool.ruff.lint.per-file-ignores]
+"__init__.py" = ["F401"]
+
+[tool.ruff.lint.isort]
+known-first-party = ["office_agent_core"]
+
+[tool.ruff.lint.mccabe]
+max-complexity = 15
+
+[tool.ruff.format]
+quote-style = "double"
+indent-style = "space"
+line-ending = "lf"
+
+[tool.pytest.ini_options]
+minversion = "8.0"
+testpaths = ["tests"]
+pythonpath = ["."]
+asyncio_mode = "auto"
+addopts = "-q --strict-markers --strict-config"

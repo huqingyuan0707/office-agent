@@ -1,100 +1,89 @@
-# office-agent
+# office-agent —— 开源智能办公 Agent（M0-M1 骨架）
 
-> 领域无关的智能办公 Agent 平台 —— 工具注册、审批闸门、长任务调度、审计回放**开箱即用**，办公场景以插件包形式提供。
+一句话架构：**FastAPI + SQLite 单进程后端 —— 工具注册中心 → Scope 鉴权执行器（超时硬拦 + 全程审计）→ 审批闸门 → 审计留痕；内置办公工具开箱即用，外部系统以 HTTP 桥接插件可选接入，主包零业务域语义。**
 
-<p>
-  <img alt="License" src="https://img.shields.io/badge/license-Apache--2.0-blue">
-  <img alt="Status" src="https://img.shields.io/badge/status-M0%20骨架-orange">
-  <img alt="Python" src="https://img.shields.io/badge/python-3.11%2B-informational">
-</p>
+设计依据：`docs/office-agent仓库骨架与内核提取方案.md`、`docs/ADR-0003-办公Agent拆分独立开源项目.md`（本次交付对应 M0-M1 压缩版）。
 
-[English](README_EN.md) | 简体中文
+## 五分钟启动（独立模式）
 
-## 项目状态
+```powershell
+# 1. 安装依赖（建议独立虚拟环境）
+pip install -r requirements.txt
 
-当前处于 **M0 骨架阶段**：仓库结构与本 README 先行落盘，内核代码、`docker compose` 演示、Web 管理台将随里程碑推进逐步补齐。欢迎 Star 关注、提 Issue 与 PR 共建。
+# 2.（可选）复制配置并修改
+copy .env.example .env
 
-## 为什么需要它
-
-多数 Agent 框架把精力放在"让模型会调工具"，却在生产落地时卡在四件事上：**权限、审批、审计、数据口径**。office-agent 把这套治理底座做成领域无关、可复用的内核，让业务方只需专注"有哪些工具"，而不必重造轮子。
-
-## 核心能力
-
-- **工具注册中心** —— `ToolSpec` + `Scope` 命名空间 + 幂等键 + 熔断，工具即插即用。
-- **审批闸门** —— 所有写操作**恒送审**，红线不可绕过。
-- **长任务调度** —— `checkpoint` / `resume` / SSE 进度回流，超时退避重试。
-- **审计回放** —— `trace_id` 全链路留痕，动作可回溯。
-- **RBAC / 租户隔离** —— 最小权限集，凭据仅走环境变量、绝不入库。
-- **数值不可编造** —— `verify_numbers` 后置校验，LLM 不可用时走纯数字模板**降级不 500**。
-
-## 仓库结构
-
-```
-office-agent/
-├── LICENSE                        # Apache-2.0
-├── README.md / README_EN.md       # 中英双语
-├── docker-compose.yml             # 五分钟跑通演示（规划中）
-├── packages/
-│   ├── core/                      # Agent 内核：contracts/registry/policy/executor/runtime
-│   ├── server/                    # FastAPI 通用壳：auth/RBAC/tasks/approvals/audit/governance-status
-│   ├── tools-office/              # 内置办公工具包
-│   └── mcp-bridge/                # MCP wire 协议桥
-├── plugins/
-│   └── _template/                 # 自定义工具插件模板（SPI 文档配套）
-└── apps/web/                      # Vue3 管理台：登录/任务/审批/审计四页
+# 3. 启动（默认管理员 admin / admin123）
+python -m uvicorn office_agent.main:app --port 8200
 ```
 
-## 快速开始（规划中）
+体验：
 
-```bash
-# M1 起可用
-docker compose up -d
-# 打开 http://localhost:8000 体验报表生成 demo
+```powershell
+# 登录拿 token
+curl.exe -s -X POST http://127.0.0.1:8200/auth/login -H "Content-Type: application/json" -d '{\"username\":\"admin\",\"password\":\"admin123\"}'
+
+# 调用日报工具（每个数字自带 (来源: input.metrics) 溯源标注）
+curl.exe -s -X POST http://127.0.0.1:8200/tools/invoke -H "Authorization: Bearer <token>" -H "Content-Type: application/json" -d '{\"name\":\"office.report.generate\",\"args\":{\"title\":\"测试日报\",\"metrics\":{\"gmv\":12345,\"orders\":100}}}'
 ```
 
-## 内置办公工具包（packages/tools-office）
+生产环境务必用环境变量覆盖 `JWT_SECRET` 与 `ADMIN_PASSWORD`（明文口令仅在首次登录时 bcrypt hash 进内存，不落库不入日志）。
 
-| 层 | 工具 | Scope | 说明 |
+## API 一览
+
+统一信封：成功 `{ok:true,data}`；业务失败 `{ok:false,error:{code,message}}`；鉴权失败 HTTP 401。
+
+| 方法 | 路径 | 说明 | 鉴权 |
 |---|---|---|---|
-| 读 | `report.generate` / `bi.query` | `office:read` | 数据源为用户配置的只读连接器白名单；数值一致率 ≥99% |
-| 读 | `doc.summarize` / `kb.query` | `office:read` | 内置 RAG，默认 SQLite + 内置向量，可切 pgvector |
-| 读 | `schedule.view` | `office:read` | 日历只读 |
-| 写 | `todo.create` / `schedule.book` / `doc.draft` / `ticket.create` / `announce.draft` | `office:write` | **全部恒送审**；`doc.draft` 只起草不发布；`idem_key` 必带 |
+| GET | /healthz | 健康检查（含已注册工具数） | 否 |
+| POST | /auth/login | 登录换取 JWT（sub+scopes） | 否 |
+| GET | /tools | 当前用户 scope 可见的工具列表（含 JSON Schema） | 是 |
+| POST | /tools/invoke | 调用工具 `{name,args}`；需审批工具只建审批单返回 pending | 是 |
+| GET | /tasks | 任务执行记录（最新在前） | 是 |
+| GET | /approvals | 审批单列表 | 是 |
+| POST | /approvals/{id}/decide | 审批 `{approve,comment}`；审批人≠提交人（同人 1001） | 是 |
 
-## 领域无关性
+错误码约定：400 参数 / 403 Scope 不足 / 404 不存在 / 409 重名或重复审批 / 500 执行失败 / 504 超时 / 502 桥接失败 / 1001 审批同人红线。
 
-主包 `packages/` 内**不含任何特定业务域语义**，此约束由 CI 的 grep 门禁强制执行：
+## 联动电商客服系统（可选插件，默认关闭）
 
-```bash
-grep -riE "finance|purchase|risk|sku|订单|电商" packages/  # 仅允许出现在 plugins/ 与 docs 示例
+在 `.env` 中配置后重启：
+
+```
+ECOMMERCE_ENABLED=true
+ECOMMERCE_API_BASE=http://127.0.0.1:8000
+ECOMMERCE_TOKEN=<电商服务账号 JWT（最小只读权限）>
 ```
 
-## Roadmap
+- 自动注册 `ecommerce.screen.summary` / `ecommerce.finance.bills` 两个只读桥接工具，响应必带 `source:"ecommerce-api"` + `fetched_at` 溯源；
+- 电商服务不在线时启动期自动跳过注册（log warning），独立运行零影响；
+- 数据不出域：桥接只走 HTTP + Bearer token，**绝不直连电商数据库**；
+- 领域桥接语义全仓唯一出处：`office_agent/tools_ecommerce.py`，主包其余文件 grep 无 finance/purchase/risk/sku 等电商词元。
 
-| 期 | 内容 | 验收 |
-|---|---|---|
-| **M0** | 骨架 + 内核提取 + 测试移植全绿 | py_compile / ruff / pytest 过；grep 领域无关性 PASS |
-| **M1** | server 壳 + tools-office 读层 + docker compose demo | 五分钟跑通报表生成；LLM 挂走纯数字模板降级 |
-| **M2** | 审批闸门 + 写层工具 + web 四页 | 巡检→建单→审批 E2E；引导词 0 命中 |
-| **M3** | mcp-bridge + 首个外部插件 + SPI 文档 | 经 MCP 注册成功消费 |
+## 目录结构
 
-## 扩展与插件
+```
+office_agent/
+├── config.py          # Settings 全量可调项（.env/环境变量双读，零硬编码）
+├── db.py              # async engine + tasks/approvals/audit_logs 三表 + init_db
+├── contracts.py       # ToolSpec / ToolError / Scope 常量（内核契约）
+├── registry.py        # 工具注册中心（重名拒绝）
+├── executor.py        # 执行器：Scope 硬拦 / 审批分流 / 超时 / 全程审计 / trace_id
+├── approvals.py       # 审批闭环：create/list/decide（同人 1001 红线）
+├── auth.py            # 登录（bcrypt）+ JWT + get_current 依赖
+├── tools_office.py    # 内置办公工具（领域无关）：日报生成 / BI 演示查询
+├── tools_ecommerce.py # 电商桥接插件（全仓唯一电商语义文件，可选）
+└── main.py            # FastAPI 壳：路由/统一信封/CORS/可选静态托管
+```
 
-自定义工具请基于 `plugins/_template/` 开发，通过 SPI 注册 `ToolSpec` 即可接入内核，无需改动主包。详见 `docs/` 内 SPI 文档（M3 补齐）。
+## 硬红线（自检口令）
 
-## 文档
+1. **领域无关性**：`Select-String -Path office_agent\*.py -Pattern "finance|purchase|risk|sku"` 仅允许 tools_ecommerce.py 命中；
+2. **可选插件**：ECOMMERCE_ENABLED=false 或外部服务离线 → 服务正常启动，只剩内置工具；
+3. **数据不出域**：桥接仅 HTTP + Bearer token，零数据库直连；
+4. **数值不可编造**：日报纯模板直出、每个数字带溯源标注；BI 查询显式标注 `source=builtin-demo`；
+5. **审批红线**：需审批工具 invoke 不执行只建单；审批人 ≠ 提交人（同人 1001）。
 
-- 决策记录：[docs/ADR-0003-办公Agent拆分独立开源项目.md](docs/ADR-0003-办公Agent拆分独立开源项目.md)
-- 骨架与提取方案：[docs/office-agent仓库骨架与内核提取方案.md](docs/office-agent仓库骨架与内核提取方案.md)
+## License
 
-## 贡献
-
-零硬编码（Settings/.env 模式）、遵循现有代码风格、PR 需通过 CI（pytest + ruff + 领域无关性 grep）。`CONTRIBUTING.md` 与行为准则即将补充。
-
-## 安全
-
-请勿公开提交漏洞，安全问题请参照 `SECURITY.md`（即将补充）私下上报。演示数据内置且不含任何 PII。
-
-## 许可
-
-本项目基于 [Apache-2.0](LICENSE) 开源。
+Apache-2.0（随 M0 收尾补 LICENSE 文件）。

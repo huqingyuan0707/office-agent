@@ -1,0 +1,11 @@
+# office-agent 后端依赖（宽松下限，不锁 patch 版本）
+fastapi>=0.110
+uvicorn>=0.29
+SQLAlchemy>=2.0
+aiosqlite>=0.20
+pydantic-settings>=2.0
+httpx>=0.27
+python-jose>=3.3
+bcrypt>=4.0
+# 注：原设计列的 passlib 与 bcrypt 5.x 不兼容（hash 直接抛 ValueError），
+# 已改为直接使用 bcrypt 库完成口令 hash/verify，故此处不再引入 passlib。

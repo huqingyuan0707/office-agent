@@ -1,0 +1,15 @@
+# Python
+__pycache__/
+*.py[cod]
+.pytest_cache/
+.venv/
+
+# 环境与密钥（绝不入库）
+.env
+
+# 本地数据库
+*.db
+
+# 前端
+node_modules/
+dist/
