@@ -1,11 +1,14 @@
-"""内置办公工具包（领域无关，独立模式即可用；本包全部为只读工具）。
+"""内置办公工具包（领域无关，独立模式即可用）。
 
-职责：注册两个演示级内置工具——
+职责：注册三个演示级内置工具——
 ① office.report.generate：标题 + 指标字典 → 结构化中文日报。纯模板直出、不调任何大模型，
    每个数字后强带「(来源: input.metrics)」溯源标注，数值由输入原值直出，数值一致率天然 100%
    （对齐「数值不可编造、缺数宁可留白不补数」红线）；
 ② office.bi.query：白名单意图枚举 {demo_metrics, sales_trend} → 返回内置演示数据集，
-   响应必含 source:"builtin-demo" 显式标注演示来源，绝不冒充真实外部数据。
+   响应必含 source:"builtin-demo" 显式标注演示来源，绝不冒充真实外部数据；
+③ office.memo.submit：起草并发布公告（写动作演示，scope=office:write + needs_approval=True）——
+   写动作无直接生效通道，invoke 只落审批单，由其他账号审批通过后才真正执行
+   （对齐「写动作必须经审批中心」红线）。
 链路：main.lifespan → register_all() → registry；executor 经 ToolSpec.handler(args) 调用。
 对齐：docs/office-agent仓库骨架与内核提取方案.md §4（tools-office 读层：report.generate / bi.query）。
 """
@@ -14,7 +17,7 @@ import copy
 from datetime import datetime, timezone
 
 from office_agent import registry
-from office_agent.contracts import SCOPE_READ, ToolError, ToolSpec
+from office_agent.contracts import SCOPE_READ, SCOPE_WRITE, ToolError, ToolSpec
 
 _PROVENANCE = "(来源: input.metrics)"
 
@@ -89,6 +92,26 @@ async def _bi_query(args: dict) -> dict:
     return {"intent": intent, "source": "builtin-demo", "data": copy.deepcopy(dataset)}
 
 
+async def _memo_submit(args: dict) -> dict:
+    """office.memo.submit：发布公告（写动作，仅在审批通过后由 decide 路径真正执行）。
+
+    内容由入参原值直出（数值不编造红线）；演示实现无外部副作用，发布即确认回执。
+    """
+    title = str(args.get("title") or "").strip()
+    content = str(args.get("content") or "").strip()
+    if not title:
+        raise ToolError(400, "参数 title 不能为空：请传入公告标题")
+    if not content:
+        raise ToolError(400, "参数 content 不能为空：请传入公告正文")
+    return {
+        "title": title,
+        "content": content,
+        "published": True,
+        "published_at": _now_text(),
+        "note": "演示实现：公告内容原值回执，无外部副作用；真实接入时在此落公告存储/通知渠道",
+    }
+
+
 def register_all() -> None:
     """把内置办公工具注册进注册中心（启动期调用；重名会抛 ToolError 直接暴露问题）。"""
     registry.register(
@@ -130,5 +153,22 @@ def register_all() -> None:
                 "required": ["intent"],
             },
             handler=_bi_query,
+        )
+    )
+    registry.register(
+        ToolSpec(
+            name="office.memo.submit",
+            description="起草并发布公告（写动作演示）：需审批，invoke 只落审批单，审批通过后由复核人触发执行",
+            scope=SCOPE_WRITE,
+            needs_approval=True,
+            schema={
+                "type": "object",
+                "properties": {
+                    "title": {"type": "string", "description": "公告标题"},
+                    "content": {"type": "string", "description": "公告正文"},
+                },
+                "required": ["title", "content"],
+            },
+            handler=_memo_submit,
         )
     )

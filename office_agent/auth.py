@@ -1,8 +1,8 @@
-"""认证层：管理员登录（bcrypt 校验）→ 签发 JWT → get_current 统一鉴权依赖。
+"""认证层：账号登录（管理员 + 复核员，bcrypt 校验）→ 签发 JWT → get_current 统一鉴权依赖。
 
 职责：
-- authenticate()：校验 ADMIN_USERNAME / ADMIN_PASSWORD（bcrypt checkpw；明文种子仅在首次使用时 hash 进内存，
-  绝不落库、绝不入日志）；
+- authenticate()：校验 ADMIN_*/REVIEWER_* 种子账号（bcrypt checkpw；明文种子仅在首次使用时 hash 进内存，
+  绝不落库、绝不入日志；复核员留空 = 单人演示模式）；
 - create_access_token()：签发 HS256 JWT（sub=用户名，scopes=[office:read, office:write]，exp 按 JWT_EXPIRE_MINUTES）；
 - get_current()：FastAPI 依赖。解析 Authorization: Bearer <JWT>，缺失/无效/过期一律 HTTP 401。
 链路：POST /auth/login → authenticate + create_access_token；其余业务路由 Depends(get_current) → CurrentUser → executor Scope 校验。
@@ -25,7 +25,7 @@ ALGORITHM = "HS256"
 DEFAULT_SCOPES = ["office:read", "office:write"]
 
 _bearer = HTTPBearer(auto_error=False)
-_seed_hash: bytes | None = None
+_seed_hashes: dict[str, bytes] = {}
 
 
 @dataclass
@@ -36,20 +36,31 @@ class CurrentUser:
     scopes: list[str]
 
 
-def _seed_password_hash() -> bytes:
-    """首次登录时把明文种子口令 hash 进内存（懒初始化，进程内复用）。"""
-    global _seed_hash
-    if _seed_hash is None:
-        _seed_hash = bcrypt.hashpw(settings.ADMIN_PASSWORD.encode("utf-8"), bcrypt.gensalt())
-    return _seed_hash
+def _account_hashes() -> dict[str, bytes]:
+    """首次登录时把明文种子口令 hash 进内存（懒初始化，进程内复用）。
+
+    账号 = 管理员 + 复核员（REVIEWER_USERNAME 留空则不启用）——双人审批红线的第二身份。
+    """
+    global _seed_hashes
+    if not _seed_hashes:
+        accounts = {settings.ADMIN_USERNAME: settings.ADMIN_PASSWORD}
+        if settings.REVIEWER_USERNAME:
+            accounts[settings.REVIEWER_USERNAME] = settings.REVIEWER_PASSWORD
+        _seed_hashes = {
+            name: bcrypt.hashpw(pwd.encode("utf-8"), bcrypt.gensalt())
+            for name, pwd in accounts.items()
+            if name
+        }
+    return _seed_hashes
 
 
 def authenticate(username: str, password: str) -> CurrentUser | None:
     """校验用户名口令；通过返回 CurrentUser，失败返回 None（不区分用户名/口令错误细节，防枚举）。"""
-    if username != settings.ADMIN_USERNAME:
+    stored = _account_hashes().get(username)
+    if stored is None:
         return None
     try:
-        ok = bcrypt.checkpw(password.encode("utf-8"), _seed_password_hash())
+        ok = bcrypt.checkpw(password.encode("utf-8"), stored)
     except ValueError:
         ok = False
     return CurrentUser(username=username, scopes=list(DEFAULT_SCOPES)) if ok else None

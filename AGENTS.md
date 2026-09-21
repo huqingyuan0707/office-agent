@@ -14,6 +14,16 @@
 | 前端风格 | `skills/frontend-code-style/SKILL.md` |
 | 命名质量 | `skills/naming-check/SKILL.md` |
 | 架构健康 | `skills/anti-shit-code/SKILL.md` |
+| 后端功能开发 | `skills/doubao-coding-develop-backend-features/SKILL.md` |
+| 前端功能开发 | `skills/doubao-coding-develop-frontend-features/SKILL.md` |
+| Bug 诊断修复 | `skills/doubao-coding-diagnose-and-fix-bugs/SKILL.md` |
+| 代码审查 | `skills/doubao-coding-review-code/SKILL.md` |
+| 单元测试 | `skills/doubao-coding-develop-unit-tests/SKILL.md` |
+| 性能优化 | `skills/doubao-coding-optimize-performance/SKILL.md` |
+| 安全威胁评审（STRIDE） | `skills/security-threat-review/SKILL.md` |
+| SQL 诊断与最小修复 | `skills/sql-diagnose-refine/SKILL.md` |
+| GitHub 远程操作 | `skills/github-remote/SKILL.md` |
+| 应用/工程构建（全栈） | `skills/doubao-app-builder/SKILL.md` |
 
 ## 2. AI 工作流（强制）
 
@@ -55,6 +65,7 @@ cd apps/web && npm run build
 ## 6. 待办登记
 
 - [x] `naming-check` / `anti-shit-code` 脚本本体适配：扫描根改 `office_agent`+`packages`、前端 `apps/web/src`、ratchet baseline 初始化（naming 0 债务；arch 12 处 endpoint-db-op 入基线，触碰对应文件时优先抽 service 层偿还）。
-- [x] 提交钩子引入：`git config core.hooksPath githooks` 统一启用（克隆后执行一次）——`commit-msg`（type 白名单/sentence-case/行长 ≤100，支持 `Consistency-Skip` trailer）+ `pre-commit`（ruff==0.16.7 check+format）；`.pre-commit-config.yaml` 留作 CI/手动 `pre-commit run` 用。
+- [x] 提交钩子引入：`git config core.hooksPath githooks` 统一启用（克隆后执行一次）——`commit-msg`（type 白名单/sentence-case/行长 ≤100；电商侧 R1 一致性校验未引入本仓库）+ `pre-commit`（ruff==0.16.7，只校验暂存文件并回暂存）；`.pre-commit-config.yaml` 留作 CI/手动 `pre-commit run` 用。
 - [x] ruff 配置落位：根 `ruff.toml` + 三子包各自 pyproject.toml（嵌套配置，根配置管不到 packages 内）；B904 修复 4 处、DTZ005 修复 1 处（显式 UTC）、security.py 统一 python-jose（消除 PyJWT 双依赖）。
+- [x] M1 审批闭环：`REVIEWER_USERNAME/PASSWORD` 复核员双账号 + `office.memo.submit` 需审批写工具（office:write）+ `tests/smoke_approval.py` HTTP 级实测——invoke 落单 / 同人 1001 红线 / 复核员批准执行 / 任务留痕 / 驳回流，8/8 passed。
 - [ ] **已知问题**：`packages/runtime` 测试收集失败（`TypeError: 'NoneType' object is not callable`，pytest-asyncio/插件环境细节）；`runner.execute_run` 复杂度 19 已临时豁免（触碰时拆分偿还）；core 14 passed / server 15 passed。

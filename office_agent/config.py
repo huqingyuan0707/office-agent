@@ -18,6 +18,9 @@ class Settings(BaseSettings):
     JWT_EXPIRE_MINUTES: int = 720
     ADMIN_USERNAME: str = "admin"
     ADMIN_PASSWORD: str = "admin123"
+    # 复核员账号（可选）：双人审批红线的第二身份；留空 = 单人演示模式（审批闭环走不通正向批准）
+    REVIEWER_USERNAME: str = "reviewer"
+    REVIEWER_PASSWORD: str = "reviewer123"
 
     # --- 自有存储（与外部系统零连接，数据不出域） ---
     OFFICE_DB_URL: str = "sqlite+aiosqlite:///./office.db"
