@@ -21,6 +21,8 @@ class Settings(BaseSettings):
     # 复核员账号（可选）：双人审批红线的第二身份；留空 = 单人演示模式（审批闭环走不通正向批准）
     REVIEWER_USERNAME: str = "reviewer"
     REVIEWER_PASSWORD: str = "reviewer123"
+    # 文档工具工作目录：office.docx/xlsx/pptx 读写都锁在此目录内（防路径穿越）
+    DOCS_DIR: str = "data/docs"
 
     # --- 自有存储（与外部系统零连接，数据不出域） ---
     OFFICE_DB_URL: str = "sqlite+aiosqlite:///./office.db"

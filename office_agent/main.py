@@ -26,6 +26,7 @@ from office_agent import (
     auth,
     executor,
     registry,
+    tools_docs,
     tools_ecommerce,
     tools_office,
 )
@@ -41,6 +42,7 @@ async def lifespan(_: FastAPI):
     """启动期：建表 + 注册工具（内置必注册，桥接插件可选）。"""
     await init_db()
     tools_office.register_all()
+    tools_docs.register_all()
     await tools_ecommerce.register_if_enabled()
     names = "、".join(s.name for s in registry.list_all())
     logger.info("office-agent 启动完成，已注册 %d 个工具：%s", len(registry.list_all()), names)
