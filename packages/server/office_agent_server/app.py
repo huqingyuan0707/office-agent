@@ -7,9 +7,10 @@
 启动装配（lifespan，顺序即依赖顺序）：
 1. 建表（幂等，防空库 500）；
 2. 注入审计 sink（内核只发事件，落库实现由壳提供）；
-3. 种子账号（SEED_ON_START=false 可关，生产必关）；
+3. 种子账号（admin + reviewer，SEED_ON_START=false 可关，生产必关）；
 4. 按 Settings 建上游提供方客户端（凭据只来自环境变量）；
-5. 装载 plugins/ 下的工具插件（每个插件自行决定「提供方没配就不注册」）。
+5. 装载内置办公工具包（office-agent-tools-office pip 包）；
+6. 装载 plugins/ 下的工具插件（每个插件自行决定「提供方没配就不注册」）。
 """
 
 from __future__ import annotations
@@ -36,6 +37,14 @@ from office_agent_server.plugins import load_plugin_tools
 from office_agent_server.responses import fail
 from office_agent_server.seed import seed_on_startup
 
+try:
+    # tools-office 是可选 pip 包；未安装不阻断启动
+    from office_agent_tools_office import register_all as _office_register
+
+    _OFFICE_TOOLS_AVAILABLE = True
+except ImportError:
+    _OFFICE_TOOLS_AVAILABLE = False
+
 logger = logging.getLogger(__name__)
 
 
@@ -52,6 +61,16 @@ async def lifespan(_: FastAPI) -> AsyncIterator[None]:
             )
         await seed_on_startup()
     providers = linkage.configure_from_settings()
+
+    # 内置办公工具包（pip 包；未装则跳过，不阻断启动）
+    office_names: list[str] = []
+    if _OFFICE_TOOLS_AVAILABLE:
+        try:
+            office_names = _office_register()
+            logger.info("已装载内置办公工具包：%s", "、".join(office_names))
+        except Exception as exc:
+            logger.warning("内置办公工具包装载失败：%s", str(exc)[:200])
+
     loaded = load_plugin_tools()
     logger.info(
         "上游提供方已配置：%s；已装载插件：%s",

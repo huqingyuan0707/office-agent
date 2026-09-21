@@ -1,11 +1,13 @@
-"""工具注册中心端点（清单 / 详情 / 受控试调）
+"""工具注册中心端点（清单 / 详情 / 受控试调 + 送审分流）
 
 链路：GET /agent/tools（清单，含 Scope/Schema/超时重试/熔断态）
       → GET /agent/tools/{name}（单工具详情）
-      → POST /agent/tools/{name}/invoke（受控试调，走内核 executor.call）。
+      → POST /agent/tools/{name}/invoke（受控试调：鉴权 → 分流 → 执行/落审批单）。
 
-薄封装红线：本文件只解析入参 + 调内核 + ok()/fail()；
+薄封装红线：本文件只解析入参 + 调内核/services + ok()/fail()；
             鉴权、参数校验、超时重试、熔断、审计全在 office_agent_core 内，端点不复制一份。
+送审分流红线：spec.requires_approval=True 的工具 invoke 不落 executor，只落审批单后返回
+            pending_approval——写动作的唯一放行口是审批中心。
 trace 红线：trace 取入站 ``X-Trace-Id``（中间件沿用），不从请求体取，
             这样跨系统联动时两侧审计里的 trace 是同一条线。
 """
@@ -18,12 +20,14 @@ from fastapi import APIRouter, Depends
 from pydantic import BaseModel
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from office_agent_core import executor, registry
-from office_agent_core.contracts import ToolContext
+from office_agent_core import executor, policy, registry
+from office_agent_core.contracts import ToolContext, validate_args
+from office_agent_core.errors import BusinessError, ErrorCode
 from office_agent_server.db import get_db
 from office_agent_server.middleware import current_trace_id
 from office_agent_server.rbac import CurrentUser, get_current_user
 from office_agent_server.responses import ok
+from office_agent_server.services.approval_flow import create_approval
 
 router = APIRouter(prefix="/agent", tags=["agent"])
 
@@ -67,12 +71,41 @@ async def invoke_tool(
     db: AsyncSession = Depends(get_db),
     user: CurrentUser = Depends(get_current_user),
 ) -> dict[str, Any]:
-    """受控试调：策略鉴权 → 参数校验 → 熔断闸门 → 执行 → 审计（tool_calls 留痕）。
+    """受控试调：鉴权 → 参数校验 → 分流（送审 / 直执行）。
 
-    远程工具的返回里带 ``provenance``（数据出处与取数时刻），与结果同级透出，
-    前端与审计都能直接看到「这份数据从哪来」。
+    分流规则：spec.requires_approval=True → 落审批单，返回 pending_approval，不调 executor；
+             否则 → executor.call 完整执行链（熔断、重试、审计）。
     """
     trace = current_trace_id()
+    spec = registry.get(name)
+
+    # --- 策略鉴权 + 参数校验（分流前统一校验，避免「先过了审批再被拒」的口子） ---
+    policy.ensure_allowed(roles=list(user.roles), spec=spec, args=payload.args)
+    errors = validate_args(spec.params, payload.args)
+    if errors:
+        raise BusinessError(ErrorCode.PARAM_INVALID, "；".join(errors))
+
+    # --- 送审分流：需审批工具只落单，不调 executor ---
+    if spec.requires_approval:
+        row = await create_approval(
+            db,
+            tenant=user.tenant,
+            tool_name=spec.name,
+            args=payload.args,
+            applicant=user.username,
+            session_id=payload.session_id,
+        )
+        data = {
+            "status": "pending_approval",
+            "approval_required": True,
+            "approval_id": row.id,
+            "tool": spec.name,
+            "scope": spec.scope,
+            "trace_id": trace,
+        }
+        return ok(data, "已提交审批，待人工确认后生效")
+
+    # --- 直执行路径（原 executor.call 完整链） ---
     ctx = ToolContext(
         db=db,
         tenant=user.tenant,
@@ -87,5 +120,4 @@ async def invoke_tool(
         # 成败都提交：内核好坏两条路径都发审计，失败一次就丢一条留痕等于审计断链
         # （失败信封本身由统一异常处理器收口，这里不做任何业务分支）
         await db.commit()
-    msg = "已提交审批，待人工确认后生效" if data["approval_required"] else "调用成功"
-    return ok(data, msg)
+    return ok(data, "调用成功")

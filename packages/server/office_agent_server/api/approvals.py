@@ -1,10 +1,12 @@
 """审批端点（列表 / 详情 / 批驳）
 
-链路：审批中心 → 本模块 → approvals 表（按 tenant 隔离）。
-口径：审批是写动作的唯一放行口——内核策略恒送审，生成审批单由需审批的工具实现负责；
-      本模块只做读口径与状态流转，**不伪造业务生效结果**（写层工具落地后由其在批/驳回调里消费）。
-
+链路：审批中心 → 本模块 → services/approval_flow（业务逻辑） → approvals 表。
+口径：审批是写动作的唯一放行口——内核策略恒送审，生成审批单由需审批工具的 invoke 负责；
+      本模块只做读口径 + 状态流转 + 调 service，**不在端点内直接裸写业务逻辑**。
 驳回必须填理由：没有理由的驳回在回放时等于没有信息。
+
+分层红线：approve/reject 端点薄封装——解析入参 → 调 services.approval_flow.decide_approval → ok()；
+          同人红线（审批人 == 提交人 → 1001）在 service 层统一拦，端点不复制。
 """
 
 from __future__ import annotations
@@ -18,10 +20,12 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from office_agent_core.errors import BusinessError, ErrorCode
-from office_agent_server.db import _now, get_db
+from office_agent_server.db import get_db
+from office_agent_server.middleware import current_trace_id
 from office_agent_server.models import Approval
 from office_agent_server.rbac import CurrentUser, require_any_perm
 from office_agent_server.responses import ok
+from office_agent_server.services.approval_flow import decide_approval
 
 router = APIRouter(prefix="/approvals", tags=["approvals"])
 
@@ -31,7 +35,7 @@ STATUS_LABELS: dict[str, str] = {
     "rejected": "已驳回",
 }
 
-#: 审批列表可见：登录即可看本租户待办（内核不预设具体业务域角色名）
+#: 审批列表可见：登录即可看本租户待办
 LIST_PERMS = ("admin", "viewer")
 #: 批/驳只能由有权决策的角色处理（通配角色 ``*`` 由 require_any_perm 统一放行）
 APPROVER_PERMS = ("admin", "approver")
@@ -90,25 +94,6 @@ async def _get_or_raise(db: AsyncSession, tenant: str, approval_id: str) -> Appr
     return row
 
 
-def _decide(row: Approval, *, approve: bool, approver: str, reason: str) -> None:
-    """状态流转（已处理过的不允许重复处理；理由追加留痕，与既有回放口径一致）。"""
-    if row.status != "pending":
-        label = STATUS_LABELS.get(row.status, row.status)
-        raise BusinessError(ErrorCode.APPROVAL_DENIED, f"该审批已是「{label}」，不能重复处理")
-    text = reason.strip()
-    if not approve and not text:
-        raise BusinessError(ErrorCode.PARAM_INVALID, "驳回理由必填，请填写后再驳回")
-    if approve:
-        row.status = "approved"
-        if text:
-            row.reason = f"{row.reason}｜批准说明：{text}"[:200]
-    else:
-        row.status = "rejected"
-        row.reason = f"{row.reason}｜驳回原因：{text}"[:200]
-    row.approver = approver
-    row.decided_at = _now()
-
-
 @router.get("")
 async def list_approvals(
     db: AsyncSession = Depends(get_db),
@@ -147,11 +132,18 @@ async def approve(
     db: AsyncSession = Depends(get_db),
     user: CurrentUser = Depends(require_any_perm(*APPROVER_PERMS)),
 ) -> dict[str, Any]:
-    """批准（状态流转留痕，谁在何时批的可在审批表与审计里回溯）。"""
-    row = await _get_or_raise(db, user.tenant, approval_id)
-    _decide(row, approve=True, approver=user.username, reason=payload.reason)
-    await db.commit()
-    return ok(_to_dict(row), "审批已通过")
+    """批准（状态流转 + 同人红线 + 以提交人身份执行工具——全在 service 层）。"""
+    trace = current_trace_id()
+    result = await decide_approval(
+        db,
+        tenant=user.tenant,
+        approval_id=approval_id,
+        approver=user.username,
+        approve=True,
+        reason=payload.reason,
+        trace_id=trace,
+    )
+    return ok(result, "审批已通过")
 
 
 @router.post("/{approval_id}/reject")
@@ -161,8 +153,15 @@ async def reject(
     db: AsyncSession = Depends(get_db),
     user: CurrentUser = Depends(require_any_perm(*APPROVER_PERMS)),
 ) -> dict[str, Any]:
-    """驳回：被申请的动作不执行，理由追加留痕。"""
-    row = await _get_or_raise(db, user.tenant, approval_id)
-    _decide(row, approve=False, approver=user.username, reason=payload.reason)
-    await db.commit()
-    return ok(_to_dict(row), "已驳回，原数据保持不变")
+    """驳回：被申请的动作不执行，理由追加留痕（同人红线 service 层统一拦）。"""
+    trace = current_trace_id()
+    result = await decide_approval(
+        db,
+        tenant=user.tenant,
+        approval_id=approval_id,
+        approver=user.username,
+        approve=False,
+        reason=payload.reason,
+        trace_id=trace,
+    )
+    return ok(result, "已驳回，原数据保持不变")
