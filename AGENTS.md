@@ -68,4 +68,4 @@ cd apps/web && npm run build
 - [x] 提交钩子引入：`git config core.hooksPath githooks` 统一启用（克隆后执行一次）——`commit-msg`（type 白名单/sentence-case/行长 ≤100；电商侧 R1 一致性校验未引入本仓库）+ `pre-commit`（ruff==0.16.7，只校验暂存文件并回暂存）；`.pre-commit-config.yaml` 留作 CI/手动 `pre-commit run` 用。
 - [x] ruff 配置落位：根 `ruff.toml` + 三子包各自 pyproject.toml（嵌套配置，根配置管不到 packages 内）；B904 修复 4 处、DTZ005 修复 1 处（显式 UTC）、security.py 统一 python-jose（消除 PyJWT 双依赖）。
 - [x] M1 审批闭环：`REVIEWER_USERNAME/PASSWORD` 复核员双账号 + `office.memo.submit` 需审批写工具（office:write）+ `tests/smoke_approval.py` HTTP 级实测——invoke 落单 / 同人 1001 红线 / 复核员批准执行 / 任务留痕 / 驳回流，8/8 passed。
-- [ ] **已知问题**：`packages/runtime` 测试收集失败（`TypeError: 'NoneType' object is not callable`，pytest-asyncio/插件环境细节）；`runner.execute_run` 复杂度 19 已临时豁免（触碰时拆分偿还）；core 14 passed / server 15 passed。
+- [ ] **已知问题**：`runner.execute_run` 复杂度 19 已临时豁免（触碰时拆分偿还）；core 14 / server 15 / runtime 15 passed（runtime 测试收集失败已修复）。

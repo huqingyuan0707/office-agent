@@ -225,7 +225,7 @@ def test_whitelist_out_tool_fails_step_with_chinese_reason(client, agent_yaml_di
         )
     )
 
-    async def _rogue_plan(_self, _goal):
+    def _rogue_plan(_self, _goal):
         return [PlannerStep(tool="demo.rogue", args={})]
 
     monkeypatch.setattr(runner.RulePlanner, "plan", _rogue_plan)
@@ -270,9 +270,35 @@ def test_max_steps_cap_ends_run_in_terminal_state(client, agent_yaml_dir):
 def test_resume_continues_from_checkpoint(client, agent_yaml_dir):
     from office_agent_core import registry
     from office_agent_core.contracts import ToolContext, ToolSpec
+    from office_agent_core.errors import BusinessError, ErrorCode
+
+    _shout_schema = {
+        "type": "object",
+        "properties": {"text": {"type": "string", "title": "内容"}},
+        "required": ["text"],
+        "additionalProperties": False,
+    }
+
+    async def _broken(_ctx: ToolContext, _args: dict) -> dict:
+        raise BusinessError(ErrorCode.TOOL_CALL_FAILED, "演示工具故意失败")
+
+    async def _healed(_ctx: ToolContext, _args: dict) -> dict:
+        return {"shout": "WORLD", "length": 5}
+
+    def _register_shout(handler) -> None:
+        registry.register(
+            ToolSpec(
+                name="demo.shout",
+                scope="office:read",
+                description="resume 测试用实现",
+                params=_shout_schema,
+                handler=handler,
+            )
+        )
 
     token = _login(client)
-    # 第一次：第二步恒失败 → run FAILED，checkpoint 停在第 2 步（next_step=1）
+    # 第一次：第二步（demo.shout）注入故障实现 → run FAILED，checkpoint 停在第 2 步
+    _register_shout(_broken)
     body = client.post(
         "/api/v1/runs", json={"agent": "demo-assistant", "goal": "请演示一下"}, headers=_auth(token)
     ).json()
@@ -283,23 +309,7 @@ def test_resume_continues_from_checkpoint(client, agent_yaml_dir):
     assert failed["next_step"] == 1
 
     # 修复故障（换上健康实现）后显式续跑：从断点继续并收敛 DONE
-    async def _healed(_ctx: ToolContext, _args: dict) -> dict:
-        return {"shout": "WORLD", "length": 5}
-
-    registry.register(
-        ToolSpec(
-            name="demo.shout",
-            scope="office:read",
-            description="已修复",
-            params={
-                "type": "object",
-                "properties": {"text": {"type": "string", "title": "内容"}},
-                "required": ["text"],
-                "additionalProperties": False,
-            },
-            handler=_healed,
-        )
-    )
+    _register_shout(_healed)
     resumed = client.post(f"/api/v1/runs/{run_id}/resume", headers=_auth(token)).json()
     assert resumed["code"] == 0
     assert resumed["data"]["status"] == "DONE"
