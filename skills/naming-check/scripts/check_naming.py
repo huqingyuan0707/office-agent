@@ -21,7 +21,7 @@ if hasattr(sys.stdout, "reconfigure"):
     sys.stdout.reconfigure(encoding="utf-8", errors="replace")  # type: ignore[attr-defined, union-attr]
 
 # ---------------- 扫描根（office-agent 多包结构） ----------------
-PY_ROOTS = ("office_agent", "packages")  # 存在者扫
+PY_ROOTS = ("office_agent", "packages", "githooks")  # 存在者扫
 FE_SRC = Path("apps") / "web" / "src"
 
 # ---------------- 规则名 ----------------
@@ -107,6 +107,8 @@ def _iter_backend_py(root: Path) -> list[Path]:
                 for part in py.parts
             )
         )
+        if sub == "githooks":  # git 钩子脚本无扩展名，同样纳入门禁（守门者先守己）
+            files.extend(f for f in base.iterdir() if f.is_file() and f.suffix == "")
     return sorted(set(files))
 
 
@@ -115,9 +117,13 @@ def scan_python(root: Path) -> list[tuple[str, str, int, str]]:
     violations: list[tuple[str, str, int, str]] = []
     for py in _iter_backend_py(root):
         rel = py.relative_to(root).as_posix()
-        # 文件名必须 snake_case（__init__.py 除外）
+        # 文件名必须 snake_case（__init__.py 除外；githooks 下文件名由 git 协议约定，不可改名）
         stem = py.stem
-        if stem not in {"__init__", "__main__"} and not SNAKE_RE.fullmatch(stem):
+        if (
+            py.parent.name != "githooks"
+            and stem not in {"__init__", "__main__"}
+            and not SNAKE_RE.fullmatch(stem)
+        ):
             violations.append((rel, RULE_PY_FILE_NAME, 1, py.name))
         try:
             tree = ast.parse(py.read_text(encoding="utf-8"), filename=str(py))

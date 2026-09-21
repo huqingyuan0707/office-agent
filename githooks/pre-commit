@@ -2,6 +2,8 @@
 """pre-commit 钩子：ruff check + format 校验（office-agent 版）
 
 ruff 版本钉 v0.16.7（与 .pre-commit-config.yaml 同源）；环境无 ruff 时警告跳过不阻塞。
+只校验暂存文件（git diff --cached，A/C/R/M 的 *.py）：``--fix`` 与 format 的修复经
+``git add`` 重新入暂存，保证「提交内容 = 校验内容」，且绝不触碰未暂存的文件。
 启用：git config core.hooksPath githooks（克隆后执行一次）。
 """
 
@@ -14,20 +16,39 @@ import sys
 RUFF_VERSION = "0.16.7"
 
 
+def _staged_py_files() -> list[str]:
+    """暂存区的新增/修改 py 文件（相对仓库根路径；删除的文件不参与校验）。"""
+    proc = subprocess.run(
+        ["git", "diff", "--cached", "--name-only", "--diff-filter=ACMR", "--", "*.py"],
+        capture_output=True,
+        text=True,
+    )
+    return [line for line in proc.stdout.splitlines() if line.strip()]
+
+
+def _run(ruff: str, args: list[str]) -> bool:
+    """跑一条 ruff 命令；失败时打印输出并返回 False。"""
+    proc = subprocess.run([ruff, *args], capture_output=True, text=True)
+    if proc.returncode != 0:
+        print(proc.stdout.strip() or proc.stderr.strip())
+        return False
+    return True
+
+
 def main() -> int:
     ruff = shutil.which("ruff")
     if ruff is None:
         print("WARN | 未找到 ruff，跳过 lint（pip install ruff==" + RUFF_VERSION + "）")
         return 0
-    failed = False
-    for args in (["check", "--fix"], ["format", "--check"]):
-        proc = subprocess.run([ruff, *args, "."], capture_output=True, text=True)
-        if proc.returncode != 0:
-            failed = True
-            print(proc.stdout.strip() or proc.stderr.strip())
-    if failed:
+    files = _staged_py_files()
+    if not files:
+        return 0
+    ok = _run(ruff, ["check", "--fix", *files]) and _run(ruff, ["format", *files])
+    if not ok:
         print("FAIL | ruff 校验未过（ruff==" + RUFF_VERSION + "）")
         return 1
+    # --fix / format 可能改写了文件：重新入暂存，保证提交内容即校验内容
+    subprocess.run(["git", "add", "--", *files], capture_output=True, text=True)
     print("PASS | ruff check + format 通过")
     return 0
 

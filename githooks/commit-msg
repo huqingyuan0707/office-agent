@@ -1,9 +1,9 @@
 #!/usr/bin/env python
 """commit-msg 钩子：conventional commit 轻量校验（office-agent 版）
 
-对齐电商仓库 commitlint 口径：type 白名单 + subject 句式 + 行长 ≤100；
-支持 `Consistency-Skip: reason=...` trailer 通道（跳过 R1 一致性时必带理由）。
-启用：git config core.hooksPath githooks（克隆后执行一次）。
+对齐电商仓库 commitlint 口径：type 白名单 + subject 句式 + 行长 ≤100。
+电商侧的 R1 一致性校验未引入本仓库，`Consistency-Skip` trailer 在此无对应逻辑，
+仅作为普通正文行受行长约束。启用：git config core.hooksPath githooks（克隆后执行一次）。
 """
 
 from __future__ import annotations
@@ -12,8 +12,17 @@ import re
 import sys
 
 TYPES = {
-    "feat", "fix", "docs", "style", "refactor",
-    "perf", "test", "chore", "revert", "build", "ci",
+    "feat",
+    "fix",
+    "docs",
+    "style",
+    "refactor",
+    "perf",
+    "test",
+    "chore",
+    "revert",
+    "build",
+    "ci",
 }
 MAX_LINE = 100
 HEADER_RE = re.compile(r"^(?P<type>\w+)(?:\((?P<scope>[^)]+)\))?: (?P<subject>.+)$")
@@ -21,7 +30,7 @@ HEADER_RE = re.compile(r"^(?P<type>\w+)(?:\((?P<scope>[^)]+)\))?: (?P<subject>.+
 
 def main(argv: list[str]) -> int:
     path = argv[0] if argv else ".git/COMMIT_EDITMSG"
-    lines = Path_lines(path)
+    lines = read_message_lines(path)
     if not lines:
         print("FAIL | commit message 为空")
         return 1
@@ -47,13 +56,15 @@ def main(argv: list[str]) -> int:
     if errors:
         for e in errors:
             print(f"FAIL | {e}")
-        print("提示：格式 `type(scope): 描述`；type ∈ feat/fix/docs/style/refactor/perf/test/chore/revert/build/ci")
+        print(
+            "提示：格式 `type(scope): 描述`；type ∈ feat/fix/docs/style/refactor/perf/test/chore/revert/build/ci"
+        )
         return 1
     print(f"PASS | commit message 校验通过（{len(lines)} 行）")
     return 0
 
 
-def Path_lines(path: str) -> list[str]:
+def read_message_lines(path: str) -> list[str]:
     from pathlib import Path
 
     try:
