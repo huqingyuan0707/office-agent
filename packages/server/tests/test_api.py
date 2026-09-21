@@ -11,9 +11,7 @@ _ENDPOINT = "POST http://up.test/api/v1/agent-gateway/invoke"
 
 def _login(client) -> str:
     """登录取 token（种子账号由 lifespan 建好）。"""
-    resp = client.post(
-        "/api/v1/auth/login", json={"username": "admin", "password": "admin123"}
-    )
+    resp = client.post("/api/v1/auth/login", json={"username": "admin", "password": "admin123"})
     assert resp.status_code == 200
     body = resp.json()
     assert body["code"] == 0
@@ -170,9 +168,7 @@ def test_invoke_param_invalid_is_1001(client):
 
 def test_unknown_tool_is_4005(client):
     token = _login(client)
-    resp = client.post(
-        "/api/v1/agent/tools/nope/invoke", json={"args": {}}, headers=_auth(token)
-    )
+    resp = client.post("/api/v1/agent/tools/nope/invoke", json={"args": {}}, headers=_auth(token))
     assert resp.status_code == 404
     assert resp.json()["code"] == 4005
 
@@ -187,9 +183,7 @@ def test_tasks_and_approvals_are_empty_not_error(client):
 def test_approval_reject_requires_reason(client):
     """不存在的审批单先 404；驳回理由必填的口径由 _decide 保证（此处验证 404 分支）。"""
     token = _login(client)
-    resp = client.post(
-        "/api/v1/approvals/nope/reject", json={"reason": ""}, headers=_auth(token)
-    )
+    resp = client.post("/api/v1/approvals/nope/reject", json={"reason": ""}, headers=_auth(token))
     assert resp.status_code == 404
     assert resp.json()["code"] == 1004
 
@@ -230,7 +224,9 @@ async def test_tool_call_audit_is_persisted_with_trace(client):
         async with engine.connect() as conn:
             rows = (
                 await conn.execute(
-                    text("select name, tenant, username, result from tool_calls where trace_id = :t"),
+                    text(
+                        "select name, tenant, username, result from tool_calls where trace_id = :t"
+                    ),
                     {"t": "tr-audit"},
                 )
             ).all()

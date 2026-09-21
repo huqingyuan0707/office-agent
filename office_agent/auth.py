@@ -67,14 +67,18 @@ def create_access_token(user: CurrentUser) -> str:
     return jwt.encode(payload, settings.JWT_SECRET, algorithm=ALGORITHM)
 
 
-async def get_current(credentials: HTTPAuthorizationCredentials | None = Depends(_bearer)) -> CurrentUser:
+async def get_current(
+    credentials: HTTPAuthorizationCredentials | None = Depends(_bearer),
+) -> CurrentUser:
     """鉴权依赖：Bearer JWT 缺失/无效/过期一律 HTTP 401。"""
     if credentials is None or not credentials.credentials:
-        raise HTTPException(status_code=401, detail="未登录：缺少访问令牌，请先 POST /auth/login 获取")
+        raise HTTPException(
+            status_code=401, detail="未登录：缺少访问令牌，请先 POST /auth/login 获取"
+        )
     try:
         payload = jwt.decode(credentials.credentials, settings.JWT_SECRET, algorithms=[ALGORITHM])
     except JWTError:
-        raise HTTPException(status_code=401, detail="访问令牌无效或已过期，请重新登录")
+        raise HTTPException(status_code=401, detail="访问令牌无效或已过期，请重新登录") from None
     username = payload.get("sub")
     if not username:
         raise HTTPException(status_code=401, detail="访问令牌无效：缺少主体信息")

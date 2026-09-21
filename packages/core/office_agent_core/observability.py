@@ -75,7 +75,9 @@ def _drain_and_write(batch: list[tuple[float, str, dict[str, Any]]]) -> None:
         target = Path(settings.OBSERVABILITY_DIR) / f"events-{day}.jsonl"
         target.parent.mkdir(parents=True, exist_ok=True)
         lines = [
-            json.dumps({"ts": round(ts, 3), "event": event, **fields}, ensure_ascii=False, default=str)
+            json.dumps(
+                {"ts": round(ts, 3), "event": event, **fields}, ensure_ascii=False, default=str
+            )
             for ts, event, fields in batch
         ]
         with target.open("a", encoding="utf-8") as fp:

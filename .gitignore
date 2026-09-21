@@ -2,6 +2,7 @@
 __pycache__/
 *.py[cod]
 .pytest_cache/
+.pytest-tmp/
 .venv/
 
 # 环境与密钥（绝不入库）
@@ -15,3 +16,6 @@ node_modules/
 dist/
 .trae/
 packages/server/data/
+*.egg-info/
+.venv/
+data/

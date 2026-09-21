@@ -1,0 +1,36 @@
+#!/usr/bin/env python
+"""pre-commit 钩子：ruff check + format 校验（office-agent 版）
+
+ruff 版本钉 v0.16.7（与 .pre-commit-config.yaml 同源）；环境无 ruff 时警告跳过不阻塞。
+启用：git config core.hooksPath githooks（克隆后执行一次）。
+"""
+
+from __future__ import annotations
+
+import shutil
+import subprocess
+import sys
+
+RUFF_VERSION = "0.16.7"
+
+
+def main() -> int:
+    ruff = shutil.which("ruff")
+    if ruff is None:
+        print("WARN | 未找到 ruff，跳过 lint（pip install ruff==" + RUFF_VERSION + "）")
+        return 0
+    failed = False
+    for args in (["check", "--fix"], ["format", "--check"]):
+        proc = subprocess.run([ruff, *args, "."], capture_output=True, text=True)
+        if proc.returncode != 0:
+            failed = True
+            print(proc.stdout.strip() or proc.stderr.strip())
+    if failed:
+        print("FAIL | ruff 校验未过（ruff==" + RUFF_VERSION + "）")
+        return 1
+    print("PASS | ruff check + format 通过")
+    return 0
+
+
+if __name__ == "__main__":
+    sys.exit(main())

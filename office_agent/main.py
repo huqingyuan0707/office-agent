@@ -21,7 +21,14 @@ from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from office_agent import approvals, auth, executor, registry, tools_ecommerce, tools_office
+from office_agent import (
+    approvals,
+    auth,
+    executor,
+    registry,
+    tools_ecommerce,
+    tools_office,
+)
 from office_agent.contracts import ToolError
 from office_agent.db import Approval, Task, get_db, init_db, list_tasks
 
@@ -47,7 +54,13 @@ app = FastAPI(
     lifespan=lifespan,
 )
 
-app.add_middleware(CORSMiddleware, allow_origins=["*"], allow_credentials=True, allow_methods=["*"], allow_headers=["*"])
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["*"],
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
 
 
 class LoginRequest(BaseModel):
@@ -142,41 +155,68 @@ async def list_tools(user: auth.CurrentUser = Depends(auth.get_current)):
     return {
         "ok": True,
         "data": [
-            {"name": s.name, "description": s.description, "scope": s.scope, "needs_approval": s.needs_approval, "schema": s.schema}
+            {
+                "name": s.name,
+                "description": s.description,
+                "scope": s.scope,
+                "needs_approval": s.needs_approval,
+                "schema": s.schema,
+            }
             for s in visible
         ],
     }
 
 
 @app.post("/tools/invoke")
-async def invoke_tool(body: InvokeRequest, user: auth.CurrentUser = Depends(auth.get_current), session: AsyncSession = Depends(get_db)):
+async def invoke_tool(
+    body: InvokeRequest,
+    user: auth.CurrentUser = Depends(auth.get_current),
+    session: AsyncSession = Depends(get_db),
+):
     """调用工具：{name,args} → executor（Scope 校验/审批分流/超时/审计）→ 统一信封。"""
     try:
-        data = await executor.invoke(session, actor=user.username, scopes=user.scopes, name=body.name, args=body.args)
+        data = await executor.invoke(
+            session, actor=user.username, scopes=user.scopes, name=body.name, args=body.args
+        )
         return {"ok": True, "data": data}
     except ToolError as exc:
         return _fail(exc)
 
 
 @app.get("/tasks")
-async def list_task_rows(user: auth.CurrentUser = Depends(auth.get_current), session: AsyncSession = Depends(get_db)):
+async def list_task_rows(
+    user: auth.CurrentUser = Depends(auth.get_current), session: AsyncSession = Depends(get_db)
+):
     """任务执行记录（最新在前）。"""
     rows = await list_tasks(session)
     return {"ok": True, "data": [_task_row(t) for t in rows]}
 
 
 @app.get("/approvals")
-async def list_approval_rows(user: auth.CurrentUser = Depends(auth.get_current), session: AsyncSession = Depends(get_db)):
+async def list_approval_rows(
+    user: auth.CurrentUser = Depends(auth.get_current), session: AsyncSession = Depends(get_db)
+):
     """审批单列表（最新在前）。"""
     rows = await approvals.list_all(session)
     return {"ok": True, "data": [_approval_row(a) for a in rows]}
 
 
 @app.post("/approvals/{approval_id}/decide")
-async def decide_approval(approval_id: int, body: DecideRequest, user: auth.CurrentUser = Depends(auth.get_current), session: AsyncSession = Depends(get_db)):
+async def decide_approval(
+    approval_id: int,
+    body: DecideRequest,
+    user: auth.CurrentUser = Depends(auth.get_current),
+    session: AsyncSession = Depends(get_db),
+):
     """审批决定：approve=true 执行原工具并落任务；false 驳回。审批人≠提交人（同人 1001）。"""
     try:
-        data = await approvals.decide(session, approval_id=approval_id, approver=user.username, approve=body.approve, comment=body.comment)
+        data = await approvals.decide(
+            session,
+            approval_id=approval_id,
+            approver=user.username,
+            approve=body.approve,
+            comment=body.comment,
+        )
         return {"ok": True, "data": data}
     except ToolError as exc:
         return _fail(exc)

@@ -69,9 +69,7 @@ def _fail_handler(calls: list[int]):
 async def test_scope_not_granted_raises_4006():
     """Scope 不命中直接 403/4006，绝不「没权限也执行」。"""
     registry.register(
-        ToolSpec(
-            name="x.read", scope="office:read", description="d", params={}, handler=_noop
-        )
+        ToolSpec(name="x.read", scope="office:read", description="d", params={}, handler=_noop)
     )
     with pytest.raises(BusinessError) as excinfo:
         await executor.call(_ctx(roles=["office:write"]), name="x.read", args={})

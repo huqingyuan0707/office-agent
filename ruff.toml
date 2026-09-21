@@ -1,0 +1,45 @@
+# office-agent ruff 配置（同源电商仓库 backend/pyproject.toml 口径；ruff 钉 0.16.7）
+line-length = 100
+target-version = "py310"
+
+[lint]
+select = [
+  "E",     # pycodestyle errors
+  "F",     # pyflakes
+  "I",     # isort
+  "N",     # pep8-naming
+  "UP",    # pyupgrade（强制 PEP 604 写法）
+  "B",     # flake8-bugbear
+  "C4",    # comprehensions
+  "SIM",   # simplify
+  "ASYNC", # 异步误用
+  "TID",   # 导入整洁
+  "C901",  # mccabe 圈复杂度
+  "RUF",
+]
+ignore = [
+  "E501",   # 行长交给 formatter
+  "RUF001", # 中文用户文案必需全角标点
+  "RUF002", # 中文 docstring 同上
+  "RUF003", # 中文注释同上
+]
+
+[lint.per-file-ignores]
+"__init__.py" = ["F401"]
+"tests/**" = ["B011"]
+"skills/**/scripts/**" = ["T201", "E402", "C901"]  # 门禁脚本 AST 扫描天然多分支，豁免圈复杂度
+# FastAPI 官方写法：Depends 写在参数默认值
+"packages/server/office_agent_server/api/**" = ["B008"]
+"office_agent/main.py" = ["B008"]
+"office_agent/auth.py" = ["B008"]
+# runner.execute_run 为既有编排函数（复杂度 19），拆分前临时豁免，触碰时优先拆分偿还
+"packages/runtime/office_agent_runtime/runner.py" = ["C901"]
+
+[lint.isort]
+known-first-party = ["office_agent", "office_agent_core", "office_agent_server"]
+
+[lint.mccabe]
+max-complexity = 12
+
+[format]
+quote-style = "double"

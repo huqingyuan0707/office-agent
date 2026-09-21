@@ -162,7 +162,9 @@ def main() -> int:
         print(f"FAIL | {msg}")
     if not failures:
         print("PASS | 分层与体量检查全部通过（存量债务未增加）")
-    print(f"RESULT: {len(violations) - debt} new violation(s), {debt} baseline debt, {len(failures)} failed check(s)")
+    print(
+        f"RESULT: {len(violations) - debt} new violation(s), {debt} baseline debt, {len(failures)} failed check(s)"
+    )
     return 1 if failures else 0
 
 

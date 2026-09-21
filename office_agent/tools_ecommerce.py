@@ -37,7 +37,7 @@ async def _probe() -> bool:
         async with httpx.AsyncClient(trust_env=False, timeout=3.0) as client:
             await client.get(f"{settings.ECOMMERCE_API_BASE}/healthz")
         return True
-    except Exception as exc:  # noqa: BLE001 —— 探测阶段任何失败都等价于「不可达」
+    except Exception as exc:
         logger.warning("外部系统探测失败（%s）：%s", settings.ECOMMERCE_API_BASE, exc)
         return False
 
@@ -46,12 +46,19 @@ async def _get_data(path: str, params: dict | None = None):
     """统一 HTTP 桥接：Bearer token → 调电商 REST API → 校验 {ok,data} 信封 → 返回 data。"""
     headers = {"Authorization": f"Bearer {settings.ECOMMERCE_TOKEN}"}
     try:
-        async with httpx.AsyncClient(trust_env=False, timeout=float(settings.TOOL_TIMEOUT_SECONDS)) as client:
-            resp = await client.get(f"{settings.ECOMMERCE_API_BASE}{path}", params=params, headers=headers)
-    except Exception as exc:  # noqa: BLE001
-        raise ToolError(502, f"电商接口调用失败（{path}）：{exc}")
+        async with httpx.AsyncClient(
+            trust_env=False, timeout=float(settings.TOOL_TIMEOUT_SECONDS)
+        ) as client:
+            resp = await client.get(
+                f"{settings.ECOMMERCE_API_BASE}{path}", params=params, headers=headers
+            )
+    except Exception as exc:
+        raise ToolError(502, f"电商接口调用失败（{path}）：{exc}") from exc
     if resp.status_code != 200:
-        raise ToolError(502, f"电商接口返回异常状态码 {resp.status_code}（{path}），请检查 ECOMMERCE_TOKEN 与服务状态")
+        raise ToolError(
+            502,
+            f"电商接口返回异常状态码 {resp.status_code}（{path}），请检查 ECOMMERCE_TOKEN 与服务状态",
+        )
     payload = resp.json()
     # 电商信封实为 {code:0, msg, data}（0=成功），兼容 {ok:true,data} 两种形态
     success = payload.get("ok") is True or payload.get("code") == 0
@@ -64,44 +71,68 @@ async def _get_data(path: str, params: dict | None = None):
 async def _screen_summary(args: dict) -> dict:
     """ecommerce.screen.summary：数据大屏汇总（只读 + 溯源）。"""
     data = await _get_data("/api/v1/screen/summary")
-    return {"source": "ecommerce-api", "endpoint": "/api/v1/screen/summary", "fetched_at": _now_iso(), "data": data}
+    return {
+        "source": "ecommerce-api",
+        "endpoint": "/api/v1/screen/summary",
+        "fetched_at": _now_iso(),
+        "data": data,
+    }
 
 
 async def _finance_bills(args: dict) -> dict:
     """ecommerce.finance.bills：账单分页列表（只读 + 溯源，默认 page=1&size=20）。"""
     params = {"page": int(args.get("page") or 1), "size": int(args.get("size") or 20)}
     data = await _get_data("/api/v1/finance/bills", params=params)
-    return {"source": "ecommerce-api", "endpoint": "/api/v1/finance/bills", "fetched_at": _now_iso(), "page": params["page"], "size": params["size"], "data": data}
+    return {
+        "source": "ecommerce-api",
+        "endpoint": "/api/v1/finance/bills",
+        "fetched_at": _now_iso(),
+        "page": params["page"],
+        "size": params["size"],
+        "data": data,
+    }
 
 
 async def register_if_enabled() -> None:
     """条件注册入口：未启用（开关关 / token 空）或探测不可达 → 跳过并说明，绝不影响独立启动。"""
     if not settings.ECOMMERCE_ENABLED or not settings.ECOMMERCE_TOKEN.strip():
-        logger.info("电商桥接未启用（ECOMMERCE_ENABLED=false 或 ECOMMERCE_TOKEN 为空），本次启动仅注册内置工具")
+        logger.info(
+            "电商桥接未启用（ECOMMERCE_ENABLED=false 或 ECOMMERCE_TOKEN 为空），本次启动仅注册内置工具"
+        )
         return
     if not await _probe():
-        logger.warning("电商服务不可达（%s），跳过注册 ecommerce.* 桥接工具；office-agent 独立运行不受影响（可选插件红线）", settings.ECOMMERCE_API_BASE)
+        logger.warning(
+            "电商服务不可达（%s），跳过注册 ecommerce.* 桥接工具；office-agent 独立运行不受影响（可选插件红线）",
+            settings.ECOMMERCE_API_BASE,
+        )
         return
-    registry.register(ToolSpec(
-        name="ecommerce.screen.summary",
-        description="读取电商客服系统数据大屏汇总（HTTP 桥接，只读，响应带 source/fetched_at 溯源）",
-        scope=SCOPE_READ,
-        needs_approval=False,
-        schema={"type": "object", "properties": {}},
-        handler=_screen_summary,
-    ))
-    registry.register(ToolSpec(
-        name="ecommerce.finance.bills",
-        description="读取电商客服系统账单分页列表（HTTP 桥接，只读，默认 page=1&size=20，响应带 source/fetched_at 溯源）",
-        scope=SCOPE_READ,
-        needs_approval=False,
-        schema={
-            "type": "object",
-            "properties": {
-                "page": {"type": "integer", "default": 1, "description": "页码"},
-                "size": {"type": "integer", "default": 20, "description": "每页条数"},
+    registry.register(
+        ToolSpec(
+            name="ecommerce.screen.summary",
+            description="读取电商客服系统数据大屏汇总（HTTP 桥接，只读，响应带 source/fetched_at 溯源）",
+            scope=SCOPE_READ,
+            needs_approval=False,
+            schema={"type": "object", "properties": {}},
+            handler=_screen_summary,
+        )
+    )
+    registry.register(
+        ToolSpec(
+            name="ecommerce.finance.bills",
+            description="读取电商客服系统账单分页列表（HTTP 桥接，只读，默认 page=1&size=20，响应带 source/fetched_at 溯源）",
+            scope=SCOPE_READ,
+            needs_approval=False,
+            schema={
+                "type": "object",
+                "properties": {
+                    "page": {"type": "integer", "default": 1, "description": "页码"},
+                    "size": {"type": "integer", "default": 20, "description": "每页条数"},
+                },
             },
-        },
-        handler=_finance_bills,
-    ))
-    logger.info("电商桥接工具注册完成：ecommerce.screen.summary / ecommerce.finance.bills → %s", settings.ECOMMERCE_API_BASE)
+            handler=_finance_bills,
+        )
+    )
+    logger.info(
+        "电商桥接工具注册完成：ecommerce.screen.summary / ecommerce.finance.bills → %s",
+        settings.ECOMMERCE_API_BASE,
+    )

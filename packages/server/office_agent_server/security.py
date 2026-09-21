@@ -1,7 +1,8 @@
 """密码与 Token（PBKDF2 + JWT）
 
 链路：登录验密 → issue_token → rbac.get_current_user 解码验签。
-无三方密码库依赖，哈希走标准库 hashlib；JWT 走 PyJWT；代价参数全进 Settings。
+无三方密码库依赖，哈希走标准库 hashlib；JWT 走 python-jose（与 office_agent
+单包、requirements.txt 同源，不引 PyJWT 双依赖）；代价参数全进 Settings。
 """
 
 from __future__ import annotations
@@ -12,7 +13,8 @@ import os
 import time
 import uuid
 
-import jwt
+from jose import JWTError, jwt
+from jose.exceptions import ExpiredSignatureError
 
 from office_agent_core.settings import settings
 
@@ -70,7 +72,7 @@ def decode_token(token: str) -> dict[str, object]:
             settings.JWT_SECRET.get_secret_value(),
             algorithms=[settings.JWT_ALGORITHM],
         )
-    except jwt.ExpiredSignatureError as exc:
+    except ExpiredSignatureError as exc:
         raise ValueError("登录已过期，请重新登录") from exc
-    except jwt.InvalidTokenError as exc:
+    except JWTError as exc:
         raise ValueError("Token 非法") from exc

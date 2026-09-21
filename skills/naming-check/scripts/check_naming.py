@@ -176,9 +176,7 @@ def scan_frontend(root: Path) -> list[tuple[str, str, int, str]]:
                 continue
             stem = f.name[:-3]
             if not re.fullmatch(r"use[A-Z][A-Za-z0-9]*", stem):
-                violations.append(
-                    (f.relative_to(root).as_posix(), RULE_FE_COMPOSABLE, 1, f.name)
-                )
+                violations.append((f.relative_to(root).as_posix(), RULE_FE_COMPOSABLE, 1, f.name))
 
     stores = src / "stores"
     if stores.is_dir():
@@ -187,16 +185,12 @@ def scan_frontend(root: Path) -> list[tuple[str, str, int, str]]:
                 continue
             stem = f.name[:-3]
             if not CAMEL_RE.fullmatch(stem):
-                violations.append(
-                    (f.relative_to(root).as_posix(), RULE_FE_STORE, 1, f.name)
-                )
+                violations.append((f.relative_to(root).as_posix(), RULE_FE_STORE, 1, f.name))
 
     for vue in sorted(src.rglob("*.vue")):
         stem = vue.stem
         if not PASCAL_RE.fullmatch(stem):
-            violations.append(
-                (vue.relative_to(root).as_posix(), RULE_FE_VUE_NAME, 1, vue.name)
-            )
+            violations.append((vue.relative_to(root).as_posix(), RULE_FE_VUE_NAME, 1, vue.name))
 
     for fe_file in sorted(src.rglob("*.ts")) + sorted(src.rglob("*.vue")):
         if "/node_modules/" in str(fe_file):
@@ -240,9 +234,7 @@ def apply_ratchet(
 
 
 def main() -> int:
-    start = (
-        Path(sys.argv[1]).resolve() if len(sys.argv) > 1 else Path(__file__).resolve()
-    )
+    start = Path(sys.argv[1]).resolve() if len(sys.argv) > 1 else Path(__file__).resolve()
     root = find_repo_root(start)
     if root is None:
         print("FAIL: 未找到仓库根（需含 office_agent 或 packages/core）")
@@ -276,9 +268,7 @@ def main() -> int:
         )
         return 1
     print("PASS: 命名检查通过")
-    print(
-        f"RESULT: {len(all_violations)} signals, 0 NEW violations, {baselined} baselined"
-    )
+    print(f"RESULT: {len(all_violations)} signals, 0 NEW violations, {baselined} baselined")
     return 0
 
 

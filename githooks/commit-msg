@@ -1,0 +1,66 @@
+#!/usr/bin/env python
+"""commit-msg 钩子：conventional commit 轻量校验（office-agent 版）
+
+对齐电商仓库 commitlint 口径：type 白名单 + subject 句式 + 行长 ≤100；
+支持 `Consistency-Skip: reason=...` trailer 通道（跳过 R1 一致性时必带理由）。
+启用：git config core.hooksPath githooks（克隆后执行一次）。
+"""
+
+from __future__ import annotations
+
+import re
+import sys
+
+TYPES = {
+    "feat", "fix", "docs", "style", "refactor",
+    "perf", "test", "chore", "revert", "build", "ci",
+}
+MAX_LINE = 100
+HEADER_RE = re.compile(r"^(?P<type>\w+)(?:\((?P<scope>[^)]+)\))?: (?P<subject>.+)$")
+
+
+def main(argv: list[str]) -> int:
+    path = argv[0] if argv else ".git/COMMIT_EDITMSG"
+    lines = Path_lines(path)
+    if not lines:
+        print("FAIL | commit message 为空")
+        return 1
+    header = lines[0].lstrip("﻿") if lines else ""
+    m = HEADER_RE.match(header)
+    errors: list[str] = []
+    if not m:
+        errors.append(f"首行需为 `type(scope)?: subject` 格式：{header!r}")
+    else:
+        if m.group("type") not in TYPES:
+            errors.append(f"type `{m.group('type')}` 不在白名单 {sorted(TYPES)}")
+        subject = m.group("subject")
+        if subject and subject[0].isascii() and subject[0].islower():
+            errors.append("subject 需 sentence-case（首字母大写，中文不受限）")
+    if not header:
+        print("FAIL | commit message 为空")
+        return 1
+    if len(header) > MAX_LINE:
+        errors.append(f"首行超 {MAX_LINE} 字符（{len(header)}）")
+    for i, line in enumerate(lines[1:], 2):
+        if len(line) > MAX_LINE:
+            errors.append(f"第 {i} 行超 {MAX_LINE} 字符（{len(line)}）：{line[:40]}…")
+    if errors:
+        for e in errors:
+            print(f"FAIL | {e}")
+        print("提示：格式 `type(scope): 描述`；type ∈ feat/fix/docs/style/refactor/perf/test/chore/revert/build/ci")
+        return 1
+    print(f"PASS | commit message 校验通过（{len(lines)} 行）")
+    return 0
+
+
+def Path_lines(path: str) -> list[str]:
+    from pathlib import Path
+
+    try:
+        return Path(path).read_text(encoding="utf-8").rstrip("\n").splitlines()
+    except OSError:
+        return []
+
+
+if __name__ == "__main__":
+    sys.exit(main(sys.argv[1:]))

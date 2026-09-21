@@ -21,7 +21,9 @@ from office_agent.db import Approval, record_audit, record_task, utcnow
 ERR_SAME_PERSON = 1001
 
 
-async def create(session: AsyncSession, *, tool_name: str, args: dict, requested_by: str, reason: str = "") -> Approval:
+async def create(
+    session: AsyncSession, *, tool_name: str, args: dict, requested_by: str, reason: str = ""
+) -> Approval:
     """建审批单（pending）：只建单，不执行。"""
     approval = Approval(
         tool_name=tool_name,
@@ -33,7 +35,12 @@ async def create(session: AsyncSession, *, tool_name: str, args: dict, requested
     )
     session.add(approval)
     await session.commit()
-    await record_audit(session, actor=requested_by, action="approval.create", detail={"approval_id": approval.id, "tool_name": tool_name, "args": args, "reason": reason})
+    await record_audit(
+        session,
+        actor=requested_by,
+        action="approval.create",
+        detail={"approval_id": approval.id, "tool_name": tool_name, "args": args, "reason": reason},
+    )
     return approval
 
 
@@ -43,7 +50,9 @@ async def list_all(session: AsyncSession, limit: int = 100) -> list[Approval]:
     return list(rows.scalars())
 
 
-async def decide(session: AsyncSession, *, approval_id: int, approver: str, approve: bool, comment: str = "") -> dict:
+async def decide(
+    session: AsyncSession, *, approval_id: int, approver: str, approve: bool, comment: str = ""
+) -> dict:
     """审批决定：approve=True 执行原工具并落 tasks 结果；approve=False 置 rejected。
 
     红线：审批人 ≠ 提交人（同人 → ToolError 1001）；已处理单不能重复审批（409）。
@@ -52,9 +61,13 @@ async def decide(session: AsyncSession, *, approval_id: int, approver: str, appr
     if approval is None:
         raise ToolError(404, f"审批单不存在：#{approval_id}")
     if approval.status != "pending":
-        raise ToolError(409, f"审批单 #{approval_id} 已处理（当前状态 {approval.status}），不能重复审批")
+        raise ToolError(
+            409, f"审批单 #{approval_id} 已处理（当前状态 {approval.status}），不能重复审批"
+        )
     if approver == approval.requested_by:
-        raise ToolError(ERR_SAME_PERSON, "审批人不能与提交人相同：请由其他用户完成审批（防自审自批红线）")
+        raise ToolError(
+            ERR_SAME_PERSON, "审批人不能与提交人相同：请由其他用户完成审批（防自审自批红线）"
+        )
 
     approval.decided_by = approver
     approval.comment = comment
@@ -63,7 +76,17 @@ async def decide(session: AsyncSession, *, approval_id: int, approver: str, appr
     if not approve:
         approval.status = "rejected"
         await session.commit()
-        await record_audit(session, actor=approver, action="approval.decide", detail={"approval_id": approval_id, "tool_name": approval.tool_name, "outcome": "rejected", "comment": comment})
+        await record_audit(
+            session,
+            actor=approver,
+            action="approval.decide",
+            detail={
+                "approval_id": approval_id,
+                "tool_name": approval.tool_name,
+                "outcome": "rejected",
+                "comment": comment,
+            },
+        )
         return {"approval_id": approval_id, "status": "rejected", "comment": comment}
 
     spec = registry.get(approval.tool_name)  # 工具已被移除 → 404，单据保持 pending
@@ -77,9 +100,44 @@ async def decide(session: AsyncSession, *, approval_id: int, approver: str, appr
     try:
         result = await executor.execute_tool(spec, args, trace_id)
     except ToolError as exc:
-        await record_task(session, type_=approval.tool_name, status="failed", created_by=approval.requested_by, error=f"审批通过后执行失败：{exc.message}")
-        await record_audit(session, actor=approver, action="approval.decide", detail={"approval_id": approval_id, "outcome": "approved_execute_failed", "code": exc.code, "message": exc.message}, trace_id=trace_id)
+        await record_task(
+            session,
+            type_=approval.tool_name,
+            status="failed",
+            created_by=approval.requested_by,
+            error=f"审批通过后执行失败：{exc.message}",
+        )
+        await record_audit(
+            session,
+            actor=approver,
+            action="approval.decide",
+            detail={
+                "approval_id": approval_id,
+                "outcome": "approved_execute_failed",
+                "code": exc.code,
+                "message": exc.message,
+            },
+            trace_id=trace_id,
+        )
         raise
-    task = await record_task(session, type_=approval.tool_name, status="succeeded", created_by=approval.requested_by, result=result)
-    await record_audit(session, actor=approver, action="approval.decide", detail={"approval_id": approval_id, "outcome": "approved_executed", "task_id": task.id}, trace_id=trace_id)
-    return {"approval_id": approval_id, "status": "approved", "task_id": task.id, "trace_id": trace_id, "result": result}
+    task = await record_task(
+        session,
+        type_=approval.tool_name,
+        status="succeeded",
+        created_by=approval.requested_by,
+        result=result,
+    )
+    await record_audit(
+        session,
+        actor=approver,
+        action="approval.decide",
+        detail={"approval_id": approval_id, "outcome": "approved_executed", "task_id": task.id},
+        trace_id=trace_id,
+    )
+    return {
+        "approval_id": approval_id,
+        "status": "approved",
+        "task_id": task.id,
+        "trace_id": trace_id,
+        "result": result,
+    }

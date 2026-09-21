@@ -196,9 +196,7 @@ class RemoteToolProvider:
         }
         return data, provenance
 
-    def _trace(
-        self, binding: RemoteBinding, started: float, *, ok: bool, trace_id: str
-    ) -> None:
+    def _trace(self, binding: RemoteBinding, started: float, *, ok: bool, trace_id: str) -> None:
         """联动链路可观测（成功/失败都记，便于算上游可用率）。"""
         record(
             "agent.linkage",

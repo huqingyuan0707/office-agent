@@ -32,16 +32,23 @@ async def execute_tool(spec: ToolSpec, args: dict, trace_id: str = "") -> dict:
     超时硬拦为 504，绝不挂死请求。
     """
     try:
-        return await asyncio.wait_for(spec.handler(dict(args)), timeout=float(settings.TOOL_TIMEOUT_SECONDS))
+        return await asyncio.wait_for(
+            spec.handler(dict(args)), timeout=float(settings.TOOL_TIMEOUT_SECONDS)
+        )
     except asyncio.TimeoutError:
-        raise ToolError(504, f"工具 {spec.name} 执行超时（上限 {settings.TOOL_TIMEOUT_SECONDS} 秒），可稍后重试或调大 TOOL_TIMEOUT_SECONDS")
+        raise ToolError(
+            504,
+            f"工具 {spec.name} 执行超时（上限 {settings.TOOL_TIMEOUT_SECONDS} 秒），可稍后重试或调大 TOOL_TIMEOUT_SECONDS",
+        ) from None
     except ToolError:
         raise
-    except Exception as exc:  # noqa: BLE001 —— 工具侧任意异常都不得裸抛到路由层
-        raise ToolError(500, f"工具 {spec.name} 执行失败：{exc}")
+    except Exception as exc:
+        raise ToolError(500, f"工具 {spec.name} 执行失败：{exc}") from exc
 
 
-async def invoke(session: AsyncSession, *, actor: str, scopes: list[str], name: str, args: dict) -> dict:
+async def invoke(
+    session: AsyncSession, *, actor: str, scopes: list[str], name: str, args: dict
+) -> dict:
     """执行入口：Scope 硬拦 + 审批分流 + 超时执行 + 全程审计。
 
     返回 dict：
@@ -50,7 +57,17 @@ async def invoke(session: AsyncSession, *, actor: str, scopes: list[str], name: 
     """
     spec = registry.get(name)
     if spec.scope not in scopes:
-        await record_audit(session, actor=actor, action="tool.invoke", detail={"tool": name, "args": args, "outcome": "scope_denied", "need_scope": spec.scope})
+        await record_audit(
+            session,
+            actor=actor,
+            action="tool.invoke",
+            detail={
+                "tool": name,
+                "args": args,
+                "outcome": "scope_denied",
+                "need_scope": spec.scope,
+            },
+        )
         raise ToolError(403, f"无权限调用工具 {name}：当前令牌缺少授权范围 {spec.scope}")
 
     if spec.needs_approval:
@@ -58,7 +75,17 @@ async def invoke(session: AsyncSession, *, actor: str, scopes: list[str], name: 
         from office_agent import approvals
 
         approval = await approvals.create(session, tool_name=name, args=args, requested_by=actor)
-        await record_audit(session, actor=actor, action="tool.invoke", detail={"tool": name, "args": args, "outcome": "approval_pending", "approval_id": approval.id})
+        await record_audit(
+            session,
+            actor=actor,
+            action="tool.invoke",
+            detail={
+                "tool": name,
+                "args": args,
+                "outcome": "approval_pending",
+                "approval_id": approval.id,
+            },
+        )
         return {
             "status": "pending",
             "approval_id": approval.id,
@@ -66,13 +93,31 @@ async def invoke(session: AsyncSession, *, actor: str, scopes: list[str], name: 
         }
 
     trace_id = new_trace_id()
-    await record_audit(session, actor=actor, action="tool.invoke.start", detail={"tool": name, "args": args}, trace_id=trace_id)
+    await record_audit(
+        session,
+        actor=actor,
+        action="tool.invoke.start",
+        detail={"tool": name, "args": args},
+        trace_id=trace_id,
+    )
     try:
         result = await execute_tool(spec, args, trace_id)
     except ToolError as exc:
         await record_task(session, type_=name, status="failed", created_by=actor, error=exc.message)
-        await record_audit(session, actor=actor, action="tool.invoke.end", detail={"tool": name, "outcome": "failed", "code": exc.code, "message": exc.message}, trace_id=trace_id)
+        await record_audit(
+            session,
+            actor=actor,
+            action="tool.invoke.end",
+            detail={"tool": name, "outcome": "failed", "code": exc.code, "message": exc.message},
+            trace_id=trace_id,
+        )
         raise
     await record_task(session, type_=name, status="succeeded", created_by=actor, result=result)
-    await record_audit(session, actor=actor, action="tool.invoke.end", detail={"tool": name, "outcome": "succeeded"}, trace_id=trace_id)
+    await record_audit(
+        session,
+        actor=actor,
+        action="tool.invoke.end",
+        detail={"tool": name, "outcome": "succeeded"},
+        trace_id=trace_id,
+    )
     return {"status": "succeeded", "trace_id": trace_id, "data": result}

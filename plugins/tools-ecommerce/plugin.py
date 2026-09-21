@@ -74,7 +74,12 @@ def specs() -> tuple[ToolSpec, ...]:
             params={
                 "type": "object",
                 "properties": {
-                    "sku_id": {"type": "string", "title": "SKU ID", "minLength": 1, "maxLength": 40},
+                    "sku_id": {
+                        "type": "string",
+                        "title": "SKU ID",
+                        "minLength": 1,
+                        "maxLength": 40,
+                    },
                     "size": {"type": "string", "title": "尺码", "maxLength": 20},
                 },
                 "required": ["sku_id"],
@@ -100,7 +105,12 @@ def specs() -> tuple[ToolSpec, ...]:
             params={
                 "type": "object",
                 "properties": {
-                    "query": {"type": "string", "title": "检索问题", "minLength": 1, "maxLength": 200},
+                    "query": {
+                        "type": "string",
+                        "title": "检索问题",
+                        "minLength": 1,
+                        "maxLength": 200,
+                    },
                     "top_k": {"type": "integer", "title": "召回条数", "minimum": 1, "maximum": 20},
                 },
                 "required": ["query"],
@@ -113,9 +123,7 @@ def specs() -> tuple[ToolSpec, ...]:
 
 def _config_hint() -> str:
     """未配置时的可照做提示（模板里的值都是占位，不含任何真实凭据）。"""
-    template = {
-        PROVIDER_ID: {"base_url": "http://<上游地址:端口>", "token": "<服务账号令牌>"}
-    }
+    template = {PROVIDER_ID: {"base_url": "http://<上游地址:端口>", "token": "<服务账号令牌>"}}
     return json.dumps(template, ensure_ascii=False)
 
 

@@ -1,0 +1,9 @@
+# office-agent 提交前钩子（ruff 版本钉死，漂移即「本地绿、CI 红」）
+# 克隆后启用：pip install pre-commit && pre-commit install
+repos:
+  - repo: https://github.com/astral-sh/ruff-pre-commit
+    rev: v0.16.7
+    hooks:
+      - id: ruff-check
+        args: [--fix]
+      - id: ruff-format

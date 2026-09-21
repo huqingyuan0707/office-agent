@@ -11,7 +11,7 @@
 """
 
 import copy
-from datetime import datetime
+from datetime import datetime, timezone
 
 from office_agent import registry
 from office_agent.contracts import SCOPE_READ, ToolError, ToolSpec
@@ -39,7 +39,8 @@ _INTENT_HINT = " / ".join(_DEMO_DATASETS)
 
 
 def _now_text() -> str:
-    return datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+    # 显式 UTC（DTZ005 口径）：溯源时间戳必须可跨时区比对，本地时区只在展示层转换
+    return datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M:%S UTC")
 
 
 async def _report_generate(args: dict) -> dict:
@@ -90,30 +91,44 @@ async def _bi_query(args: dict) -> dict:
 
 def register_all() -> None:
     """把内置办公工具注册进注册中心（启动期调用；重名会抛 ToolError 直接暴露问题）。"""
-    registry.register(ToolSpec(
-        name="office.report.generate",
-        description="生成结构化中文日报：输入标题与指标字典，纯模板直出（不调大模型），每个数字带 input.metrics 溯源标注，数值一致率 100%",
-        scope=SCOPE_READ,
-        needs_approval=False,
-        schema={
-            "type": "object",
-            "properties": {
-                "title": {"type": "string", "description": "日报标题"},
-                "metrics": {"type": "object", "description": '指标字典：{"指标名": 数值}', "additionalProperties": {"type": "number"}},
+    registry.register(
+        ToolSpec(
+            name="office.report.generate",
+            description="生成结构化中文日报：输入标题与指标字典，纯模板直出（不调大模型），每个数字带 input.metrics 溯源标注，数值一致率 100%",
+            scope=SCOPE_READ,
+            needs_approval=False,
+            schema={
+                "type": "object",
+                "properties": {
+                    "title": {"type": "string", "description": "日报标题"},
+                    "metrics": {
+                        "type": "object",
+                        "description": '指标字典：{"指标名": 数值}',
+                        "additionalProperties": {"type": "number"},
+                    },
+                },
+                "required": ["title", "metrics"],
             },
-            "required": ["title", "metrics"],
-        },
-        handler=_report_generate,
-    ))
-    registry.register(ToolSpec(
-        name="office.bi.query",
-        description="办公 BI 查询（演示）：按白名单意图返回内置演示数据集，响应显式标注 source=builtin-demo",
-        scope=SCOPE_READ,
-        needs_approval=False,
-        schema={
-            "type": "object",
-            "properties": {"intent": {"type": "string", "enum": ["demo_metrics", "sales_trend"], "description": "查询意图（白名单枚举）"}},
-            "required": ["intent"],
-        },
-        handler=_bi_query,
-    ))
+            handler=_report_generate,
+        )
+    )
+    registry.register(
+        ToolSpec(
+            name="office.bi.query",
+            description="办公 BI 查询（演示）：按白名单意图返回内置演示数据集，响应显式标注 source=builtin-demo",
+            scope=SCOPE_READ,
+            needs_approval=False,
+            schema={
+                "type": "object",
+                "properties": {
+                    "intent": {
+                        "type": "string",
+                        "enum": ["demo_metrics", "sales_trend"],
+                        "description": "查询意图（白名单枚举）",
+                    }
+                },
+                "required": ["intent"],
+            },
+            handler=_bi_query,
+        )
+    )

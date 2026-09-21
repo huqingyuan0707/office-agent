@@ -199,16 +199,12 @@ async def _invoke_once(
     if spec.remote is not None:
         provider = linkage.provider_of(spec.remote.provider_id)
         return await asyncio.wait_for(
-            provider.invoke(
-                spec.remote, args, trace_id=trace_id, on_behalf_of=ctx.username
-            ),
+            provider.invoke(spec.remote, args, trace_id=trace_id, on_behalf_of=ctx.username),
             timeout=timeout,
         )
     handler = spec.handler
     if handler is None:  # registry.register 已拦，此处防御性兜底
-        raise BusinessError(
-            ErrorCode.TOOL_CALL_FAILED, f"工具 {spec.name} 没有可执行的实现", 500
-        )
+        raise BusinessError(ErrorCode.TOOL_CALL_FAILED, f"工具 {spec.name} 没有可执行的实现", 500)
     return await asyncio.wait_for(handler(ctx, args), timeout=timeout), None
 
 
