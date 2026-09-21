@@ -81,7 +81,7 @@ name: demo-assistant
 description: 演示智能体：回声 → 大写 两步链路
 system_prompt: |
   你是演示助手，只能使用白名单内的工具。
-tools: [demo.echo, demo.shout, demo.boom]
+tools: [demo.echo, demo.shout]
 max_steps: 4
 rules:
   - match: ["演示", "回声"]
