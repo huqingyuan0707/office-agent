@@ -13,3 +13,5 @@ __pycache__/
 # 前端
 node_modules/
 dist/
+.trae/
+packages/server/data/
