@@ -68,6 +68,10 @@ def _step_view(row: RunStep) -> dict[str, Any]:
 def _run_view(task: Task, steps: list[RunStep]) -> dict[str, Any]:
     """运行详情出参：状态 + 检查点摘要 + 步骤时间线。"""
     checkpoint = parse_checkpoint(task.checkpoint)
+    try:
+        next_step = int(checkpoint.get("next_step") or 0)
+    except (TypeError, ValueError):  # 脏 checkpoint 不拖垮读取（与 runner 口径一致）
+        next_step = 0
     return {
         "run_id": task.id,
         "agent": str(checkpoint.get("agent") or ""),
@@ -77,7 +81,7 @@ def _run_view(task: Task, steps: list[RunStep]) -> dict[str, Any]:
         "status_label": state_label(task.status),
         "progress": float(task.progress or 0),
         "error": str(checkpoint.get("error") or ""),
-        "next_step": int(checkpoint.get("next_step") or 0),
+        "next_step": next_step,
         "created_at": task.created_at.isoformat(sep=" ", timespec="seconds"),
         "steps": [_step_view(row) for row in steps],
     }

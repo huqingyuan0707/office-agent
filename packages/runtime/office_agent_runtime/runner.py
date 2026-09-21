@@ -10,6 +10,8 @@
   落在 RunStep 时间线与检查点里，由 GET /runs/{id} 轮询展示（前端轮询友好）。
 - max_steps 硬顶：计划步数超出即 FAILED（1005），已执行步骤留痕，checkpoint 记录
   断点，续跑可从断点继续（防 LLM 规划器在 R1 出现循环烧 token 的地基）。
+- 计划持久化：首次规划结果写进 checkpoint，续跑回放原计划（agent.yaml 中途变更
+  也不会让步号与历史结果错位）；白名单仍按当前 spec 在执行前硬拦。
 - 送审闭环口径：内核 executor.call 并不因 requires_approval 挂起——policy 只在判定
   结果里给出 approval_required 标记，真正落审批单由工具的本地实现负责（见 server
   审批模块口径「生成审批单由需审批的工具实现负责」）。因此 R0 的测试只覆盖直接执行
@@ -35,7 +37,7 @@ from office_agent_core.contracts import AgentState, ToolContext, ensure_transiti
 from office_agent_core.errors import BusinessError, ErrorCode
 from office_agent_runtime.models import RunStep
 from office_agent_runtime.planner.rule import RulePlanner
-from office_agent_runtime.spec import AgentSpec
+from office_agent_runtime.spec import AgentSpec, PlannerStep
 from office_agent_server.models import Task
 from office_agent_server.rbac import CurrentUser
 
@@ -115,6 +117,30 @@ async def start_run(
     db.add(task)
     await db.flush()  # 先落行拿 id（后续 RunStep.run_id / 异步轮询都要用）
     return await execute_run(db, task=task, spec=spec, goal=goal, user=user, trace_id=trace_id)
+
+
+def _plan_from_checkpoint(checkpoint: dict[str, Any]) -> list[PlannerStep] | None:
+    """检查点里的持久化计划 → PlannerStep 列表；无计划返回 None（首次执行走规划）。
+
+    续跑回放「原计划」而非按当前 agent.yaml 重规划：agent.yaml 在失败与续跑之间被
+    修改时，重规划的步号与 checkpoint 回放的历史结果会错位，模板取值绑错工具；
+    工具级白名单仍按当前 spec 在执行前硬拦（config 收窄不会被持久化计划绕过）。
+    """
+    raw = checkpoint.get("plan")
+    if not isinstance(raw, list) or not raw:  # 空/损坏类型按「无计划」处理，走重新规划
+        return None
+    steps: list[PlannerStep] = []
+    for entry in raw:
+        if (
+            not isinstance(entry, dict)
+            or not isinstance(entry.get("tool"), str)
+            or not isinstance(entry.get("args"), dict)
+        ):
+            raise BusinessError(
+                ErrorCode.PARAM_INVALID, "检查点中的计划数据损坏，无法续跑；请重新发起运行"
+            )
+        steps.append(PlannerStep(tool=entry["tool"], args=entry["args"]))
+    return steps
 
 
 async def execute_run(
@@ -209,7 +235,12 @@ async def execute_run(
 
     try:
         _move(task, AgentState.PLANNING)
-        planned = RulePlanner(spec).plan(goal)
+        # 计划持久化：首次执行时规划并写入 checkpoint，续跑回放原计划（防 agent.yaml
+        # 中途变更导致步号与历史结果错位）；无持久化计划时按当前配置重新规划
+        planned = _plan_from_checkpoint(checkpoint)
+        if planned is None:
+            planned = RulePlanner(spec).plan(goal)
+            checkpoint["plan"] = [{"tool": s.tool, "args": s.args} for s in planned]
         if not planned:
             raise BusinessError(
                 ErrorCode.PARAM_INVALID,
