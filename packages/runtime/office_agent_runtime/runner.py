@@ -36,6 +36,7 @@ from office_agent_core import executor
 from office_agent_core.contracts import AgentState, ToolContext, ensure_transition, state_label
 from office_agent_core.errors import BusinessError, ErrorCode
 from office_agent_runtime.models import RunStep
+from office_agent_runtime.planner.llm import LlmFunctionCallPlanner, LlmPlanError
 from office_agent_runtime.planner.rule import RulePlanner
 from office_agent_runtime.spec import AgentSpec, PlannerStep
 from office_agent_server.models import Task
@@ -119,16 +120,18 @@ async def start_run(
     return await execute_run(db, task=task, spec=spec, goal=goal, user=user, trace_id=trace_id)
 
 
-def _plan_from_checkpoint(checkpoint: dict[str, Any]) -> list[PlannerStep] | None:
-    """检查点里的持久化计划 → PlannerStep 列表；无计划返回 None（首次执行走规划）。
+def _plan_from_checkpoint(checkpoint: dict[str, Any]) -> tuple[list[PlannerStep] | None, str]:
+    """检查点里的持久化计划 → (PlannerStep 列表, planner_source) 元组。
 
-    续跑回放「原计划」而非按当前 agent.yaml 重规划：agent.yaml 在失败与续跑之间被
-    修改时，重规划的步号与 checkpoint 回放的历史结果会错位，模板取值绑错工具；
-    工具级白名单仍按当前 spec 在执行前硬拦（config 收窄不会被持久化计划绕过）。
+    返回 (None, "") 表示无持久化计划；损坏的 plan 给 None 让调用方重规划。
+    续跑回放「原计划 + 原来源」而非按当前 agent.yaml 重规划：agent.yaml 在
+    失败与续跑之间被修改时，重规划的步号与 checkpoint 回放的历史结果会错位；
+    工具级白名单仍按当前 spec 在执行前硬拦。
     """
     raw = checkpoint.get("plan")
-    if not isinstance(raw, list) or not raw:  # 空/损坏类型按「无计划」处理，走重新规划
-        return None
+    src = str(checkpoint.get("planner_source") or "").strip() or "rule"
+    if not isinstance(raw, list) or not raw:
+        return None, ""
     steps: list[PlannerStep] = []
     for entry in raw:
         if (
@@ -140,7 +143,42 @@ def _plan_from_checkpoint(checkpoint: dict[str, Any]) -> list[PlannerStep] | Non
                 ErrorCode.PARAM_INVALID, "检查点中的计划数据损坏，无法续跑；请重新发起运行"
             )
         steps.append(PlannerStep(tool=entry["tool"], args=entry["args"]))
-    return steps
+    return steps, src
+
+
+async def _choose_and_plan(spec: AgentSpec, goal: str) -> tuple[list[PlannerStep], str]:
+    """降级链：LLM 优先 → 失败降 Rule → 无规则报错（不静默编造）。
+
+    返回 (planned_steps, planner_source)；source 是 "llm" 或 "rule"。
+    LLM 出站客户端只在本次规划内使用，finally 里关闭（自建连接不跨调用滞留）。
+    """
+    if spec.llm:
+        planner = LlmFunctionCallPlanner.from_spec(spec)
+        try:
+            steps = await planner.plan(goal)
+        except LlmPlanError as exc:
+            if not spec.rules:
+                raise BusinessError(
+                    ErrorCode.LLM_FAILED,
+                    f"智能体 {spec.name} 指定了 LLM 规划（profile={spec.llm}）"
+                    f"但 LLM 不可用，且未配置 rules 规则规划，无法执行：{exc.msg}",
+                ) from None
+            logger.warning(
+                "LLM planner 规划失败：%s（agent=%s），降级 RulePlanner", exc.msg, spec.name
+            )
+        else:
+            if steps:
+                return steps, "llm"
+            # LLM 返回空（无 tool_calls）：视为不可用，降级规则规划
+            logger.warning("LLM planner 未返回 tool_calls（agent=%s），降级 RulePlanner", spec.name)
+        finally:
+            await planner.aclose()
+    if spec.rules:
+        return RulePlanner(spec).plan(goal), "rule"
+    raise BusinessError(
+        ErrorCode.PARAM_INVALID,
+        f"智能体 {spec.name} 未配置 llm 也未配置 rules，无法规划",
+    )
 
 
 async def execute_run(
@@ -198,6 +236,7 @@ async def execute_run(
                 args=_dumps(args),
                 result_digest=reason,
                 status="failed",
+                planner_source=planner_source,
                 trace_id=trace_id,
             )
         )
@@ -220,6 +259,7 @@ async def execute_run(
                 args=_dumps(args),
                 result_digest=_digest(outcome.get("result")),
                 status="ok",
+                planner_source=planner_source,
                 approval_id=str(outcome.get("approval_id") or ""),
                 trace_id=trace_id or str(outcome.get("trace_id") or ""),
             )
@@ -235,16 +275,18 @@ async def execute_run(
 
     try:
         _move(task, AgentState.PLANNING)
-        # 计划持久化：首次执行时规划并写入 checkpoint，续跑回放原计划（防 agent.yaml
-        # 中途变更导致步号与历史结果错位）；无持久化计划时按当前配置重新规划
-        planned = _plan_from_checkpoint(checkpoint)
+        # 计划持久化：首次执行时规划并写入 checkpoint（含 planner_source），
+        # 续跑回放原计划 + 原来源（防 agent.yaml 中途变更导致步号与历史结果错位）；
+        # 无持久化计划时按当前配置走降级链重规划
+        planned, planner_source = _plan_from_checkpoint(checkpoint)
         if planned is None:
-            planned = RulePlanner(spec).plan(goal)
+            planned, planner_source = await _choose_and_plan(spec, goal)
             checkpoint["plan"] = [{"tool": s.tool, "args": s.args} for s in planned]
+            checkpoint["planner_source"] = planner_source
         if not planned:
             raise BusinessError(
                 ErrorCode.PARAM_INVALID,
-                f"目标未命中智能体 {spec.name} 的任何规划规则，请调整目标表述或补充 agent.yaml 规则",
+                f"目标未命中智能体 {spec.name} 的任何规划规则，且 LLM 规划不可用",
             )
         total = len(planned)
         _move(task, AgentState.ACTING)

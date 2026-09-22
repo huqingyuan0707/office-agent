@@ -57,6 +57,7 @@ def _step_view(row: RunStep) -> dict[str, Any]:
         "step_index": row.step_index,
         "tool": row.tool,
         "status": row.status,
+        "planner_source": row.planner_source,
         "args": _load_json(row.args, {}),
         "result": _load_json(row.result_digest, None),
         "approval_id": row.approval_id,

@@ -33,6 +33,8 @@ class RunStep(Base):
     # 结果摘要：存工具返回 JSON 文本（截断防膨胀；完整结果在 Task.checkpoint 里供续跑取值）
     result_digest: Mapped[str] = mapped_column(Text, default="")
     status: Mapped[str] = mapped_column(String(16), default="running", index=True)
+    #: 规划来源：planner 用 LLM 提议 = "llm"，用规则模板提议 = "rule"（可观测「这步是哪种规划出来的」）
+    planner_source: Mapped[str] = mapped_column(String(8), default="rule", index=True)
     approval_id: Mapped[str] = mapped_column(String(32), default="")
     trace_id: Mapped[str] = mapped_column(String(40), default="")
     created_at: Mapped[datetime] = mapped_column(default=_now)
