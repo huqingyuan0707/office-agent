@@ -37,8 +37,6 @@ ignore = [
 [tool.ruff.lint.per-file-ignores]
 "__init__.py" = ["F401"]
 "office_agent_runtime/api.py" = ["B008"]  # FastAPI 官方写法：Depends 写在参数默认值
-# runner.execute_run 为既有编排函数（复杂度 19），拆分前临时豁免，触碰时优先拆分偿还
-"office_agent_runtime/runner.py" = ["C901"]
 
 [tool.ruff.lint.isort]
 known-first-party = ["office_agent_core", "office_agent_runtime", "office_agent_server"]

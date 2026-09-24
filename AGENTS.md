@@ -58,7 +58,7 @@
 .venv\Scripts\ruff.exe check .
 .venv\Scripts\python.exe -m pytest packages/core packages/server -q
 python skills/naming-check/scripts/check_naming.py   # 命名质量门禁（棘轮：存量只准减不准增）
-python skills/anti-shit-code/scripts/check_arch.py   # 架构健康门禁（分层/体量，12 处 baseline 债务）
+python skills/anti-shit-code/scripts/check_arch.py   # 架构健康门禁（分层/体量，10 处 baseline 债务）
 # 迁移（持久库 schema 演进唯一入口；模型改列必须 autogenerate 迁移，create_all 不做 ALTER）
 .venv\Scripts\alembic.exe upgrade head               # 应用迁移（新库直接建全）
 .venv\Scripts\alembic.exe check                      # 漂移自检（CI 用：模型与库不一致即 FAILED）
@@ -74,5 +74,6 @@ cd apps/web && npm run build
 - [x] M1 审批闭环：`REVIEWER_USERNAME/PASSWORD` 复核员双账号 + `office.memo.submit` 需审批写工具（office:write）+ `tests/smoke_approval.py` HTTP 级实测——invoke 落单 / 同人 1001 红线 / 复核员批准执行 / 任务留痕 / 驳回流，8/8 passed。
 - [x] 办公文档工具包 `office_agent/tools_docs.py`：office.docx/xlsx.read（office:read 免审批，带 source+extracted_at 溯源）+ office.docx/pptx.write（office:write 需审批，审批通过才写盘）——依赖缺失自动降级不注册，读写锁 DOCS_DIR 防路径穿越；`tests/smoke_docs.py` HTTP 实测 8/8（含穿越拒绝与驳回流）。
 - [x] alembic 引入：仓库根 `alembic.ini + alembic/`（async 引擎 env.py，URL 唯一出处 Settings.DATABASE_URL；基线 `init schema` 全表全列）；dev 库已 stamp，`alembic check` 零漂移。模型改列一律 autogenerate 迁移，禁止再手改库。
-- [ ] **已知问题**：`runner.execute_run` 复杂度 19 仍豁免（2026-09-24 复测 checkpoint 拆分后未降到 ≤12，触碰时优先拆分偿还）；测试基线 core 14 / server 15 / runtime 25 = 54 passed（tools-office 无独立测试，行为由 runtime 冒烟覆盖）。
+- [x] `runner.execute_run` C901 豁免偿还（2026-09-24）：循环执行态与私有助手整体迁入 `packages/runtime/office_agent_runtime/runloop.py`（RunLoop 类：prepare_plan / run_step / run / finish），runner.py 只留受理入口与薄装配；execute_run 签名保持（resolve_pending 注入契约）。根 ruff.toml 与 runtime pyproject 两处 C901 per-file-ignore 已删，全文件最高复杂度 7；HTTP 级 E2E 复验通过（日报直出 / 待办挂起→批准→续跑）。
+- [ ] 测试基线 core 14 / server 15 / runtime 25 = 54 passed（tools-office 无独立测试，行为由 runtime 冒烟覆盖）。
 - [x] README 重写：中英双版覆盖 packages 四包 + runtime 编排层 + plugins 示例 + 前端 + alembic + 启动/体验/门禁/里程碑（2026-09-24，替换 M0-M1 旧骨架描述）。

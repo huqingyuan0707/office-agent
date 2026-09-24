@@ -33,8 +33,6 @@ ignore = [
 "packages/server/office_agent_server/api/**" = ["B008"]
 "office_agent/main.py" = ["B008"]
 "office_agent/auth.py" = ["B008"]
-# runner.execute_run 为既有编排函数（复杂度 19），拆分前临时豁免，触碰时优先拆分偿还
-"packages/runtime/office_agent_runtime/runner.py" = ["C901"]
 
 [lint.isort]
 known-first-party = ["office_agent", "office_agent_core", "office_agent_server", "office_agent_runtime", "office_agent_tools_office"]
