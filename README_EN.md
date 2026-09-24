@@ -224,6 +224,14 @@ HTTP-level smoke: `python tests/smoke_v1_2_batch_a.py` (9 assertions, re-runnabl
 | Data visualization reports | `/reports` (Reports page) | pick 1 of 4 datasets → real `office.data.query` (columns taken from the first row, never presumed) + CSS bar chart on the numeric column (no chart lib) + `office.data.analyze` stat cards + `office.data.export` markdown preview & download; failed queries render empty, analyze/export failures stay page-local — never papered over with fake data |
 | Admin operations dashboard | `/admin` (Admin page) + `GET /admin/overview` (admin only) | `services/admin_stats.py` read-only aggregation across four tables (users by status / tasks by status / approvals by status / Top-8 tools by calls / last 5 decided approvals); non-admin gets an honest 403, never downgraded fake data |
 
+## V1.2 Office Features · Batch C (PRD §5.3; multi-scenario chaining / visual orchestration / RPA)
+
+| Feature | Entry | Key guarantees |
+|---|---|---|
+| Workflow orchestration | `/workflows` (editor page) + `/workflows` CRUD and `/run` | definitions in the `workflows` table (migration-chain evolution, 20-step cap, validated both on save and before run); sequential kernel executor calls; approval-gated steps stop with pending_approval, failures stop with completed steps reported verbatim; remote-tool steps ride the same outbound chain (provenance included) — the in-repo RPA shape, no separate engine |
+
+HTTP-level smoke: `python tests/smoke_v1_2_batch_c.py` (7 assertions, self-contained server).
+
 ## Database Migrations
 
 `alembic` is the single entry point for schema evolution: async `env.py`, URL sourced only from `Settings.DATABASE_URL`. Model column changes must ship as `autogenerate` migrations (`create_all` never ALTERs); CI runs `alembic check` for drift.

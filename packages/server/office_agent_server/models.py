@@ -117,3 +117,23 @@ class Approval(Base):
     status: Mapped[str] = mapped_column(String(16), default="pending", index=True)
     created_at: Mapped[datetime] = mapped_column(default=_now)
     decided_at: Mapped[datetime | None] = mapped_column(default=None)
+
+
+class Workflow(Base):
+    """可视化编排的工作流定义（多场景串联的落库位）。
+
+    steps 存 JSON 数组 ``[{tool, args}]``（上限 20 步，保存与执行前双重校验）；
+    执行按序调内核 executor——需审批步骤只落单即停（pending_approval + 后续步骤不跑），
+    远程工具步骤走同一条联动出站（含 provenance 溯源），即 RPA 通路的本仓库形态。
+    """
+
+    __tablename__ = "workflows"
+
+    id: Mapped[str] = mapped_column(String(32), primary_key=True, default=_uid)
+    tenant: Mapped[str] = mapped_column(String(64), nullable=False, index=True)
+    name: Mapped[str] = mapped_column(String(80), nullable=False)
+    description: Mapped[str] = mapped_column(String(200), default="")
+    steps: Mapped[str] = mapped_column(Text, default="[]")
+    created_by: Mapped[str] = mapped_column(String(64), default="")
+    created_at: Mapped[datetime] = mapped_column(default=_now)
+    updated_at: Mapped[datetime] = mapped_column(default=_now, onupdate=_now)
