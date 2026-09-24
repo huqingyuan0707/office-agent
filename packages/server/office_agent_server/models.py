@@ -15,6 +15,29 @@ from sqlalchemy.orm import Mapped, mapped_column
 from office_agent_server.db import Base, _now, _uid
 
 
+class Notification(Base):
+    """站内通知（主动消息推送的落库位：扫描生成 + 已读回执，内容生成后不篡改）。
+
+    去重口径：(tenant, username, kind, ref_id) 唯一——同一事项同一人只提醒一次；
+    ref_id 按语义取值：审批单 id / 任务 id / 简报日期（YYYY-MM-DD）。
+    """
+
+    __tablename__ = "notifications"
+    __table_args__ = (
+        UniqueConstraint("tenant", "username", "kind", "ref_id", name="uq_notify_dedupe"),
+    )
+
+    id: Mapped[str] = mapped_column(String(32), primary_key=True, default=_uid)
+    tenant: Mapped[str] = mapped_column(String(64), nullable=False, index=True)
+    username: Mapped[str] = mapped_column(String(64), nullable=False, index=True)
+    kind: Mapped[str] = mapped_column(String(32), nullable=False, index=True)
+    title: Mapped[str] = mapped_column(String(200), default="")
+    content: Mapped[str] = mapped_column(Text, default="")
+    ref_id: Mapped[str] = mapped_column(String(64), default="", index=True)
+    created_at: Mapped[datetime] = mapped_column(default=_now)
+    read_at: Mapped[datetime | None] = mapped_column(default=None)
+
+
 class User(Base):
     """登录用户（租户内用户名唯一，角色逗号分隔存文本）。
 

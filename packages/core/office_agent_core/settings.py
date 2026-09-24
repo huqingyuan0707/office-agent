@@ -93,6 +93,10 @@ class Settings(BaseSettings):
     DOCS_DIR: str = "data/docs"
     KB_DIR: str = "data/knowledge"
 
+    # ---- 主动消息推送（站内通知扫描阈值）----
+    APPROVAL_STALE_HOURS: float = 24.0
+    NOTIFICATION_MAX_PER_SCAN: int = 50
+
     # ---- 跨系统联动 ----
     # 键 = provider_id；值 = {base_url, path, token, timeout_seconds}。
     # 环境变量示例（JSON）：
