@@ -95,12 +95,14 @@ async def _schedule_view(ctx: ToolContext, args: dict[str, Any]) -> dict[str, An
     _ = ctx
     view_type = str(args.get("view_type") or "weekly").strip()
     start_date = str(args.get("start_date") or "").strip()
+    schedules = copy.deepcopy(_DEMO_SCHEDULES)
     return {
         "view_type": view_type,
         "start_date": start_date,
+        "count": len(schedules),  # 真实计数：供下游日报规则取值，杜绝模板里硬编码数字
         "source": "builtin-demo",
         "fetched_at": _now_text(),
-        "schedules": copy.deepcopy(_DEMO_SCHEDULES),
+        "schedules": schedules,
     }
 
 

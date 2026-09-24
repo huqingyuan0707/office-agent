@@ -1,0 +1,37 @@
+# 日报助手（R3 办公域示例智能体）
+# 对齐：.trae/documents/智能体编排层实现方案.md §R3；装载器 packages/runtime loader.py（扫 plugins/*/agent.yaml）
+#
+# 定制化 = 声明式配置而非代码：prompt / 工具白名单 / 步数上限 / 规划规则全在这里。
+# 工具来源无关：白名单里只是 registry 中的 ToolSpec 名字，办公内置工具与远程工具同一治理口径。
+# llm 留空 = 走规则规划（零 LLM 可演示）；配置 LLM_PROVIDERS 后可改 llm: default 走函数调用规划，
+# LLM 不可用时自动降级回本文件的 rules（降级链见 runner._choose_and_plan）。
+name: daily-report-assistant
+description: 办公日报助手：查日程、出日报、建待办（写动作恒送审，编排层绕不过闸门）
+system_prompt: |
+  你是办公日报助手。回答中的每个数字必须来自工具返回的 JSON 字段，禁止推算与编造；
+  缺数宁可留白，不补数。
+tools:
+  - office.schedule.view
+  - office.report.generate
+  - office.todo.create
+max_steps: 6
+llm: ""
+rules:
+  # 规则一：日报/日程类目标 → 先查日程，再用日程真实计数生成日报（数值来自上一步结果，非硬编码）
+  - match: ["日报", "今天做了什么", "日程", "工作总结"]
+    steps:
+      - tool: office.schedule.view
+        args:
+          view_type: daily
+      - tool: office.report.generate
+        args:
+          title: 工作日报
+          metrics:
+            日程天数: "{steps[0].result.count}"
+  # 规则二：待办类目标 → 恒送审写工具，run 挂起 WAITING_APPROVAL，复核员批准后自动续跑
+  - match: ["待办", "提醒我", "记一下"]
+    steps:
+      - tool: office.todo.create
+        args:
+          title: 跟进日报助手生成的遗留事项
+          priority: medium

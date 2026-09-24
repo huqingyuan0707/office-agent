@@ -80,7 +80,7 @@ def approved_steps(checkpoint: dict[str, Any]) -> list[int]:
 def summarize_run(task: Task, checkpoint: dict[str, Any]) -> dict[str, Any]:
     """run 概要（受理 / 续跑 / 审批裁决统一形状；agent 与 goal 从 checkpoint 取）。"""
     steps_done = sum(1 for entry in step_entries(checkpoint) if entry.get("status") == "ok")
-    return {
+    summary: dict[str, Any] = {
         "run_id": task.id,
         "agent": str(checkpoint.get("agent") or ""),
         "goal": str(checkpoint.get("goal") or ""),
@@ -89,3 +89,12 @@ def summarize_run(task: Task, checkpoint: dict[str, Any]) -> dict[str, Any]:
         "steps_done": steps_done,
         "error": str(checkpoint.get("error") or ""),
     }
+    # 审批挂起透出：前端轮询概要即可拿到 approval_id 引导去审批（不必翻 checkpoint 原文）
+    pending = checkpoint.get("pending_approval")
+    if isinstance(pending, dict):
+        summary["pending_approval"] = {
+            "approval_id": str(pending.get("approval_id") or ""),
+            "step_index": pending.get("step_index"),
+            "tool": str(pending.get("tool") or ""),
+        }
+    return summary

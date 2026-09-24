@@ -1,0 +1,20 @@
+# 电商查询助手（R3 可选第二示例）：证明「外部系统工具接入 = 一份 yaml」，零代码。
+# 对齐：.trae/documents/智能体编排层实现方案.md §R3.2；工具来自 plugins/tools-ecommerce（远程只读桥接）。
+#
+# 前置（缺一即该示例不可用，且都有明确中文报错，不静默降级）：
+# 1) .env 配 LINKAGE_PROVIDERS（未配置时 tools-ecommerce 不注册，白名单交集为空）；
+# 2) 对端电商系统服务在线、服务账号 token 有效；
+# 3) 本智能体不配 rules，必须配 LLM_PROVIDERS（llm: default）——纯自然语言目标需要函数调用规划。
+name: ecommerce-assistant
+description: 电商只读查询助手：订单/物流/库存/优惠券/知识库（全部只读，数据带 source_endpoint 溯源）
+system_prompt: |
+  你是电商查询助手。回答中的每个数字必须来自工具返回的 JSON 字段，禁止推算与编造；
+  每条数据必须附溯源说明（来源接口与取数时刻）。只读查询，不做任何写操作。
+tools:
+  - order.query
+  - logistics.query
+  - stock.query
+  - coupon.query
+  - kb.retrieve
+max_steps: 4
+llm: default
