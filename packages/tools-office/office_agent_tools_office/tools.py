@@ -1,14 +1,17 @@
-"""内置办公工具实现（三个工具 handler + 规格 + 注册入口）。
+"""内置办公工具实现（文案生成 / 日程 / 待办 的 handler + 规格）。
 
 职责：
-- office.report.generate：结构化中文日报，纯模板直出，每个数字带溯源标注；
+- office.report.generate：结构化中文日报/周报（report_type=daily/weekly），纯模板直出，每个数字带溯源标注；
+- office.minutes.generate：会议纪要（议题/决议/行动项模板直出，缺的板块留白不编造）；
 - office.schedule.view：日程视图查询，返回演示数据集，显式标注 source=builtin-demo；
 - office.todo.create：创建待办（写动作），幂等 + scope=office:write + requires_approval=True。
 
-链路：__init__.register_all() → registry.register(spec) 三个 ToolSpec；executor.call 执行 handler。
+链路：__init__.register_all() → registry.register(spec) → executor.call 执行 handler。
 红线：本模块只实现 handler 与 ToolSpec，不触及任何 ORM / FastAPI 对象；
-      所有入参校验由内核 validate_args 完成，handler 内只做业务逻辑。
-对齐：AGENTS.md §3（分层红线：工具实现纯函数）。
+      所有入参校验由内核 validate_args 完成，handler 内只做业务逻辑；
+      内容全部由入参原值直出（数值不可编造，缺数留白）。
+对齐：AGENTS.md §3（分层红线：工具实现纯函数）；
+      智能办公Agent 产品需求文档.md §5.1（V1.0 文案生成：周报/纪要）。
 """
 
 from __future__ import annotations
@@ -47,14 +50,16 @@ def _now_text() -> str:
 
 
 async def _report_generate(ctx: ToolContext, args: dict[str, Any]) -> dict[str, Any]:
-    """office.report.generate：结构化中文日报，纯模板直出，每个数字带溯源标注。
+    """office.report.generate：结构化中文日报/周报，纯模板直出，每个数字带溯源标注。
 
-    数值口径：所有数值由输入原值直出，不调大模型，数值一致率 100%。
+    数值口径：所有数值由输入原值直出，不调大模型，数值一致率 100%；
+    周报（report_type=weekly）追加「本周亮点 / 下周计划」两个板块（入参未给则留白说明）。
     """
     _ = ctx  # 纯本地工具，不依赖执行上下文
     title = str(args.get("title") or "").strip()
     if not title:
-        raise BusinessError(ErrorCode.PARAM_INVALID, "参数 title 不能为空：请传入日报标题")
+        raise BusinessError(ErrorCode.PARAM_INVALID, "参数 title 不能为空：请传入报告标题")
+    report_type = str(args.get("report_type") or "daily").strip()
     metrics = args.get("metrics")
     if not isinstance(metrics, dict) or not metrics:
         raise BusinessError(
@@ -80,13 +85,101 @@ async def _report_generate(ctx: ToolContext, args: dict[str, Any]) -> dict[str, 
     lines += [
         "",
         "## 二、小结",
-        f"本日报共汇总 {count} 项指标{_PROVENANCE}；全部数值由输入原值直出、未经任何模型改写（口径：数值不可编造，缺数宁可留白不补数）。",
+        f"共汇总 {count} 项指标{_PROVENANCE}；全部数值由输入原值直出、未经任何模型改写"
+        "（口径：数值不可编造，缺数宁可留白不补数）。",
     ]
+    if report_type == "weekly":
+        lines.insert(3, "报告类型：周报")
+        highlights = _str_list(args.get("highlights"))
+        next_plan = _str_list(args.get("next_plan"))
+        lines += ["", "## 三、本周亮点"]
+        lines += (
+            [f"- {item}" for item in highlights]
+            if highlights
+            else ["-（本周亮点：未提供，留白不编造）"]
+        )
+        lines += ["", "## 四、下周计划"]
+        lines += (
+            [f"- {item}" for item in next_plan]
+            if next_plan
+            else ["-（下周计划：未提供，留白不编造）"]
+        )
     return {
         "title": title,
+        "report_type": report_type,
         "report": "\n".join(lines),
         "metric_count": count,
         "numeric_consistency": "100%",
+    }
+
+
+def _str_list(value: Any) -> list[str]:
+    """入参转非空字符串列表（周报亮点/计划等板块共用；非列表或空项一律丢弃）。"""
+    if not isinstance(value, list):
+        return []
+    return [str(item).strip() for item in value if str(item).strip()]
+
+
+async def _minutes_generate(ctx: ToolContext, args: dict[str, Any]) -> dict[str, Any]:
+    """office.minutes.generate：会议纪要模板直出（议题/决议/行动项，缺板块留白）。"""
+    _ = ctx
+    title = str(args.get("title") or "").strip()
+    if not title:
+        raise BusinessError(ErrorCode.PARAM_INVALID, "参数 title 不能为空：请传入会议主题")
+    attendees = _str_list(args.get("attendees"))
+    agenda = _str_list(args.get("agenda"))
+    decisions = _str_list(args.get("decisions"))
+    action_items = args.get("action_items")
+    actions: list[dict[str, str]] = []
+    if isinstance(action_items, list):
+        for item in action_items:
+            if not isinstance(item, dict):
+                raise BusinessError(
+                    ErrorCode.PARAM_INVALID,
+                    '参数 action_items 元素必须为对象，形如 {"task": "事项", "owner": "责任人", "due": "期限"}',
+                )
+            task = str(item.get("task") or "").strip()
+            if not task:
+                raise BusinessError(
+                    ErrorCode.PARAM_INVALID, "行动项 task 不能为空（不臆造事项内容）"
+                )
+            actions.append(
+                {
+                    "task": task,
+                    "owner": str(item.get("owner") or "").strip(),
+                    "due": str(item.get("due") or "").strip(),
+                }
+            )
+
+    lines: list[str] = [
+        f"# 会议纪要：{title}",
+        "",
+        f"记录时间：{_now_text()}（模板直出，内容均为入参原值）",
+        "",
+        f"## 一、参会人（{len(attendees)} 人）",
+    ]
+    lines.append("、".join(attendees) if attendees else "（未提供参会人名单，留白不编造）")
+    lines += ["", f"## 二、会议议题（{len(agenda)} 项）"]
+    lines += [f"{i}. {item}" for i, item in enumerate(agenda, 1)] or ["（未提供议题，留白不编造）"]
+    lines += ["", f"## 三、会议决议（{len(decisions)} 条）"]
+    lines += [f"- {item}" for item in decisions] or ["（未提供决议，留白不编造）"]
+    lines += ["", f"## 四、行动项（{len(actions)} 条）"]
+    if actions:
+        lines += [
+            f"- {a['task']}｜责任人：{a['owner'] or '待定'}｜期限：{a['due'] or '待定'}"
+            for a in actions
+        ]
+    else:
+        lines.append("（未提供行动项，留白不编造）")
+    return {
+        "title": title,
+        "minutes": "\n".join(lines),
+        "counts": {
+            "attendee": len(attendees),
+            "agenda": len(agenda),
+            "decision": len(decisions),
+            "action_item": len(actions),
+        },
     }
 
 
@@ -137,25 +230,86 @@ def specs() -> tuple[ToolSpec, ...]:
         ToolSpec(
             name="office.report.generate",
             scope=SCOPE_READ,
-            description="生成结构化中文日报：输入标题与指标字典，纯模板直出（不调大模型），每个数字带 input.metrics 溯源标注，数值一致率 100%",
+            description="生成结构化中文日报/周报：输入标题与指标字典，纯模板直出（不调大模型），每个数字带 input.metrics 溯源标注，数值一致率 100%；周报可附本周亮点与下周计划",
             params={
                 "type": "object",
                 "properties": {
                     "title": {
                         "type": "string",
-                        "description": "日报标题",
+                        "description": "报告标题",
                         "minLength": 1,
                         "maxLength": 100,
+                    },
+                    "report_type": {
+                        "type": "string",
+                        "description": "报告类型（daily 日报 / weekly 周报，缺省日报）",
+                        "enum": ["daily", "weekly"],
                     },
                     "metrics": {
                         "type": "object",
                         "description": '指标字典：{"指标名": 数值}',
                         "additionalProperties": {"type": "number"},
                     },
+                    "highlights": {
+                        "type": "array",
+                        "items": {"type": "string"},
+                        "description": "本周亮点（仅周报使用，缺省留白）",
+                    },
+                    "next_plan": {
+                        "type": "array",
+                        "items": {"type": "string"},
+                        "description": "下周计划（仅周报使用，缺省留白）",
+                    },
                 },
                 "required": ["title", "metrics"],
             },
             handler=_report_generate,
+        ),
+        ToolSpec(
+            name="office.minutes.generate",
+            scope=SCOPE_READ,
+            description="生成会议纪要：参会人/议题/决议/行动项模板直出（不调大模型），未提供的板块留白不编造；行动项含责任人与期限",
+            params={
+                "type": "object",
+                "properties": {
+                    "title": {
+                        "type": "string",
+                        "description": "会议主题",
+                        "minLength": 1,
+                        "maxLength": 100,
+                    },
+                    "attendees": {
+                        "type": "array",
+                        "items": {"type": "string"},
+                        "description": "参会人名单",
+                    },
+                    "agenda": {
+                        "type": "array",
+                        "items": {"type": "string"},
+                        "description": "会议议题列表",
+                    },
+                    "decisions": {
+                        "type": "array",
+                        "items": {"type": "string"},
+                        "description": "会议决议列表",
+                    },
+                    "action_items": {
+                        "type": "array",
+                        "description": '行动项数组，元素形如 {"task": "事项", "owner": "责任人", "due": "期限"}',
+                        "items": {
+                            "type": "object",
+                            "properties": {
+                                "task": {"type": "string"},
+                                "owner": {"type": "string"},
+                                "due": {"type": "string"},
+                            },
+                            "required": ["task"],
+                        },
+                    },
+                },
+                "required": ["title"],
+            },
+            handler=_minutes_generate,
         ),
         ToolSpec(
             name="office.schedule.view",

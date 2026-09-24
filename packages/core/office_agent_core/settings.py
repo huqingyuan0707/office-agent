@@ -89,6 +89,10 @@ class Settings(BaseSettings):
     OBSERVABILITY_ENABLED: bool = True
     OBSERVABILITY_DIR: str = "data/observability"
 
+    # ---- 本地办公工作目录（文档对比 / 自定义模板 / 图片OCR / 知识库文件）----
+    DOCS_DIR: str = "data/docs"
+    KB_DIR: str = "data/knowledge"
+
     # ---- 跨系统联动 ----
     # 键 = provider_id；值 = {base_url, path, token, timeout_seconds}。
     # 环境变量示例（JSON）：
