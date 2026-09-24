@@ -56,6 +56,8 @@ export interface ApprovalItem {
   id: string
   action: string
   target: string
+  // 申请内容（送审时的工具入参）：复核员据此判断批什么，前端只展示不加工
+  args?: unknown
   status: string
   status_label: string
   applicant: string
