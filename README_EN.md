@@ -47,6 +47,7 @@ office-agent/
 ├── plugins/
 │   ├── tools-ecommerce/          read-only remote bridge tools (order/logistics/stock/coupon/kb)
 │   ├── daily-report-assistant/agent.yaml   office demo agent (rule planner + approval-suspend demo)
+│   ├── office-assistant/agent.yaml         cross-domain demo agent (one sentence chains data query → report → policy Q&A)
 │   └── ecommerce-assistant/agent.yaml      external-tool integration demo (whitelist only, zero code)
 ├── apps/web/            Vue3 + TS + Vite console (six routed views)
 ├── alembic/             database migrations (single entry point for schema evolution)
@@ -247,6 +248,7 @@ HTTP-level smoke: `python tests/smoke_v1_2_batch_c.py` (7 assertions, self-conta
 | Worklog | `office.worklog.generate` | personal ledger: done / pending / schedule segments aggregated over a daily/weekly window, measured counts with blanks instead of fabrication, source + fetched_at provenance |
 | Proactive reminders | `/notifications/scan` extended with four signals | todo-due (approaching/overdue), meeting-upcoming (per creator + attendee), milestone-alert (within N days), Friday weekly-draft hint; the daily briefing now embeds today's due/overdue todo and meeting counts; business timezone configurable via `BUSINESS_TIMEZONE` (falls back to UTC with a warning when tzdata is missing); a corrupt affairs store only degrades `affairs_degraded`, never 500 |
 | Example agent | `plugins/personal-affairs-assistant` | read-only lookups (todos / worklog / freebusy) answer directly from one sentence; creating todos/schedules goes through the always-approved chat flow (suspend → approve → resume); daily-report-assistant keywords narrowed in sync to avoid substring route hijacking |
+| Cross-domain chaining | `plugins/office-assistant` | one sentence (agent omitted) auto-routes here and chains three domains inside a single run: `office.data.query` → `office.report.generate` (metric values injected from the previous step's **real output** via `{steps[0].result.count}`, 100% numeric consistency) → `kb.ask` policy lookup; all three steps share one `trace_id` |
 
 HTTP-level smoke: `python tests/smoke_personal_affairs.py` (8 assertions, re-runnable).
 

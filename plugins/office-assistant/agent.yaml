@@ -1,0 +1,82 @@
+# 跨域办公助手（一句话串起「数据分析 → 文档生成 → 制度问答」三个场景）
+# 对齐：AGENTS.md §2/§3（声明式定制 / 写动作恒送审）+ PRD §6 任务拆解能力；
+#       装载器 packages/runtime loader.py（扫 plugins/*/agent.yaml）。
+#
+# 设计意图：验证「员工一句话 → 一条 run 内跨域多步」的形态——工具白名单同时含
+# 数据域（office.data.*）、文档域（office.report.generate）、知识域（kb.ask），
+# 规则按场景编成链，步骤间的数字用 {steps[N].result.字段} 从上一步**真实出参**注入，
+# 不硬编码（故报告数值一致率 100%，是跨步取数的实证而非演示数字）。
+#
+# 两条如实说明：
+# 1. 每条链末步 kb.ask 的问句是固化的制度问题——规则规划从目标里抽不出关键词，
+#    这是「预置脚本」的边界；配好 LLM_PROVIDERS 后改 llm: default 即由模型现场
+#    编排并自行组织检索问句（降级链：LLM 不可用自动落回本文件 rules，不阻断）。
+# 2. 本文件 llm 留空：本地 qwen2.5:0.5b 实测规划命中 3/5 且会编造参数（AGENTS §6），
+#    不足以作主路径；换更强模型后一处改动即可启用。
+name: office-assistant
+description: 跨域办公助手：一句话串起数据查询、文档生成与制度问答（多步编排，数字全部来自上一步真实结果）
+system_prompt: |
+  你是跨域办公助手。回答中的每个数字必须来自工具返回的 JSON 字段，禁止推算与编造；
+  缺数宁可留白，不补数。
+tools:
+  - office.data.query
+  - office.data.analyze
+  - office.report.generate
+  - kb.ask
+max_steps: 8
+llm: ""
+rules:
+  # 规则一：经营数据复盘 → 查业绩台账 → 出周报（记录数取自步骤 0 真实出参）→ 引披露口径
+  - match: ["经营复盘", "经营分析", "数据分析", "数据报告"]
+    steps:
+      - tool: office.data.query
+        args:
+          dataset: sales
+          limit: 20
+      - tool: office.report.generate
+        args:
+          title: 经营数据复盘
+          report_type: weekly
+          metrics:
+            命中记录数: "{steps[0].result.count}"
+            全量记录数: "{steps[0].result.total}"
+      - tool: kb.ask
+        args:
+          query: 经营数据对外披露需要哪些审批
+          top_k: 3
+  # 规则二：工时统计 → 查工时台账 → 出周报 → 引加班认定口径
+  - match: ["工时统计", "工时周报", "工时复盘"]
+    steps:
+      - tool: office.data.query
+        args:
+          dataset: work
+          limit: 20
+      - tool: office.report.generate
+        args:
+          title: 工时周报
+          report_type: weekly
+          metrics:
+            命中记录数: "{steps[0].result.count}"
+            全量记录数: "{steps[0].result.total}"
+      - tool: kb.ask
+        args:
+          query: 加班工时如何认定
+          top_k: 3
+  # 规则三：考勤分析 → 查考勤台账 → 出月报 → 引请假制度
+  - match: ["考勤分析", "考勤统计", "出勤情况"]
+    steps:
+      - tool: office.data.query
+        args:
+          dataset: attendance
+          limit: 20
+      - tool: office.report.generate
+        args:
+          title: 考勤统计报告
+          report_type: monthly
+          metrics:
+            命中记录数: "{steps[0].result.count}"
+            全量记录数: "{steps[0].result.total}"
+      - tool: kb.ask
+        args:
+          query: 请假流程与考勤制度
+          top_k: 3

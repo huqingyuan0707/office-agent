@@ -50,6 +50,7 @@ office-agent/
 ├── plugins/
 │   ├── tools-ecommerce/     电商只读桥接工具（order/logistics/stock/coupon/kb，远程工具示例）
 │   ├── daily-report-assistant/agent.yaml   办公域示例智能体（规则规划 + 送审挂起演示）
+│   ├── office-assistant/agent.yaml         跨域示例智能体（一句话串起数据查询 → 文档生成 → 制度问答）
 │   └── ecommerce-assistant/agent.yaml      外部工具接入示例（白名单接远程工具，零代码）
 ├── apps/web/            Vue3 + TS + Vite 管理台（六视图路由化）
 ├── alembic/             数据库迁移（持久库 schema 演进唯一入口）
@@ -256,6 +257,7 @@ HTTP 级冒烟：`python tests/smoke_v1_2_batch_c.py`（7 项断言，自带起�
 | 事务汇总 | `office.worklog.generate` | 个人工作台账：日/周窗口内已完成/待完成/日程三段聚合直出，实测计数留白不编造，带 source+fetched_at 溯源 |
 | 智能主动推送 | `/notifications/scan` 扩展四类信号 | 待办到期提醒（临近/逾期两口径）、会议临近通知（创建人+参会人逐人）、项目节点预警（N 天内）、周五主动提示周报草稿；今日简报并入「今日到期/逾期待办数 + 今日会议数」；业务时区 `BUSINESS_TIMEZONE` 可配（缺 tzdata 降级 UTC 只告警）；事务存储损坏只降级 `affairs_degraded` 绝不 500 |
 | 示例智能体 | `plugins/personal-affairs-assistant` | 查待办/台账/空闲只读直达；建待办/建日程走对话恒送审挂起→批准续跑；daily-report-assistant 关键词同步收窄避免子串抢路由 |
+| 跨域串联 | `plugins/office-assistant` | 一句话（不指定智能体）自动路由到这里，一条 run 内串起三域：`office.data.query` 查数 → `office.report.generate` 出报告（指标值用 `{steps[0].result.count}` 从上一步**真实出参**注入，数值一致率 100%）→ `kb.ask` 引制度条文；三步同一 `trace_id`，全链溯源 |
 
 HTTP 级冒烟：`python tests/smoke_personal_affairs.py`（8 项断言，可重复执行）。
 
