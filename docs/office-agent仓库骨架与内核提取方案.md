@@ -99,6 +99,13 @@ office-agent/
 
 模式 ①② 为主线：溯源信息是「数值一致率 ≥99%」红线的校验依据；幂等键透传保证「审批批准 + 接口重试」不产生双单。模式 ③④ 起步不做（YAGNI）。
 
+**模式 ② 已落地（2026-09-24，首个回流写工具 `ticket.create`）**，闭环口径：
+
+1. **审批闸门唯一在 office 侧**：`ticket.create` 声明 `requires_approval=True`，invoke 只落审批单（恒送审）；复核员批准后 `decide_approval` 以**申请人真实角色**重放原 args（idem_key 在 args 里天然稳定）——直批路径曾因执行时传空角色被 4006 硬拦，已修复并加回归锁定（test_direct_approval_executes_with_applicant_roles）；
+2. **电商侧只认 Scope + 幂等键**：网关直接执行（不再分流审批），`ticket.create` handler 走 `review_service.create_ticket_idempotent`——先查库短路、再靠 `(tenant, idem_key)` 唯一约束兜底并发窗口，同键重放返回原单并带 `replayed=True` 标记，绝不双单；
+3. **职责不重叠**：office 恒送审 + 幂等键透传，电商幂等回放——「审批批准 + 接口重试」两个维度的重复都被同一把 idem_key 收口；
+4. 验证：office 侧 `tests/smoke_linkage_writeback.py` HTTP 级 6/6（invoke→送审→批准→建单 replayed=False→同键重放 replayed=True 同一单→EC 库单据数=1）；电商侧 `tests/test_linkage_writeback.py` 3/3。
+
 ### 7.3 身份与信任
 
 1. **服务账号**：电商项目注册 `svc-office-agent`（复用现有 RBAC，授最小只读权限集 + 指定写权限），不新造权限体系——office-agent 对电商就是一个普通登录用户；

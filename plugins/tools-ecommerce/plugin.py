@@ -1,4 +1,4 @@
-"""tools-ecommerce 插件：把上游电商系统的只读工具纳入 office-agent 注册中心
+"""tools-ecommerce 插件：把上游电商系统的工具纳入 office-agent 注册中心（读 5 + 写 1）
 
 链路：server lifespan → plugins.load_plugin_tools() → 本模块 register()
       → 声明远程 ToolSpec → executor 执行时经 linkage 层出站到上游 agent-gateway。
@@ -9,8 +9,11 @@
 - 提供方未配置时**不注册**这些工具——宁可在清单里缺席，也不注册一个注定调不通的工具；
 - 入参 Schema 与上游 connectors 逐字对齐，保证上游 ``validate_args`` 一次通过。
 
-只读边界：本插件只声明读工具。写动作（退款、发券等）要等「审批闸门 + 幂等键回放」就绪后再纳入，
-在此之前，写动作留在上游系统里由其自身流程处理。
+写边界（联动方案 §7.2 模式②回流）：
+- ticket.create 是第一个回流写工具：requires_approval=True 恒送审，invoke 只落审批单，
+  复核员批准后 decide_approval 以申请人身份重放原 args（idem_key 随 args 出站到上游）；
+- 上游以 (tenant, idem_key) 唯一约束做幂等回放——同键重放返回原单，审批重试/重发绝不双单；
+- 审批闸门唯一在本侧，上游网关只认 Scope + 幂等键，两级职责不重叠。
 """
 
 from __future__ import annotations
@@ -117,6 +120,45 @@ def specs() -> tuple[ToolSpec, ...]:
                 "additionalProperties": False,
             },
             remote=_remote("kb.retrieve"),
+        ),
+        ToolSpec(
+            name="ticket.create",
+            scope="ticket:write",
+            description=(
+                "回流创建电商协同工单（联动模式②：本侧恒送审，复核员批准后才出站执行；"
+                "idem_key 必填，上游同键幂等回放，重放返回原单绝不双单）"
+            ),
+            params={
+                "type": "object",
+                "properties": {
+                    "kind": {
+                        "type": "string",
+                        "title": "工单类型",
+                        "minLength": 1,
+                        "maxLength": 32,
+                    },
+                    "source_ref": {"type": "string", "title": "来源关联", "maxLength": 64},
+                    "assignee": {"type": "string", "title": "处理人", "maxLength": 64},
+                    "sla_hours": {
+                        "type": "integer",
+                        "title": "SLA 小时",
+                        "minimum": 1,
+                        "maximum": 720,
+                    },
+                    "idem_key": {
+                        "type": "string",
+                        "title": "幂等键",
+                        "minLength": 8,
+                        "maxLength": 64,
+                    },
+                },
+                "required": ["kind", "idem_key"],
+                "additionalProperties": False,
+            },
+            remote=_remote("ticket.create"),
+            idempotent=True,
+            requires_approval=True,
+            approval_action="ticket.create",
         ),
     )
 

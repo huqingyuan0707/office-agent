@@ -9,9 +9,9 @@ from office_agent_core import linkage
 _ENDPOINT = "POST http://up.test/api/v1/agent-gateway/invoke"
 
 
-def _login(client) -> str:
+def _login(client, username: str = "admin", password: str = "admin123") -> str:
     """登录取 token（种子账号由 lifespan 建好）。"""
-    resp = client.post("/api/v1/auth/login", json={"username": "admin", "password": "admin123"})
+    resp = client.post("/api/v1/auth/login", json={"username": username, "password": password})
     assert resp.status_code == 200
     body = resp.json()
     assert body["code"] == 0
@@ -186,6 +186,35 @@ def test_approval_reject_requires_reason(client):
     resp = client.post("/api/v1/approvals/nope/reject", json={"reason": ""}, headers=_auth(token))
     assert resp.status_code == 404
     assert resp.json()["code"] == 1004
+
+
+def test_direct_approval_executes_with_applicant_roles(client):
+    """回归：批准后必须以**申请人真实角色**执行。
+
+    旧口径 decide_approval 传 roles=[]，被 executor 内 ensure_allowed 硬拦 4006，
+    直批执行路径必失败（信封仍 200，故障只藏在 execution_result 里）——
+    模式②回流的地基就是这条路径，锁死它。
+    """
+    admin = _auth(_login(client))
+    reviewer = _auth(_login(client, "reviewer", "reviewer123"))
+    resp = client.post(
+        "/api/v1/agent/tools/office.todo.create/invoke",
+        json={"args": {"title": "直批回归", "priority": "low"}},
+        headers=admin,
+    ).json()
+    assert resp["code"] == 0
+    assert resp["data"]["status"] == "pending_approval"
+
+    decided = client.post(
+        f"/api/v1/approvals/{resp['data']['approval_id']}/approve",
+        json={"reason": "回归批准"},
+        headers=reviewer,
+    ).json()
+    assert decided["code"] == 0
+    assert decided["data"]["status"] == "approved"
+    execution = decided["data"]["execution_result"]
+    assert execution["status"] == "ok", f"直批执行路径被拦：{execution}"
+    assert execution["result"]["owner"] == "admin"  # 以提交人身份生效
 
 
 def test_governance_status_surfaces_linkage_health(client):

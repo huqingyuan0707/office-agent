@@ -159,6 +159,7 @@ External capabilities arrive via `plugins/tools-ecommerce` whitelisted tools. Di
 - **Provenance**: every fetch carries `source_endpoint + fetched_at`; generated reports annotate each number with `(来源: input.xxx)`.
 - **Writes always go through approval**: idempotency key `idem_key` is forwarded to the peer to prevent double-submit; `trace_id` spans systems for troubleshooting.
 - **Credentials only via env/secret, never stored**; a CI grep gate forbids business-domain tokens anywhere under `packages/`.
+- **Pull (mode 1) and write-back (mode 2) both verified**: read tools (order/logistics/stock/coupon/kb) fetch with provenance; the first write-back tool `ticket.create` (ticket:write) — invoke always files an approval; once approved it executes outbound as the applicant, and the peer replays idempotently on `(tenant, idem_key)` (same key returns the same ticket, never a duplicate). HTTP-level smoke: `tests/smoke_linkage_writeback.py` 6/6.
 
 ## Database Migrations
 

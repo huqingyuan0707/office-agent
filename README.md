@@ -162,6 +162,7 @@ rules:                 # 无 LLM 时的规则规划（也是 LLM 故障降级路
 - **溯源**：拉取结果必带 `source_endpoint + fetched_at`；日报等生成物每个数字带 `(来源: input.xxx)` 标注。
 - **写动作恒送审**：落库生效的写工具一律过审批闸门，`idem_key` 幂等键透传对端防双单；`trace_id` 跨系统贯穿排障。
 - **凭据只走环境变量/secret，绝不入库**；主包 `packages/` 禁止出现任何业务域词元（CI grep 门禁）。
+- **拉取（模式①）+ 回流（模式②）均已实测**：读工具（order/logistics/stock/coupon/kb）拉取带溯源；首个回流写工具 `ticket.create`（ticket:write）——invoke 恒送审，复核员批准后以申请人身份出站执行，对端按 `(tenant, idem_key)` 唯一约束幂等回放（同键重放返回原单绝不双单）；HTTP 级冒烟 `tests/smoke_linkage_writeback.py` 6/6。
 
 ## 数据库迁移
 

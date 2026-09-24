@@ -23,7 +23,8 @@ from office_agent_core import executor, registry
 from office_agent_core.contracts import ToolContext
 from office_agent_core.errors import BusinessError, ErrorCode
 from office_agent_server.db import _now
-from office_agent_server.models import Approval
+from office_agent_server.models import Approval, User
+from office_agent_server.security import split_roles
 
 logger = logging.getLogger(__name__)
 
@@ -163,11 +164,20 @@ async def decide_approval(
         execution_result = {"status": "failed", "message": exc.msg, "code": exc.code}
         logger.warning("approved tool missing after approval: id=%s tool=%s", row.id, row.action)
     else:
+        # 以提交人的**真实角色**执行（与 runtime.approvals.run_owner 同一口径）：
+        # 旧口径 roles=[] 会被 executor 内 ensure_allowed 硬拦 4006，直批执行路径必失败；
+        # invoke 送审时已用同一角色集鉴权过，重放口径必须一致，否则「过了审批却执行不了」。
+        applicant_row = (
+            await db.execute(
+                select(User).where(User.tenant == row.tenant, User.username == row.applicant)
+            )
+        ).scalar_one_or_none()
+        applicant_roles = split_roles(applicant_row.roles) if applicant_row is not None else []
         ctx = ToolContext(
             db=db,
             tenant=row.tenant,
             username=row.applicant,  # 关键：以**提交人**身份执行
-            roles=[],  # 执行时 scope 已在 invoke 时鉴权过，此处传空即可
+            roles=applicant_roles,
             trace_id=trace_id,
         )
         try:
