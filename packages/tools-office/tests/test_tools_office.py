@@ -15,7 +15,7 @@ from PIL import Image
 from office_agent_core.contracts import ToolContext
 from office_agent_core.errors import BusinessError
 from office_agent_core.settings import settings
-from office_agent_tools_office import kb, ocr, tools
+from office_agent_tools_office import doc_compare, kb, ocr, task_planner, templates, tools
 
 CTX = ToolContext(tenant="t1", username="alice", roles=["office:read", "office:write"])
 
@@ -160,9 +160,209 @@ async def test_ocr_missing_file_404(tmp_path: Path, monkeypatch: pytest.MonkeyPa
     assert excinfo.value.http_status == 404
 
 
+# ---------------- 文档对比 ----------------
+
+
+def _make_docx(path: Path, paragraphs: list[str]) -> None:
+    import docx as docx_lib
+
+    document = docx_lib.Document()
+    for paragraph in paragraphs:
+        document.add_paragraph(paragraph)
+    document.save(str(path))
+
+
+async def test_doc_compare_reports_diff(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setattr(settings, "DOCS_DIR", str(tmp_path))
+    _make_docx(tmp_path / "a.docx", ["第一段", "第二段", "第三段"])
+    _make_docx(tmp_path / "b.docx", ["第一段", "第二段改了", "第四段新增"])
+    data = await doc_compare._doc_compare(CTX, {"file_a": "a.docx", "file_b": "b.docx"})
+    assert data["counts"]["added"] == 1
+    assert data["counts"]["removed"] == 1
+    assert data["counts"]["changed"] == 1
+    assert data["details"]["added"][0]["text"] == "第四段新增"
+    assert data["details"]["removed"][0]["text"] == "第三段"
+    assert "修改 1 段" in data["change_summary"]
+
+
+async def test_doc_compare_identical_documents(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setattr(settings, "DOCS_DIR", str(tmp_path))
+    _make_docx(tmp_path / "same1.docx", ["只有一段"])
+    _make_docx(tmp_path / "same2.docx", ["只有一段"])
+    data = await doc_compare._doc_compare(CTX, {"file_a": "same1.docx", "file_b": "same2.docx"})
+    assert data["counts"] == {
+        "paragraph_a": 1,
+        "paragraph_b": 1,
+        "added": 0,
+        "removed": 0,
+        "changed": 0,
+        "unchanged": 1,
+    }
+
+
+async def test_doc_compare_missing_file_404(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setattr(settings, "DOCS_DIR", str(tmp_path))
+    _make_docx(tmp_path / "a.docx", ["第一段"])
+    with pytest.raises(BusinessError) as excinfo:
+        await doc_compare._doc_compare(CTX, {"file_a": "a.docx", "file_b": "ghost.docx"})
+    assert excinfo.value.http_status == 404
+
+
+async def test_doc_compare_rejects_non_docx(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setattr(settings, "DOCS_DIR", str(tmp_path))
+    with pytest.raises(BusinessError):
+        await doc_compare._doc_compare(CTX, {"file_a": "a.txt", "file_b": "b.docx"})
+
+
+# ---------------- 任务拆解 ----------------
+
+
+async def test_task_decompose_with_full_info() -> None:
+    data = await task_planner._task_decompose(
+        CTX,
+        {
+            "goal": "官网改版项目，最终交付上线",
+            "duration_weeks": 4,
+            "participants": ["产品", "UI", "前端", "测试"],
+        },
+    )
+    assert data["total"] == 5
+    assert data["subtasks"][0]["owner"] == "产品"
+    assert data["subtasks"][2]["owner"] == "前端"
+    assert data["subtasks"][3]["owner"] == "测试"
+    assert data["subtasks"][2]["dependencies"] == ["task-2"]
+    assert all(item["due_date"] for item in data["subtasks"])
+    assert data["missing_info"] == []
+
+
+async def test_task_decompose_missing_participants_and_duration_never_fabricates() -> None:
+    data = await task_planner._task_decompose(CTX, {"goal": "内部工具改造"})
+    assert data["subtasks"][0]["owner"] == ""
+    assert data["subtasks"][0]["due_date"] == ""
+    assert any("参与人" in item for item in data["missing_info"])
+    assert any("工期" in item for item in data["missing_info"])
+    assert data["next_hint"].startswith("请核对")
+
+
+async def test_task_decompose_unmatched_phase_left_blank() -> None:
+    data = await task_planner._task_decompose(
+        CTX, {"goal": "项目", "duration_weeks": 2, "participants": ["运营"]}
+    )
+    blank_titles = {item["title"] for item in data["subtasks"] if not item["owner"]}
+    assert "开发与实施" in blank_titles
+    assert any("未能从参与人中识别出责任人" in item for item in data["missing_info"])
+
+
+async def test_task_decompose_rejects_bad_duration() -> None:
+    with pytest.raises(BusinessError):
+        await task_planner._task_decompose(CTX, {"goal": "项目", "duration_weeks": 99})
+    with pytest.raises(BusinessError):
+        await task_planner._task_decompose(CTX, {"goal": "项目", "start_date": "2026/09/01"})
+
+
+async def test_task_commit_returns_receipts_with_notify_flags() -> None:
+    data = await task_planner._task_commit(
+        CTX,
+        {
+            "tasks": [
+                {
+                    "title": "需求调研",
+                    "owner": "张三",
+                    "due_date": "2026-10-09",
+                    "priority": "high",
+                },
+                {"title": "自行跟进事项"},
+            ],
+            "idem_key": "decompose-0001",
+        },
+    )
+    assert data["count"] == 2
+    assert data["created"][0]["notified"] == "true"
+    assert data["created"][1]["notified"] == "false"
+    assert data["notified_owners"] == ["张三"]
+    assert "不臆造接收人" in data["note"]
+
+
+async def test_task_commit_requires_title_and_caps_size() -> None:
+    with pytest.raises(BusinessError):
+        await task_planner._task_commit(CTX, {"tasks": [{"owner": "张三"}], "idem_key": "k" * 8})
+    with pytest.raises(BusinessError):
+        await task_planner._task_commit(
+            CTX, {"tasks": [{"title": f"t{i}"} for i in range(51)], "idem_key": "k" * 8}
+        )
+
+
+# ---------------- 自定义模板 ----------------
+
+
+async def test_template_save_writes_json_and_apply_renders(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setattr(settings, "DOCS_DIR", str(tmp_path))
+    saved = await templates._template_save(
+        CTX,
+        {
+            "name": "weekly-report",
+            "title": "{姓名}的周报",
+            "sections": ["本周完成：{本周工作}", "下周计划：{下周计划}"],
+            "idem_key": "tpl-0000001",
+        },
+    )
+    assert saved["published"] is True
+    assert (tmp_path / "templates" / "weekly-report.json").exists()
+
+    applied = await templates._template_apply(
+        CTX, {"name": "weekly-report", "values": {"姓名": "李四", "本周工作": "发版"}}
+    )
+    assert applied["title"] == "李四的周报"
+    assert applied["sections"][0] == "本周完成：发版"
+    assert applied["unfilled"] == ["下周计划"]  # 未提供的占位符如实列出，不编造
+    assert applied["source"] == "local-docs:templates/weekly-report.json"
+
+
+async def test_template_apply_missing_template_404(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setattr(settings, "DOCS_DIR", str(tmp_path))
+    with pytest.raises(BusinessError) as excinfo:
+        await templates._template_apply(CTX, {"name": "ghost"})
+    assert excinfo.value.http_status == 404
+
+
+async def test_template_name_rejects_traversal(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setattr(settings, "DOCS_DIR", str(tmp_path))
+    for bad in ("../evil", "a/b", "a\\b", ""):
+        with pytest.raises(BusinessError):
+            await templates._template_save(
+                CTX, {"name": bad, "sections": ["段落"], "idem_key": "k" * 8}
+            )
+
+
 # ---------------- 注册清单 ----------------
 
 
 def test_specs_contain_v1_tools() -> None:
-    names = {spec.name for spec in (*tools.specs(), *kb.specs(), *ocr.specs())}
-    assert {"office.report.generate", "office.minutes.generate", "kb.ask", "ocr.image"} <= names
+    names = {
+        spec.name
+        for module in (tools, kb, ocr, doc_compare, task_planner, templates)
+        for spec in module.specs()
+    }
+    assert {
+        "office.report.generate",
+        "office.minutes.generate",
+        "kb.ask",
+        "ocr.image",
+        "office.doc.compare",
+        "office.task.decompose",
+        "office.task.commit",
+        "office.template.save",
+        "office.template.apply",
+    } <= names
