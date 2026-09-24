@@ -71,6 +71,11 @@ def _isolate_and_demo_tools():
         ),
     ):
         registry.register(spec)
+    # R2 审批闭环测试需要真实需审批工具：注册 tools-office 三件套
+    # （office.todo.create 带 requires_approval=True，走真实送审分流）
+    from office_agent_tools_office import register_all as register_office_tools
+
+    register_office_tools()
     executor.reset_breakers()
     yield
     executor.reset_breakers()

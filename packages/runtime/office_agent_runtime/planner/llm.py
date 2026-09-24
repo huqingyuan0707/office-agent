@@ -3,6 +3,8 @@
 链路：Runner 检查 AgentSpec.llm → LlmFunctionCallPlanner.from_spec(spec)
       → plan(goal, tools) 用 registry 白名单构造 tools 参数 → httpx 出站
       → tool_calls 逐轮收集提议 → 返回 list[PlannerStep]。
+      R2 增 answer(goal, observations)：把工具返回 JSON 交给 LLM 合成中文终答
+      （validation.finalize_answer 的输入源，出站链路与 plan 共用 _post_chat）。
       出站失败（未配置 / 401 / 超时 / 网络错）由调用方决定降级，
       本层只抛 ``LlmPlanError``（marker，Runner 识别后转 RulePlanner）。
 
@@ -211,6 +213,47 @@ class LlmFunctionCallPlanner:
         if cfg.api_key:
             headers["Authorization"] = f"Bearer {cfg.api_key}"
 
+        data = await self._post_chat(cfg, payload, headers)
+        return _extract_tool_calls(data, allowed_tools=frozenset(self._spec.tools))
+
+    async def answer(self, goal: str, observations: list[dict[str, Any]]) -> str:
+        """R2 终答合成：把本次 run 的工具返回 JSON 交给 LLM 生成中文回答。
+
+        这是回答数值校验（validation.validate_answer_numbers）的输入源——prompt 明确
+        要求回答中的每个数字必须直接来自工具返回 JSON、禁止推算与编造；但 LLM 不可信，
+        最终以独立校验函数的结论为准（未通过则标注失信，不删回答）。
+        出站失败一律抛 LlmPlanError，由调用方（validation.finalize_answer）降级。
+        """
+        cfg = _provider_of(self._profile_name)
+        messages: list[dict[str, Any]] = []
+        if self._spec.system_prompt:
+            messages.append({"role": "system", "content": self._spec.system_prompt})
+        messages.append({"role": "user", "content": f"目标：{goal}"})
+        messages.append(
+            {
+                "role": "user",
+                "content": (
+                    "以下是本次运行各步骤工具返回的 JSON（回答的唯一数据来源）：\n"
+                    f"{json.dumps(observations, ensure_ascii=False)}\n"
+                    "请据此用中文回答目标。回答中出现的每个数字必须直接来自上述 JSON 字段，"
+                    "禁止推算、汇总或编造任何数字。"
+                ),
+            }
+        )
+        headers = {"Content-Type": "application/json"}
+        if cfg.api_key:
+            headers["Authorization"] = f"Bearer {cfg.api_key}"
+        # 终答合成不带 tools：要的是文本回答，不是继续提议工具调用
+        data = await self._post_chat(cfg, {"model": cfg.model, "messages": messages}, headers)
+        content = _extract_content(data).strip()
+        if not content:
+            raise LlmPlanError("LLM 未返回文本回答，无法生成最终答复")
+        return content
+
+    async def _post_chat(
+        self, cfg: _ProviderCfg, payload: dict[str, Any], headers: dict[str, str]
+    ) -> dict[str, Any]:
+        """出站 chat.completions（plan / answer 共用）：状态码分级 + JSON 解析。"""
         client = self._ensure_client(cfg)
         try:
             resp = await client.post(cfg.endpoint, json=payload, headers=headers)
@@ -243,8 +286,7 @@ class LlmFunctionCallPlanner:
             raise LlmPlanError("LLM 返回非 JSON 响应") from exc
         if not isinstance(data, dict):
             raise LlmPlanError("LLM 响应结构非对象")
-
-        return _extract_tool_calls(data, allowed_tools=frozenset(self._spec.tools))
+        return data
 
 
 def _extract_tool_calls(
@@ -301,3 +343,17 @@ def _extract_tool_calls(
             )
         steps.append(PlannerStep(tool=tool_name, args=args))
     return steps
+
+
+def _extract_content(data: dict[str, Any]) -> str:
+    """抽 chat.completions 的文本回答（无 choices / message 给空串，由调用方收口）。"""
+    choices = data.get("choices")
+    if not isinstance(choices, list) or not choices:
+        return ""
+    choice = choices[0]
+    if not isinstance(choice, dict):
+        return ""
+    message = choice.get("message")
+    if not isinstance(message, dict):
+        return ""
+    return str(message.get("content") or "")

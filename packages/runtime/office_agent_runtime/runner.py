@@ -1,44 +1,61 @@
 """Run 主循环（编排层唯一执行位：提议 → executor.call → 观察 → 检查点 → 重复）
 
 链路：api 受理 → start_run 建 Task 行（type="agent.run"）→ execute_run 主循环：
-      RulePlanner 规划 → 逐步 executor.call（Scope 硬拦 / Schema 校验 / 熔断 / 审计
-      全在内核，编排层绕不过）→ 每步写 RunStep → Task.checkpoint 随步推进 → 收敛。
+      规划 → 逐步 executor.call（Scope 硬拦 / Schema 校验 / 熔断 / 审计全在内核，
+      编排层绕不过）→ 每步写 RunStep → Task.checkpoint 随步推进 → 收敛。
+
+R2 增量（对齐 .trae/documents/智能体编排层实现方案.md §R2）：
+- 送审分流：步骤命中 requires_approval → 不落 executor，经 approvals.suspend_for_approval
+  预检（Scope+Schema，与 invoke 端点同一分流口径）并落审批单，run 挂起
+  WAITING_APPROVAL（checkpoint 存 pending_approval）；批准后由 approvals.resolve_pending
+  内联裁决 lazy resume——该步按幂等口径在主循环重放（approved_steps 标记跳过二次
+  送审），重放仍走 executor.call，时间线留完整出参与审计。
+- 回答数值校验：收敛 DONE 后经 validation.finalize_answer 合成 LLM 终答并校验数字
+  溯源，标记随 checkpoint / run 概要透出（降级不 500，绝不阻断已完成步骤）。
 
 关键决策（都有出处）：
 - 受理与执行分离：单步失败（白名单越权 / 模板缺值 / executor 业务拒绝）把 run 收敛到
   FAILED 终态，但本循环不向外抛错——POST /runs 仍返回 code 0 的 run 概要，错误细节
   落在 RunStep 时间线与检查点里，由 GET /runs/{id} 轮询展示（前端轮询友好）。
 - max_steps 硬顶：计划步数超出即 FAILED（1005），已执行步骤留痕，checkpoint 记录
-  断点，续跑可从断点继续（防 LLM 规划器在 R1 出现循环烧 token 的地基）。
+  断点，续跑可从断点继续（防 LLM 规划器循环烧 token 的地基）。
 - 计划持久化：首次规划结果写进 checkpoint，续跑回放原计划（agent.yaml 中途变更
   也不会让步号与历史结果错位）；白名单仍按当前 spec 在执行前硬拦。
-- 送审闭环口径：内核 executor.call 并不因 requires_approval 挂起——policy 只在判定
-  结果里给出 approval_required 标记，真正落审批单由工具的本地实现负责（见 server
-  审批模块口径「生成审批单由需审批的工具实现负责」）。因此 R0 的测试只覆盖直接执行
-  路径；「送审 → run 挂起 WAITING_APPROVAL → 批准后 lazy resume」的闭环属 R2，
-  届时复用本模块的检查点机制续跑。
 - 状态机：全程走内核 TRANSITIONS（ensure_transition），编排层不私改状态；FAILED 可经
-  resume 重新进入 PLANNING（内核口径），DONE 是唯一终态。
+  resume 重新进入 PLANNING（内核口径），DONE 是唯一成功终态；审批解除的重入从
+  WAITING_APPROVAL 直进 ACTING（内核口径），计划回放照常、不重复送审。
 - 白名单：planner 提议的工具必须命中 AgentSpec 白名单（声明层已校验 rules ⊆ 白名单，
-  这里是运行时最后防线，防 R1 的 LLM 规划器越权提议）；Scope 与角色可见性由内核
-  policy 在 executor.call 里硬拦。
+  这里是运行时最后防线，防 LLM 规划器越权提议）；Scope 与角色可见性由内核 policy
+  在 executor.call 里硬拦。
 """
 
 from __future__ import annotations
 
-import json
 import logging
+from collections.abc import Callable
 from typing import Any
 
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from office_agent_core import executor
-from office_agent_core.contracts import AgentState, ToolContext, ensure_transition, state_label
+from office_agent_core import executor, registry
+from office_agent_core.contracts import AgentState, ToolContext, ToolSpec
 from office_agent_core.errors import BusinessError, ErrorCode
+from office_agent_runtime import approvals
+from office_agent_runtime.checkpoint import (
+    approved_steps,
+    dumps,
+    move_state,
+    next_step_of,
+    parse_checkpoint,
+    record_entry,
+    step_entries,
+    summarize_run,
+)
 from office_agent_runtime.models import RunStep
 from office_agent_runtime.planner.llm import LlmFunctionCallPlanner, LlmPlanError
 from office_agent_runtime.planner.rule import RulePlanner
 from office_agent_runtime.spec import AgentSpec, PlannerStep
+from office_agent_runtime.validation import finalize_answer
 from office_agent_server.models import Task
 from office_agent_server.rbac import CurrentUser
 
@@ -51,73 +68,53 @@ RUN_TASK_TYPE = "agent.run"
 _DIGEST_LIMIT = 2000
 
 
-def parse_checkpoint(raw: str) -> dict[str, Any]:
-    """Task.checkpoint 列的 JSON 文本 → 字典（脏数据给空对象，不因断点坏拖垮读取）。"""
-    try:
-        data = json.loads(raw or "{}")
-    except ValueError:
-        return {}
-    return data if isinstance(data, dict) else {}
-
-
-def _dumps(value: Any) -> str:
-    """JSON 文本落库（非可序列化对象降级为 str，绝不因落库失败丢留痕）。"""
-    return json.dumps(value, ensure_ascii=False, default=str)
-
-
 def _digest(result: Any) -> str:
     """结果摘要（时间线展示用；截断加标记，完整结果在 checkpoint）。"""
-    text = _dumps(result)
+    text = dumps(result)
     return text if len(text) <= _DIGEST_LIMIT else text[:_DIGEST_LIMIT] + "…（已截断）"
 
 
-def _move(task: Task, dst: AgentState) -> None:
-    """沿内核状态机推进并把新状态落到 Task 行（非法流转 4009，编排层不私改状态）。"""
-    task.status = str(ensure_transition(task.status, dst))
+def _needs_approval(tool_spec: ToolSpec | None, index: int, pre_approved: list[int]) -> bool:
+    """该步是否需要送审挂起（已在 approved_steps 里的步按幂等口径重放，不再送审）。"""
+    return tool_spec is not None and tool_spec.requires_approval and index not in pre_approved
 
 
-def _step_entries(checkpoint: dict[str, Any]) -> list[dict[str, Any]]:
-    """检查点里的步骤条目（损坏时给空列表，读取路径绝不抛错）。"""
-    entries = checkpoint.get("steps")
-    return (
-        [entry for entry in entries if isinstance(entry, dict)] if isinstance(entries, list) else []
-    )
+def _replay_results(checkpoint: dict[str, Any]) -> dict[int, dict[str, Any]]:
+    """断点恢复：已成功步骤的完整出参从 checkpoint 回放（取值模板与数值校验的地基）。"""
+    results: dict[int, dict[str, Any]] = {}
+    for entry in step_entries(checkpoint):
+        if entry.get("status") != "ok" or not isinstance(entry.get("outcome"), dict):
+            continue
+        try:
+            results[int(entry["index"])] = entry["outcome"]
+        except (KeyError, TypeError, ValueError):
+            continue
+    return results
 
 
-def _record_entry(checkpoint: dict[str, Any], entry: dict[str, Any]) -> None:
-    """按步号替换或追加步骤条目（重试成功覆盖失败条目），保持步号有序。"""
-    entries = checkpoint.setdefault("steps", [])
-    entries[:] = [item for item in entries if item.get("index") != entry["index"]]
-    entries.append(entry)
-    entries.sort(key=lambda item: int(item.get("index") or 0))
+def _enter_executing(task: Task) -> None:
+    """进入执行前状态：常规路径走 PLANNING（重规划或回放计划）；审批解除的重入从
+    WAITING_APPROVAL 直进 ACTING（内核口径），已在 ACTING 的不重复流转。"""
+    if task.status == AgentState.WAITING_APPROVAL.value:
+        move_state(task, AgentState.ACTING)
+    elif task.status != AgentState.ACTING.value:
+        move_state(task, AgentState.PLANNING)
 
 
-async def start_run(
-    db: AsyncSession,
-    *,
-    spec: AgentSpec,
-    goal: str,
-    user: CurrentUser,
-    trace_id: str,
-) -> dict[str, Any]:
-    """发起一次运行：建 Task 行（type="agent.run"）并同步执行主循环。
+def _begin_acting(task: Task) -> None:
+    """规划落定后进入执行态（审批解除的重入已在 ACTING，不重复流转）。"""
+    if task.status != AgentState.ACTING.value:
+        move_state(task, AgentState.ACTING)
 
-    Task 表没有的列（agent / goal / 断点）全存 checkpoint 与 input，不硬塞；
-    发起人就在 Task.username 既有列上。
-    """
-    task = Task(
-        tenant=user.tenant,
-        username=user.username,
-        type=RUN_TASK_TYPE,
-        status=AgentState.IDLE.value,
-        input=_dumps({"agent": spec.name, "goal": goal}),
-        checkpoint=_dumps(
-            {"agent": spec.name, "goal": goal, "next_step": 0, "steps": [], "error": ""}
-        ),
-    )
-    db.add(task)
-    await db.flush()  # 先落行拿 id（后续 RunStep.run_id / 异步轮询都要用）
-    return await execute_run(db, task=task, spec=spec, goal=goal, user=user, trace_id=trace_id)
+
+def _conclude_at_boundary(task: Task, checkpoint: dict[str, Any], save: Callable[[], None]) -> None:
+    """续跑边界（断点已在末尾）：循环体未再执行，直接收敛 DONE。"""
+    if task.status != AgentState.DONE.value:
+        move_state(task, AgentState.OBSERVING)
+        move_state(task, AgentState.REFLECTING)
+        checkpoint["error"] = ""
+        move_state(task, AgentState.DONE)
+        save()
 
 
 def _plan_from_checkpoint(checkpoint: dict[str, Any]) -> tuple[list[PlannerStep] | None, str]:
@@ -181,6 +178,34 @@ async def _choose_and_plan(spec: AgentSpec, goal: str) -> tuple[list[PlannerStep
     )
 
 
+async def start_run(
+    db: AsyncSession,
+    *,
+    spec: AgentSpec,
+    goal: str,
+    user: CurrentUser,
+    trace_id: str,
+) -> dict[str, Any]:
+    """发起一次运行：建 Task 行（type="agent.run"）并同步执行主循环。
+
+    Task 表没有的列（agent / goal / 断点）全存 checkpoint 与 input，不硬塞；
+    发起人就在 Task.username 既有列上。
+    """
+    task = Task(
+        tenant=user.tenant,
+        username=user.username,
+        type=RUN_TASK_TYPE,
+        status=AgentState.IDLE.value,
+        input=dumps({"agent": spec.name, "goal": goal}),
+        checkpoint=dumps(
+            {"agent": spec.name, "goal": goal, "next_step": 0, "steps": [], "error": ""}
+        ),
+    )
+    db.add(task)
+    await db.flush()  # 先落行拿 id（后续 RunStep.run_id / 异步轮询都要用）
+    return await execute_run(db, task=task, spec=spec, goal=goal, user=user, trace_id=trace_id)
+
+
 async def execute_run(
     db: AsyncSession,
     *,
@@ -201,28 +226,18 @@ async def execute_run(
     checkpoint = parse_checkpoint(task.checkpoint)
     checkpoint.setdefault("agent", spec.name)
     checkpoint["goal"] = goal
-    # 断点恢复：已成功步骤的完整出参从 checkpoint 回放，供后续步骤的取值模板使用
-    results: dict[int, dict[str, Any]] = {}
-    for entry in _step_entries(checkpoint):
-        if entry.get("status") != "ok" or not isinstance(entry.get("outcome"), dict):
-            continue
-        try:
-            results[int(entry["index"])] = entry["outcome"]
-        except (KeyError, TypeError, ValueError):
-            continue
-    try:
-        index = int(checkpoint.get("next_step") or 0)
-    except (TypeError, ValueError):
-        index = 0
+    results = _replay_results(checkpoint)
+    index = next_step_of(checkpoint)
+    pre_approved = approved_steps(checkpoint)
 
     def save_checkpoint() -> None:
-        task.checkpoint = _dumps(checkpoint)
+        task.checkpoint = dumps(checkpoint)
 
     def fail_run(reason: str) -> None:
         """run 级失败（未命中规则 / 超步数顶 / 未预期异常）：收敛 FAILED，不写幻影步骤行。"""
         checkpoint["error"] = reason
-        task.error = _dumps({"message": reason})
-        _move(task, AgentState.FAILED)
+        task.error = dumps({"message": reason})
+        move_state(task, AgentState.FAILED)
         save_checkpoint()
 
     def fail_step(index: int, tool: str, args: dict[str, Any], reason: str) -> None:
@@ -233,14 +248,14 @@ async def execute_run(
                 run_id=str(task.id),
                 step_index=index,
                 tool=tool,
-                args=_dumps(args),
+                args=dumps(args),
                 result_digest=reason,
                 status="failed",
                 planner_source=planner_source,
                 trace_id=trace_id,
             )
         )
-        _record_entry(
+        record_entry(
             checkpoint, {"index": index, "tool": tool, "status": "failed", "message": reason}
         )
         checkpoint["next_step"] = index  # 断点停在本步：续跑重试同一行
@@ -256,7 +271,7 @@ async def execute_run(
                 run_id=str(task.id),
                 step_index=index,
                 tool=tool,
-                args=_dumps(args),
+                args=dumps(args),
                 result_digest=_digest(outcome.get("result")),
                 status="ok",
                 planner_source=planner_source,
@@ -264,9 +279,7 @@ async def execute_run(
                 trace_id=trace_id or str(outcome.get("trace_id") or ""),
             )
         )
-        _record_entry(
-            checkpoint, {"index": index, "tool": tool, "status": "ok", "outcome": outcome}
-        )
+        record_entry(checkpoint, {"index": index, "tool": tool, "status": "ok", "outcome": outcome})
         results[index] = outcome
         checkpoint["next_step"] = index + 1
         checkpoint["error"] = ""
@@ -274,7 +287,7 @@ async def execute_run(
         save_checkpoint()
 
     try:
-        _move(task, AgentState.PLANNING)
+        _enter_executing(task)
         # 计划持久化：首次执行时规划并写入 checkpoint（含 planner_source），
         # 续跑回放原计划 + 原来源（防 agent.yaml 中途变更导致步号与历史结果错位）；
         # 无持久化计划时按当前配置走降级链重规划
@@ -289,7 +302,7 @@ async def execute_run(
                 f"目标未命中智能体 {spec.name} 的任何规划规则，且 LLM 规划不可用",
             )
         total = len(planned)
-        _move(task, AgentState.ACTING)
+        _begin_acting(task)
         while index < total:
             if index >= spec.max_steps:
                 raise BusinessError(
@@ -312,49 +325,67 @@ async def execute_run(
             except BusinessError as exc:
                 fail_step(index, step.tool, step.args, exc.msg)
                 break
-            _move(task, AgentState.OBSERVING)
+            tool_spec = registry.maybe_get(step.tool)
+            if _needs_approval(tool_spec, index, pre_approved):
+                # R2 送审分流：需审批工具不落 executor——落审批单并挂起，等待裁决后续跑
+                try:
+                    await approvals.suspend_for_approval(
+                        db,
+                        user=user,
+                        task=task,
+                        checkpoint=checkpoint,
+                        index=index,
+                        tool=step.tool,
+                        args=args,
+                        planner_source=planner_source,
+                        trace_id=trace_id,
+                    )
+                except BusinessError as exc:
+                    fail_step(index, step.tool, args, exc.msg)
+                    break
+                break  # 挂起即返回：等待审批中心批/驳，经 resolve_pending 续跑
+            move_state(task, AgentState.OBSERVING)
             try:
                 outcome = await executor.call(ctx, name=step.tool, args=args, trace_id=trace_id)
             except BusinessError as exc:
                 fail_step(index, step.tool, args, exc.msg)
                 break
-            _move(task, AgentState.REFLECTING)
+            move_state(task, AgentState.REFLECTING)
             succeed_step(index, step.tool, args, outcome, total)
             index += 1
             if index < total:
-                _move(task, AgentState.ACTING)
+                move_state(task, AgentState.ACTING)
             else:
-                _move(task, AgentState.DONE)
+                move_state(task, AgentState.DONE)
         else:
-            # 循环未被 break 且还有剩余步（续跑边界：断点已在末尾）→ 直接收敛 DONE
-            if task.status != AgentState.DONE.value:
-                _move(task, AgentState.OBSERVING)
-                _move(task, AgentState.REFLECTING)
-                checkpoint["error"] = ""
-                _move(task, AgentState.DONE)
-                save_checkpoint()
+            _conclude_at_boundary(task, checkpoint, save_checkpoint)
     except BusinessError as exc:
         fail_run(exc.msg)
     except Exception as exc:  # 未预期异常同样收敛终态：受理接口保持 code 0，细节进检查点
         logger.exception("run %s 执行异常", task.id)
         fail_run(f"运行异常：{str(exc)[:200]}")
 
-    steps_done = sum(1 for entry in _step_entries(checkpoint) if entry.get("status") == "ok")
-    task.output = _dumps(
+    # R2 回答数值校验：收敛 DONE 后合成 LLM 终答并标注（降级不 500，绝不阻断已完成步骤）
+    validation_block: dict[str, Any] = {}
+    if task.status == AgentState.DONE.value:
+        validation_block = await finalize_answer(spec=spec, goal=goal, results=results)
+        checkpoint.update(validation_block)
+        save_checkpoint()
+
+    steps_done = sum(1 for entry in step_entries(checkpoint) if entry.get("status") == "ok")
+    task.output = dumps(
         {
             "agent": spec.name,
             "goal": goal,
             "status": task.status,
             "steps_done": steps_done,
             "error": checkpoint.get("error", ""),
+            "answer": validation_block.get("answer", ""),
+            "validation": validation_block.get("validation"),
         }
     )
-    return {
-        "run_id": task.id,
-        "agent": spec.name,
-        "goal": goal,
-        "status": task.status,
-        "status_label": state_label(task.status),
-        "steps_done": steps_done,
-        "error": checkpoint.get("error", ""),
-    }
+    summary = summarize_run(task, checkpoint)
+    if validation_block:
+        summary["answer"] = validation_block.get("answer", "")
+        summary["validation"] = validation_block.get("validation")
+    return summary
