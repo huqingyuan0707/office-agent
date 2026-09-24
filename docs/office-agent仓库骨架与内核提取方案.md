@@ -52,6 +52,29 @@ office-agent/
 | 读 | `schedule.view` | office:read | 日历只读 |
 | 写 | `todo.create` / `schedule.book` / `doc.draft` / `ticket.create` / `announce.draft` | office:write | **全部标记需审批**（恒送审）；doc.draft 只起草不发布；幂等键 idem_key 必带 |
 
+### 4.1 V1.0 落地现状（2026-09-24，对应 PRD §5.1 七项功能）
+
+实际落地的工具清单（命名以实现为准，读写分层与上表口径一致；纯本地实现，无外部依赖时降级不注册）：
+
+| 工具 | Scope / 审批 | 说明 |
+|---|---|---|
+| `office.schedule.view` / `office.todo.create` | office:read / office:write（恒送审） | M1 已有：日历视图演示数据集 / 待办创建 |
+| `office.report.generate` | office:read | 日报/周报模板直出（weekly 追加亮点/下周计划板块）；数值只取入参原值，缺板块留白不编造 |
+| `office.minutes.generate` | office:read | 会议纪要模板直出（参会人/议题/决议/行动项 + 计数） |
+| `kb.ask` | office:read | 知识库问答：KB_DIR（`*.md/*.txt`）+ 内置演示条目，中文 bigram 检索；只摘录命中原文，无命中 degraded（设计名 `kb.query`/`doc.summarize` 的最小落地，RAG 向量版后置） |
+| `ocr.image` | office:read | 图片元数据直读 + 可选 Tesseract 真识别；引擎缺失降级只回元数据，绝不编造文本 |
+| `office.doc.compare` | office:read | 两份 docx 段落级 diff（新增/删除/修改 + 摘要），只报实测差异 |
+| `office.task.decompose` | office:read | 任务拆解：通用生命周期五阶段规则拆解；缺人/缺期留空 + missing_info 追问（PRD §6） |
+| `office.task.commit` | office:write（恒送审） | 批量建单二次确认（PRD §6.5.4）；tasks 1-50 + idem_key 必带；无责任人任务不发送通知 |
+| `office.template.save` | office:write（恒送审） | 自定义模板落盘 `DOCS_DIR/templates/{name}.json`；sections 可含 `{占位符}` |
+| `office.template.apply` | office:read | 模板复用渲染：缺值占位符保持原样并列入 unfilled（不编造填充值） |
+
+壳层配套（PRD §2.2 主动消息推送）：`notifications` 表（迁移 `4710c1599916`）+ `services/notifications.py`
+三类扫描信号（审批超时 approval_stale / 任务失败 task_failed / 今日简报 daily_briefing），
+`(tenant, username, kind, ref_id)` 唯一去重；端点 `GET /api/v1/notifications`（登录即可读本人）、
+`POST /notifications/scan`（admin/approver，幂等可重扫）、`POST /notifications/{id}/read`（幂等已读）。
+HTTP 级冒烟：`tests/smoke_v1_features.py` 17/17（可重复执行）。
+
 ## 5. MVP 里程碑
 
 | 期 | 内容 | 验收 |

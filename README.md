@@ -31,7 +31,7 @@ packages/core ── 治理内核（冻结，只消费公开 API）
    │
    ▼
 packages/server ── FastAPI 壳（auth / rbac / tasks / approvals / governance）
-   + packages/tools-office ── 内置办公工具（schedule.view / report.generate / todo.create）
+   + packages/tools-office ── 内置办公工具（日程/周报/纪要/知识库/OCR/文档对比/任务拆解/模板）
    + plugins/tools-ecommerce ── 外部系统只读桥接工具（可选，未配置提供方即不注册）
    + apps/web ── Vue3 管理台（登录 / 工具 / 任务 / 审批 / 治理 / 智能体运行面板）
 ```
@@ -122,6 +122,9 @@ curl.exe -s http://127.0.0.1:8200/api/v1/runs/<run_id> -H "Authorization: Bearer
 | GET | /approvals | 审批单列表 |
 | POST | /approvals/{id}/approve | 批准（审批人 ≠ 提交人，同人拒绝） |
 | POST | /approvals/{id}/reject | 驳回（附意见，run 收敛终态留痕） |
+| GET | /notifications | 本人站内通知（登录即可读自己的，unread_only 过滤） |
+| POST | /notifications/scan | 扫描生成通知（审批超时/任务失败/今日简报；admin/approver，幂等可重扫） |
+| POST | /notifications/{id}/read | 标记已读（幂等回执） |
 | GET | /governance/status | 治理状态（工具数 / 熔断 / 可观测计数） |
 | GET | /agents | 可用智能体清单（实扫 plugins/*/agent.yaml，热更新零重启） |
 | POST | /runs | `{agent, goal}` 发起运行（受理即跑，错误进时间线不抛 500） |
@@ -164,6 +167,20 @@ rules:                 # 无 LLM 时的规则规划（也是 LLM 故障降级路
 - **凭据只走环境变量/secret，绝不入库**；主包 `packages/` 禁止出现任何业务域词元（CI grep 门禁）。
 - **拉取（模式①）+ 回流（模式②）均已实测**：读工具（order/logistics/stock/coupon/kb）拉取带溯源；首个回流写工具 `ticket.create`（ticket:write）——invoke 恒送审，复核员批准后以申请人身份出站执行，对端按 `(tenant, idem_key)` 唯一约束幂等回放（同键重放返回原单绝不双单）；HTTP 级冒烟 `tests/smoke_linkage_writeback.py` 6/6。
 
+## V1.0 办公功能（PRD §5.1，全部走同一治理口径）
+
+| 功能 | 工具 / 端点 | 口径要点 |
+|---|---|---|
+| 文案生成 | `office.report.generate`（daily/weekly）、`office.minutes.generate` | 模板直出；数值只取入参原值，缺板块留白不编造 |
+| 知识库问答 | `kb.ask`（KB_DIR `*.md/*.txt` + 内置演示条目） | 只摘录命中原文片段，无命中 degraded 如实告知 |
+| 图片 OCR | `ocr.image` | 元数据直读；Tesseract 缺失降级只回元数据，绝不编造文字 |
+| 文档对比 | `office.doc.compare` | 段落级 diff（新增/删除/修改 + 摘要），只报实测差异 |
+| 任务拆解 | `office.task.decompose` → `office.task.commit` | 缺人/缺期留空不臆造（missing_info 追问）；批量建单恒送审 + idem_key |
+| 自定义模板 | `office.template.save`（送审落盘）→ `office.template.apply` | 占位符缺值保持原样并在 unfilled 如实列出 |
+| 主动消息推送 | `/notifications`（scan / 列表 / 已读） | 审批超时/任务失败/今日简报三类信号，`(tenant, username, kind, ref_id)` 唯一去重 |
+
+HTTP 级冒烟：`python tests/smoke_v1_features.py`（17 项断言，可重复执行）。
+
 ## 数据库迁移
 
 `alembic` 是持久库 schema 演进唯一入口：async 引擎 `env.py`，URL 唯一出处 `Settings.DATABASE_URL`。
@@ -191,6 +208,7 @@ cd apps\web; npm run build                                       # 前端构建�
 | M1 | 审批闭环 + 办公工具 + 前端管理台 | ✅ |
 | M2 | 跨系统 HTTP+JWT 桥接（tools-ecommerce，拉取模式实测） | ✅ |
 | R0-R3 | 编排运行时：AgentSpec / 双 planner / 审批挂起续跑 / 数值校验 / 运行面板 | ✅ |
+| V1.0 | PRD §5.1 七项办公功能（周报/纪要/知识库/OCR/对比/拆解/模板）+ 站内通知 | ✅ |
 | M3 | mcp-bridge 标准 MCP 协议 + SPI 文档 | ⏳ 规划中 |
 
 ## 文档

@@ -28,7 +28,7 @@ packages/core ── governance kernel (frozen; runtime consumes public API only
    │
    ▼
 packages/server ── FastAPI shell (auth / rbac / tasks / approvals / governance)
-   + packages/tools-office ── built-in office tools (schedule.view / report.generate / todo.create)
+   + packages/tools-office ── built-in office tools (schedule / reports / minutes / knowledge / OCR / doc compare / task planner / templates)
    + plugins/tools-ecommerce ── optional read-only remote bridge (absent when provider unconfigured)
    + apps/web ── Vue3 console (login / tools / tasks / approvals / governance / agent run panel)
 ```
@@ -119,6 +119,9 @@ Unified envelope `{code, msg, data, trace_id}`; `code == 0` means success; auth 
 | GET | /approvals | approval tickets |
 | POST | /approvals/{id}/approve | approve (approver ≠ submitter enforced) |
 | POST | /approvals/{id}/reject | reject with comment; run converges to a terminal state |
+| GET | /notifications | own in-app notifications (login is enough; unread_only filter) |
+| POST | /notifications/scan | generate notifications (approval-stale / task-failed / daily briefing; admin/approver, idempotent rescans) |
+| POST | /notifications/{id}/read | mark as read (idempotent receipt) |
 | GET | /governance/status | governance status (tool count / circuit breaker / observability counters) |
 | GET | /agents | available agents (rescans plugins/*/agent.yaml per request — hot reload) |
 | POST | /runs | `{agent, goal}` — accepted synchronously; execution errors surface in the timeline, never a 500 |
@@ -161,6 +164,20 @@ External capabilities arrive via `plugins/tools-ecommerce` whitelisted tools. Di
 - **Credentials only via env/secret, never stored**; a CI grep gate forbids business-domain tokens anywhere under `packages/`.
 - **Pull (mode 1) and write-back (mode 2) both verified**: read tools (order/logistics/stock/coupon/kb) fetch with provenance; the first write-back tool `ticket.create` (ticket:write) — invoke always files an approval; once approved it executes outbound as the applicant, and the peer replays idempotently on `(tenant, idem_key)` (same key returns the same ticket, never a duplicate). HTTP-level smoke: `tests/smoke_linkage_writeback.py` 6/6.
 
+## V1.0 Office Features (PRD §5.1, all under the same governance)
+
+| Feature | Tool / endpoint | Key guarantees |
+|---|---|---|
+| Copywriting (daily/weekly/minutes) | `office.report.generate` (daily/weekly), `office.minutes.generate` | template-driven; numbers come only from inputs; missing sections are left blank, never fabricated |
+| Knowledge-base Q&A | `kb.ask` (KB_DIR `*.md/*.txt` + built-in demo entries) | quotes matched source text only; reports `degraded` honestly on no match |
+| Image OCR | `ocr.image` | real metadata; falls back to metadata-only when Tesseract is absent — never fabricates text |
+| Document comparison | `office.doc.compare` | paragraph-level diff (added/removed/changed + summary), measured facts only |
+| Task decomposition | `office.task.decompose` → `office.task.commit` | missing people/dates stay blank with follow-up prompts; batch creation is always approved + idem_key |
+| Custom templates | `office.template.save` (approved write) → `office.template.apply` | unfilled placeholders stay literal and are listed in `unfilled` |
+| Proactive notifications | `/notifications` (scan / list / read) | approval-stale / task-failed / daily briefing; deduped on `(tenant, username, kind, ref_id)` |
+
+HTTP-level smoke: `python tests/smoke_v1_features.py` (17 assertions, re-runnable).
+
 ## Database Migrations
 
 `alembic` is the single entry point for schema evolution: async `env.py`, URL sourced only from `Settings.DATABASE_URL`. Model column changes must ship as `autogenerate` migrations (`create_all` never ALTERs); CI runs `alembic check` for drift.
@@ -187,6 +204,7 @@ After cloning, run `git config core.hooksPath githooks` once to enable commit ho
 | M1 | Approval loop + office tools + web console | ✅ |
 | M2 | Cross-system HTTP+JWT bridge (tools-ecommerce, pull mode verified E2E) | ✅ |
 | R0-R3 | Orchestration runtime: AgentSpec / dual planners / approval suspend + resume / numeric validation / run panel | ✅ |
+| V1.0 | PRD §5.1 office features (reports / minutes / knowledge / OCR / compare / planner / templates) + notifications | ✅ |
 | M3 | mcp-bridge (standard MCP) + SPI docs | ⏳ planned |
 
 ## Documentation
