@@ -1,7 +1,7 @@
 """内置办公工具实现（文案生成 / 日程 / 待办 的 handler + 规格）。
 
 职责：
-- office.report.generate：结构化中文日报/周报（report_type=daily/weekly），纯模板直出，每个数字带溯源标注；
+- office.report.generate：结构化中文日报/周报/月报（report_type=daily/weekly/monthly），纯模板直出，每个数字带溯源标注；
 - office.minutes.generate：会议纪要（议题/决议/行动项模板直出，缺的板块留白不编造）；
 - office.schedule.view：日程视图查询，返回演示数据集，显式标注 source=builtin-demo；
 - office.todo.create：创建待办（写动作），幂等 + scope=office:write + requires_approval=True。
@@ -50,10 +50,12 @@ def _now_text() -> str:
 
 
 async def _report_generate(ctx: ToolContext, args: dict[str, Any]) -> dict[str, Any]:
-    """office.report.generate：结构化中文日报/周报，纯模板直出，每个数字带溯源标注。
+    """office.report.generate：结构化中文日报/周报/月报，纯模板直出，每个数字带溯源标注。
 
     数值口径：所有数值由输入原值直出，不调大模型，数值一致率 100%；
-    周报（report_type=weekly）追加「本周亮点 / 下周计划」两个板块（入参未给则留白说明）。
+    周报（report_type=weekly）追加「本周亮点 / 下周计划」两个板块（入参未给则留白说明）；
+    月报（report_type=monthly）追加「本月重点 / 下月计划」两个板块（复用 highlights /
+    next_plan 入参，渲染时按月口径标注，缺省同样留白）。
     """
     _ = ctx  # 纯本地工具，不依赖执行上下文
     title = str(args.get("title") or "").strip()
@@ -103,6 +105,22 @@ async def _report_generate(ctx: ToolContext, args: dict[str, Any]) -> dict[str, 
             [f"- {item}" for item in next_plan]
             if next_plan
             else ["-（下周计划：未提供，留白不编造）"]
+        )
+    elif report_type == "monthly":
+        lines.insert(3, "报告类型：月报")
+        highlights = _str_list(args.get("highlights"))
+        next_plan = _str_list(args.get("next_plan"))
+        lines += ["", "## 三、本月重点"]
+        lines += (
+            [f"- {item}" for item in highlights]
+            if highlights
+            else ["-（本月重点：未提供，留白不编造）"]
+        )
+        lines += ["", "## 四、下月计划"]
+        lines += (
+            [f"- {item}" for item in next_plan]
+            if next_plan
+            else ["-（下月计划：未提供，留白不编造）"]
         )
     return {
         "title": title,
@@ -230,7 +248,7 @@ def specs() -> tuple[ToolSpec, ...]:
         ToolSpec(
             name="office.report.generate",
             scope=SCOPE_READ,
-            description="生成结构化中文日报/周报：输入标题与指标字典，纯模板直出（不调大模型），每个数字带 input.metrics 溯源标注，数值一致率 100%；周报可附本周亮点与下周计划",
+            description="生成结构化中文日报/周报/月报：输入标题与指标字典，纯模板直出（不调大模型），每个数字带 input.metrics 溯源标注，数值一致率 100%；周报可附本周亮点与下周计划，月报可附本月重点与下月计划（同 highlights/next_plan 入参）",
             params={
                 "type": "object",
                 "properties": {
@@ -242,8 +260,8 @@ def specs() -> tuple[ToolSpec, ...]:
                     },
                     "report_type": {
                         "type": "string",
-                        "description": "报告类型（daily 日报 / weekly 周报，缺省日报）",
-                        "enum": ["daily", "weekly"],
+                        "description": "报告类型（daily 日报 / weekly 周报 / monthly 月报，缺省日报）",
+                        "enum": ["daily", "weekly", "monthly"],
                     },
                     "metrics": {
                         "type": "object",
@@ -253,12 +271,12 @@ def specs() -> tuple[ToolSpec, ...]:
                     "highlights": {
                         "type": "array",
                         "items": {"type": "string"},
-                        "description": "本周亮点（仅周报使用，缺省留白）",
+                        "description": "亮点（周报渲染为本周亮点/月报渲染为本月重点，缺省留白）",
                     },
                     "next_plan": {
                         "type": "array",
                         "items": {"type": "string"},
-                        "description": "下周计划（仅周报使用，缺省留白）",
+                        "description": "后续计划（周报渲染为下周计划/月报渲染为下月计划，缺省留白）",
                     },
                 },
                 "required": ["title", "metrics"],

@@ -15,7 +15,10 @@
 ⑫ office.approval.draft / check / invoice.extract：审批智能辅助（读草稿必填校验 / 读合规自查与高危二次确认 / 读发票要素提取）；
 ⑬ office.pptx.generate：PPT 生成（写，大纲直出 .pptx，恒送审+幂等键，python-pptx 缺失不注册）；
 ⑭ office.compliance.scan：合规风险检测（读，隐私/违规用语/泄密凭据三类规则，只摘录不推断）；
-⑮ office.budget.query：预算查询（读，演示台账 + CSV 叠加，剩余额度确定性计算带溯源）。
+⑮ office.budget.query：预算查询（读，演示台账 + CSV 叠加，剩余额度确定性计算带溯源）；
+⑯ office.memo.compose：通用文案起草（读，通知/邮件/方案/总结/汇报五类模板直出，缺板块留白）；
+⑰ office.text.summarize / normalize：文本处理（读，抽取式摘要单篇+多篇整合/格式统一只动空白，润色改写后置）；
+⑱ office.file.read / docs.rename：文件解析与批量重命名（读 docx 表格文本图片清单/xlsx 行列与前 N 行/纯文本直读，PDF 引擎缺失降级；写重命名恒送审禁覆盖）。
 
 链路：server lifespan → 本包 register_all() → 各模块 specs() → registry 注册 ToolSpec；
 executor 按 spec 执行。
@@ -30,14 +33,18 @@ from . import (
     approval,
     budget,
     compliance,
+    compose,
     data_analysis,
     doc_compare,
+    file_read,
     kb,
     meeting,
     ocr,
     pptx_gen,
+    summarize,
     task_planner,
     templates,
+    terms,
     tools,
 )
 
@@ -46,16 +53,20 @@ __all__ = [
     "approval",
     "budget",
     "compliance",
+    "compose",
     "data_analysis",
     "doc_compare",
+    "file_read",
     "kb",
     "meeting",
     "ocr",
     "pptx_gen",
     "register_all",
     "specs",
+    "summarize",
     "task_planner",
     "templates",
+    "terms",
     "tools",
 ]
 
@@ -73,6 +84,10 @@ _MODULES = (
     pptx_gen,
     compliance,
     budget,
+    compose,
+    summarize,
+    file_read,
+    terms,
 )
 
 
