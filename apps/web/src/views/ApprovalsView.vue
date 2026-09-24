@@ -23,10 +23,21 @@ const rejectTarget = ref<ApprovalItem | null>(null) // 驳回弹窗目标单
 const rejectError = ref('') // 弹窗内就地显示的提交错误
 const expandedId = ref('') // 展开申请内容详情的那一行（同一时刻只展开一条）
 
-// 申请内容摘要：超长截断，完整 JSON 挂 title（复核员一眼看出要批什么）
-const argsBrief = (args: unknown) => {
-  const text = JSON.stringify(args ?? {})
-  return text.length > 60 ? `${text.slice(0, 60)}…` : text
+// ID 短显：32 位 hex 截前 8 位（完整值挂 title，详情展开区也有）
+const shortId = (id: string) => (id.length > 10 ? `${id.slice(0, 8)}…` : id)
+
+// 申请内容摘要：title 类语义字段优先、附参数计数（列宽有限，完整 JSON 在详情展开区；
+// 摘要里绝不堆原始 JSON 长文，防止表格被撑爆出横向滚动、操作列出屏）
+const SUMMARY_KEYS = ['title', 'name', 'goal', 'query', 'keyword', 'path']
+const argsSummary = (args: unknown) => {
+  if (typeof args !== 'object' || args === null || !Object.keys(args).length) return '无参数'
+  const entries = Object.entries(args)
+  const hit = SUMMARY_KEYS.flatMap((k) =>
+    entries.filter(([name]) => name === k).map(([, value]) => value),
+  )[0]
+  const text = typeof hit === 'string' && hit ? hit : JSON.stringify(args)
+  const brief = text.length > 60 ? `${text.slice(0, 60)}…` : text
+  return `${brief}（${entries.length} 项）`
 }
 
 // 申请内容键值对：对象/数组按 JSON 展开、空值给占位符（如实展示入参，不做任何加工）
@@ -107,11 +118,19 @@ onMounted(loadApprovals)
     </h2>
     <div class="table-wrap">
       <table>
+        <colgroup>
+          <col style="width: 96px" />
+          <col style="width: 158px" />
+          <col />
+          <col style="width: 84px" />
+          <col style="width: 88px" />
+          <col style="width: 152px" />
+          <col style="width: 140px" />
+        </colgroup>
         <thead>
           <tr>
             <th>ID</th>
             <th>审批类型</th>
-            <th>目标</th>
             <th>申请内容</th>
             <th>状态</th>
             <th>申请人</th>
@@ -121,30 +140,31 @@ onMounted(loadApprovals)
         </thead>
         <tbody>
           <tr v-if="loading">
-            <td colspan="8" class="empty">加载中…</td>
+            <td colspan="7" class="empty">加载中…</td>
           </tr>
           <tr v-else-if="!approvals.length">
-            <td colspan="8" class="empty">暂无审批单</td>
+            <td colspan="7" class="empty">暂无审批单</td>
           </tr>
           <template v-else>
             <template v-for="a in approvals" :key="a.id">
               <tr>
-                <td class="mono">{{ a.id }}</td>
+                <td class="mono id-cell" :title="a.id">{{ shortId(a.id) }}</td>
                 <td>{{ a.action }}</td>
-                <td>{{ a.target }}</td>
                 <td class="args-cell">
-                  <span class="mono muted args-brief" :title="JSON.stringify(a.args ?? {})">
-                    {{ argsBrief(a.args) }}
-                  </span>
-                  <button class="btn small" @click="toggleDetail(a.id)">
-                    {{ expandedId === a.id ? '收起' : '详情' }}
-                  </button>
+                  <div class="args-line">
+                    <span class="args-text" :title="JSON.stringify(a.args ?? {})">
+                      {{ argsSummary(a.args) }}
+                    </span>
+                    <button class="btn small" @click="toggleDetail(a.id)">
+                      {{ expandedId === a.id ? '收起' : '详情' }}
+                    </button>
+                  </div>
                 </td>
                 <td>
                   <StatusBadge :status="a.status" :label="a.status_label || a.status" />
                 </td>
                 <td>{{ a.applicant }}</td>
-                <td class="muted">{{ a.created_at }}</td>
+                <td class="muted time-cell">{{ a.created_at }}</td>
                 <td class="ops">
                   <button class="btn small" :disabled="decidingId === a.id" @click="onApprove(a)">
                     {{ decidingId === a.id ? '处理中…' : '批准' }}
@@ -160,7 +180,7 @@ onMounted(loadApprovals)
               </tr>
               <!-- 详情行：把送审入参逐项摊开（写动作恒送审的前提是复核员看得见内容） -->
               <tr v-if="expandedId === a.id" class="detail-row">
-                <td colspan="8">
+                <td colspan="7">
                   <dl v-if="argEntries(a.args).length" class="args-detail">
                     <template v-for="entry in argEntries(a.args)" :key="entry.key">
                       <dt>{{ entry.key }}</dt>
@@ -188,16 +208,56 @@ onMounted(loadApprovals)
 </template>
 
 <style scoped>
-.args-cell {
-  max-width: 320px;
+/* fixed 布局：列宽由 colgroup 钉死，内容再长也不撑爆表格（全局 nowrap 会导致
+   申请内容长文把操作列挤出屏幕，本页按列覆盖） */
+table {
+  table-layout: fixed;
 }
-.args-cell .btn {
-  margin-top: 4px;
+/* 溢出兜底：fixed 列宽被窄视口压缩时内容一律裁剪省略，
+   绝不画出单元格叠压到邻列（全局 nowrap 会溢出画出，这里收敛） */
+th,
+td {
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.id-cell {
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+/* 申请内容列：允许换行 + 两行截断，完整 JSON 挂 title、全量在详情展开区 */
+.args-cell {
+  white-space: normal;
+  word-break: break-all;
+}
+.args-line {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+}
+.args-line .btn {
+  flex: none;
+}
+.args-text {
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+  font-size: 13px;
+  min-width: 0;
+}
+/* 时间与操作列保持单行不换（fixed 下 nowrap 内容溢出需裁剪防顶开邻列） */
+.time-cell {
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.ops {
+  white-space: nowrap;
 }
 /* 详情行：与主行视觉区隔，入参逐项左键右值 */
 .detail-row td {
   background: var(--bg);
   border-top: 1px dashed var(--line-strong);
+  white-space: normal;
 }
 .args-detail {
   display: grid;
