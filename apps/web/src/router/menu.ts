@@ -2,6 +2,8 @@
 // 链路：modules/*.ts → 本文件 MENU_GROUPS →（MainLayout 渲染 el-menu | router/index.ts 挂 children）
 // 对齐：frontend-code-style §2（模块化：新增页面只改对应域模块，壳与路由零改动）
 import type { RouteRecordRaw } from 'vue-router'
+import { affairsGroup } from './modules/affairs'
+import { knowledgeGroup } from './modules/knowledge'
 import { officeGroup } from './modules/office'
 import { operationGroup } from './modules/operation'
 import { platformGroup } from './modules/platform'
@@ -10,6 +12,8 @@ import type { MenuGroup } from './types'
 
 export const MENU_GROUPS: MenuGroup[] = [
   officeGroup,
+  knowledgeGroup,
+  affairsGroup,
   processGroup,
   platformGroup,
   operationGroup,
