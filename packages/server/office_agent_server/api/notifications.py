@@ -19,8 +19,8 @@ from office_agent_server.db import get_db
 from office_agent_server.models import Notification
 from office_agent_server.rbac import CurrentUser, get_current_user, require_any_perm
 from office_agent_server.responses import ok
+from office_agent_server.services.notification_kinds import KIND_LABELS
 from office_agent_server.services.notifications import (
-    KIND_LABELS,
     list_own_notifications,
     mark_read,
     scan_notifications,

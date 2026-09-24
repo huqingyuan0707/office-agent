@@ -176,3 +176,153 @@ async def test_notification_scan_requires_admin_or_approver(client):
     assert mine["code"] == 0
     assert mine["data"]["total"] == 0
     assert mine["data"]["items"] == []
+
+
+def _seed_affairs(tmp_path, payload: dict) -> None:
+    """把事务存储写进临时 DOCS_DIR（server 扫描与 tools-office 共用同一文件）。"""
+    import json
+
+    data_dir = tmp_path / "data"
+    data_dir.mkdir(parents=True, exist_ok=True)
+    (data_dir / "affairs.json").write_text(
+        json.dumps(payload, ensure_ascii=False), encoding="utf-8"
+    )
+
+
+def test_affairs_signals_scan_and_dedupe(client, monkeypatch, tmp_path):
+    """PRD §2.2 主动推送：待办到期/会议临近/项目节点/周五周报提示 + 简报并入今日计数；二扫全去重。
+
+    业务时基钉死在 2027-03-05（周五）09:00——周报提示天然命中，且不依赖真实星期几。
+    """
+    from datetime import datetime
+
+    from office_agent_core.settings import settings
+    from office_agent_tools_office import affairs as aff_mod
+
+    monkeypatch.setattr(settings, "DOCS_DIR", str(tmp_path))
+    monkeypatch.setattr(aff_mod, "business_now", lambda: datetime(2027, 3, 5, 9, 0))
+    _seed_affairs(
+        tmp_path,
+        {
+            "todos": [
+                {
+                    "id": "td1",
+                    "tenant": "demo-tenant",
+                    "owner": "admin",
+                    "title": "交月报",
+                    "due_date": "2027-03-05",
+                    "status": "open",
+                },
+                {
+                    "id": "td2",
+                    "tenant": "demo-tenant",
+                    "owner": "admin",
+                    "title": "归档文件",
+                    "due_date": "2027-03-04",
+                    "status": "open",
+                },
+                {
+                    "id": "td3",
+                    "tenant": "demo-tenant",
+                    "owner": "reviewer",
+                    "title": "远期事项",
+                    "due_date": "2027-12-31",
+                    "status": "open",
+                },
+                {
+                    "id": "td4",
+                    "tenant": "demo-tenant",
+                    "owner": "admin",
+                    "title": "已完成事项",
+                    "due_date": "2027-03-05",
+                    "status": "done",
+                },
+            ],
+            "schedules": [
+                {
+                    "id": "sc1",
+                    "tenant": "demo-tenant",
+                    "owner": "admin",
+                    "kind": "meeting",
+                    "title": "需求评审会",
+                    "start": "2027-03-05 10:00",
+                    "end": "2027-03-05 11:00",
+                    "attendees": ["reviewer"],
+                    "location": "3F会议室",
+                },
+                {
+                    "id": "sc2",
+                    "tenant": "demo-tenant",
+                    "owner": "admin",
+                    "kind": "milestone",
+                    "title": "封版节点",
+                    "start": "2027-03-07 00:00",
+                    "end": "",
+                    "attendees": [],
+                },
+                {
+                    "id": "sc3",
+                    "tenant": "demo-tenant",
+                    "owner": "admin",
+                    "kind": "meeting",
+                    "title": "下周例会",
+                    "start": "2027-03-12 10:00",
+                    "end": "",
+                    "attendees": [],
+                },
+            ],
+        },
+    )
+
+    admin = _auth(_login(client))
+    body = client.post("/api/v1/notifications/scan", headers=admin).json()
+    assert body["code"] == 0
+    data = body["data"]
+    assert data["affairs_degraded"] is False
+    assert data["by_kind"]["todo_due"] == 2, "临近+逾期各一条，远期/已完成的提醒"
+    assert data["by_kind"]["meeting_upcoming"] == 2, "创建人与参会人各一条，窗口外不提醒"
+    assert data["by_kind"]["milestone_alert"] == 1
+    assert data["by_kind"]["weekly_draft_hint"] >= 2, "周五→活跃用户各一条"
+
+    items = client.get("/api/v1/notifications", headers=admin).json()["data"]["items"]
+    due = {item["ref_id"]: item for item in items if item["kind"] == "todo_due"}
+    assert due["td1"]["title"] == "待办临近截止"
+    assert due["td2"]["title"] == "待办已逾期"
+    ms = next(item for item in items if item["kind"] == "milestone_alert")
+    assert ms["ref_id"] == "sc2" and "还剩 2 天" in ms["content"]
+    brief = next(i for i in items if i["kind"] == "daily_briefing" and i["ref_id"] == "2027-03-05")
+    assert "今日到期/逾期待办 2 件；今日会议 1 场" in brief["content"]
+
+    reviewer = _auth(_login(client, "reviewer", "reviewer123"))
+    r_items = client.get("/api/v1/notifications", headers=reviewer).json()["data"]["items"]
+    meet = next(i for i in r_items if i["kind"] == "meeting_upcoming")
+    assert meet["ref_id"] == "sc1" and "需求评审会" in meet["title"]
+    assert not [i for i in r_items if i["kind"] == "todo_due"], "他人待办不提醒"
+
+    second = client.post("/api/v1/notifications/scan", headers=admin).json()
+    assert second["data"]["created"] == 0, "同键绝不重复刷屏"
+
+
+def test_affairs_store_corrupt_degrades_scan(client, monkeypatch, tmp_path):
+    """事务存储损坏（非法 JSON）→ affairs_degraded=true、④~⑦ 全 0，审批/简报扫描照常绝不 500。"""
+    from datetime import datetime
+
+    from office_agent_core.settings import settings
+    from office_agent_tools_office import affairs as aff_mod
+
+    monkeypatch.setattr(settings, "DOCS_DIR", str(tmp_path))
+    monkeypatch.setattr(aff_mod, "business_now", lambda: datetime(2027, 6, 2, 9, 0))  # 周三
+    data_dir = tmp_path / "data"
+    data_dir.mkdir(parents=True, exist_ok=True)
+    (data_dir / "affairs.json").write_text("{不是合法JSON", encoding="utf-8")
+
+    admin = _auth(_login(client))
+    body = client.post("/api/v1/notifications/scan", headers=admin).json()
+    assert body["code"] == 0
+    data = body["data"]
+    assert data["affairs_degraded"] is True
+    assert data["by_kind"]["todo_due"] == 0
+    assert data["by_kind"]["meeting_upcoming"] == 0
+    assert data["by_kind"]["milestone_alert"] == 0
+    assert data["by_kind"]["weekly_draft_hint"] == 0, "非周五不提示"
+    assert data["by_kind"]["daily_briefing"] >= 1, "简报照常生成（无待办/会议计数段）"

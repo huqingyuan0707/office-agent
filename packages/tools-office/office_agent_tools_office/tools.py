@@ -4,7 +4,7 @@
 - office.report.generate：结构化中文日报/周报/月报（report_type=daily/weekly/monthly），纯模板直出，每个数字带溯源标注；
 - office.minutes.generate：会议纪要（议题/决议/行动项模板直出，缺的板块留白不编造）；
 - office.schedule.view：日程视图查询，返回演示数据集，显式标注 source=builtin-demo；
-- office.todo.create：创建待办（写动作），幂等 + scope=office:write + requires_approval=True。
+- office.todo.create：创建待办（写，恒送审），审批通过后落 affairs 本地事务存储（PRD §2.2）。
 
 链路：__init__.register_all() → registry.register(spec) → executor.call 执行 handler。
 红线：本模块只实现 handler 与 ToolSpec，不触及任何 ORM / FastAPI 对象；
@@ -23,6 +23,8 @@ from typing import Any
 from office_agent_core.contracts import ToolContext, ToolSpec
 from office_agent_core.errors import BusinessError, ErrorCode
 from office_agent_core.registry import register
+
+from . import affairs
 
 #: Scope 常量（office 域与根级 office_agent/contracts.py 对齐）
 SCOPE_READ = "office:read"
@@ -218,24 +220,26 @@ async def _schedule_view(ctx: ToolContext, args: dict[str, Any]) -> dict[str, An
 
 
 async def _todo_create(ctx: ToolContext, args: dict[str, Any]) -> dict[str, Any]:
-    """office.todo.create：创建待办（演示实现，审批通过后由 decide 路径真正执行）。
+    """office.todo.create：创建待办（写动作，审批通过后由 decide 路径真正落盘）。
 
-    本 handler 仅在审批通过后被调用（由 server 的 approval_flow 在批准后以
-    提交人身份触发）。演示实现无外部副作用，只返回回执。
+    落盘走 affairs 本地事务存储（PRD §2.2），到期提醒由 server 通知扫描链按 due_date 生成。
     """
     title = str(args.get("title") or "").strip()
     description = str(args.get("description") or "").strip()
     priority = str(args.get("priority") or "medium").strip()
     due_date = str(args.get("due_date") or "").strip()
 
+    record = await affairs.add_todo(
+        ctx.tenant,
+        ctx.username,
+        title=title,
+        description=description,
+        priority=priority,
+        due_date=due_date,
+    )
     return {
-        "title": title,
-        "description": description,
-        "priority": priority,
-        "due_date": due_date,
-        "owner": ctx.username,
-        "created_at": _now_text(),
-        "note": "演示实现：待办原值回执，无外部副作用；真实接入时在此落待办存储/通知渠道",
+        **record,
+        "note": "待办已落本地事务存储（office.todo.list 可查）；设了截止日期会进到期提醒扫描",
     }
 
 
@@ -391,7 +395,4 @@ def specs() -> tuple[ToolSpec, ...]:
 
 def register_all() -> list[str]:
     """把三个办公工具注册进内核注册中心；返回已注册工具名列表。"""
-    names: list[str] = []
-    for spec in specs():
-        names.append(register(spec).name)
-    return names
+    return [register(spec).name for spec in specs()]

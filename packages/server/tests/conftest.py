@@ -34,6 +34,23 @@ def client():
 
 
 @pytest.fixture(autouse=True)
+def _isolate_affairs_store(tmp_path, monkeypatch):
+    """事务存储钉进临时目录 + 业务时基钉死周三：真实 DOCS_DIR 的冒烟残留与真实星期几
+    （周五会触发周报提示信号）都不该影响壳层单测的确定性。需要特定时基的用例自行再 patch。"""
+    from datetime import datetime
+
+    from office_agent_core.settings import settings
+
+    monkeypatch.setattr(settings, "DOCS_DIR", str(tmp_path))
+    try:
+        from office_agent_tools_office import affairs as aff_mod
+
+        monkeypatch.setattr(aff_mod, "business_now", lambda: datetime(2027, 6, 2, 9, 0))
+    except ImportError:  # pragma: no cover - tools-office 是可选装配
+        pass
+
+
+@pytest.fixture(autouse=True)
 def _isolate_breakers():
     """逐用例复位熔断：前序用例把某工具打到开闸，不该连坐后序用例（真实环境靠冷却恢复）。
 

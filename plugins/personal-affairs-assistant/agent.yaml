@@ -1,0 +1,55 @@
+# 个人事务助手（PRD §2.2 个人事务智能管理示例智能体）
+# 对齐：智能办公Agent 产品需求文档.md §2.2；装载器 packages/runtime loader.py（扫 plugins/*/agent.yaml）
+#
+# 能力：查待办 / 工作台账 / 空闲查询（只读免审）+ 建待办 / 建日程（写动作恒送审，编排层绕不过闸门）。
+# llm 留空 = 规则规划零 LLM 可演示；待办改期/删除需要 todo_id，规则无法从一句话里取 id，
+# 该两类动作留给 LLM 函数调用或工具页直调（白名单已放开，治理口径不变）。
+name: personal-affairs-assistant
+description: 个人事务助手：查待办、出工作台账、约会议前查空闲、建待办建日程（写动作恒送审）
+system_prompt: |
+  你是个人事务助手。回答中的每个数字必须来自工具返回的 JSON 字段，禁止推算与编造；
+  待办与日程一律以本地事务存储实测为准，查无此事就说查无此事。
+tools:
+  - office.todo.list
+  - office.todo.create
+  - office.todo.update
+  - office.todo.delete
+  - office.schedule.create
+  - office.schedule.freebusy
+  - office.worklog.generate
+max_steps: 6
+llm: ""
+rules:
+  # 规则一：查待办 → 本人 open 清单（只读免审，带溯源）
+  - match: ["查待办", "我的待办", "待办清单", "待办列表", "还有什么待办"]
+    steps:
+      - tool: office.todo.list
+        args:
+          status: open
+  # 规则二：工作台账 → 周窗口聚合直出（已完成/待完成/日程实测计数，留白不编造）
+  - match: ["工作台账", "个人台账", "本周小结", "日小结"]
+    steps:
+      - tool: office.worklog.generate
+        args:
+          period: weekly
+  # 规则三：约会议前查空闲 → 当日 09:00-18:00 工作时段减忙碌区间，实测计算
+  - match: ["空闲", "有空档", "什么时候有空", "约时间"]
+    steps:
+      - tool: office.schedule.freebusy
+        args: {}
+  # 规则四：建待办（写动作恒送审：run 挂起 WAITING_APPROVAL，批准后落本地事务存储）
+  - match: ["新建待办", "加个待办"]
+    steps:
+      - tool: office.todo.create
+        args:
+          title: 跟进个人事务助手演示事项
+          priority: medium
+  # 规则五：建日程/会议（恒送审；批准后落盘，会前提醒由通知扫描链对创建人与参会人发站内通知）
+  - match: ["建日程", "安排会议", "约个会", "项目节点"]
+    steps:
+      - tool: office.schedule.create
+        args:
+          title: 个人事务助手演示评审会
+          kind: meeting
+          start: "2026-12-31 10:00"
+          duration_minutes: 60

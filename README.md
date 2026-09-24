@@ -204,7 +204,7 @@ HTTP 级冒烟：`python tests/smoke_mcp_im.py`（自带假 MCP Server + 假 IM 
 | 文档对比 | `office.doc.compare` | 段落级 diff（新增/删除/修改 + 摘要），只报实测差异 |
 | 任务拆解 | `office.task.decompose` → `office.task.commit` | 缺人/缺期留空不臆造（missing_info 追问）；批量建单恒送审 + idem_key |
 | 自定义模板 | `office.template.save`（送审落盘）→ `office.template.apply` | 占位符缺值保持原样并在 unfilled 如实列出 |
-| 主动消息推送 | `/notifications`（scan / 列表 / 已读） | 审批超时/任务失败/今日简报三类信号，`(tenant, username, kind, ref_id)` 唯一去重 |
+| 主动消息推送 | `/notifications`（scan / 列表 / 已读） | 审批超时/任务失败/今日简报三类信号（§2.2 扩展到七类，见「个人事务智能管理」），`(tenant, username, kind, ref_id)` 唯一去重 |
 
 HTTP 级冒烟：`python tests/smoke_v1_features.py`（17 项断言，可重复执行）。
 
@@ -246,6 +246,18 @@ HTTP 级冒烟：`python tests/smoke_v1_2_batch_a.py`（9 项断言，可重复�
 | 工作流编排 | `/workflows`（编排页）+ `/workflows` CRUD 与 `/run` | 定义存 `workflows` 表（迁移链演进，步骤上限 20，保存与执行前双重校验）；顺序调内核 executor，写步骤落单即停 pending_approval，失败即停且已完成步骤如实返回；远程工具步骤同链出站（含 provenance），即本仓库 RPA 形态，不另造引擎 |
 
 HTTP 级冒烟：`python tests/smoke_v1_2_batch_c.py`（7 项断言，自带起停服务）。
+
+## 个人事务智能管理（PRD §2.2：待办 / 日程 / 台账 / 智能主动推送）
+
+| 能力 | 工具 / 入口 | 口径要点 |
+|---|---|---|
+| 待办管理 | `office.todo.create` / `list` / `update` / `delete` | 真实落盘本地事务存储（`DOCS_DIR/data/affairs.json`，读写锁）；create 从演示回执升级为落盘；update/delete 写口径恒送审，越权/不存在 404 中文可操作；标记完成记 `completed_at`（进台账口径） |
+| 日程与会议 | `office.schedule.create` / `office.schedule.freebusy` | 一键创建会议（含参会人/时长）或项目节点（恒送审）；空闲查询按工作时段 09:00-18:00 减当日忙碌区间实测计算，不臆测档期；「自动邀请」如实为站内通知口径（不外发真实邮件） |
+| 事务汇总 | `office.worklog.generate` | 个人工作台账：日/周窗口内已完成/待完成/日程三段聚合直出，实测计数留白不编造，带 source+fetched_at 溯源 |
+| 智能主动推送 | `/notifications/scan` 扩展四类信号 | 待办到期提醒（临近/逾期两口径）、会议临近通知（创建人+参会人逐人）、项目节点预警（N 天内）、周五主动提示周报草稿；今日简报并入「今日到期/逾期待办数 + 今日会议数」；业务时区 `BUSINESS_TIMEZONE` 可配（缺 tzdata 降级 UTC 只告警）；事务存储损坏只降级 `affairs_degraded` 绝不 500 |
+| 示例智能体 | `plugins/personal-affairs-assistant` | 查待办/台账/空闲只读直达；建待办/建日程走对话恒送审挂起→批准续跑；daily-report-assistant 关键词同步收窄避免子串抢路由 |
+
+HTTP 级冒烟：`python tests/smoke_personal_affairs.py`（8 项断言，可重复执行）。
 
 ## 数据库迁移
 

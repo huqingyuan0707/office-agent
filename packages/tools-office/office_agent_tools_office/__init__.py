@@ -18,7 +18,8 @@
 ⑮ office.budget.query：预算查询（读，演示台账 + CSV 叠加，剩余额度确定性计算带溯源）；
 ⑯ office.memo.compose：通用文案起草（读，通知/邮件/方案/总结/汇报五类模板直出，缺板块留白）；
 ⑰ office.text.summarize / normalize：文本处理（读，抽取式摘要单篇+多篇整合/格式统一只动空白，润色改写后置）；
-⑱ office.file.read / docs.rename：文件解析与批量重命名（读 docx 表格文本图片清单/xlsx 行列与前 N 行/纯文本直读，PDF 引擎缺失降级；写重命名恒送审禁覆盖）。
+⑱ office.file.read / docs.rename：文件解析与批量重命名（读 docx 表格文本图片清单/xlsx 行列与前 N 行/纯文本直读，PDF 引擎缺失降级；写重命名恒送审禁覆盖）；
+⑲ office.todo.list / update / delete、office.schedule.create / freebusy、office.worklog.generate：个人事务管理（PRD §2.2——本地事务存储，读免审；写恒送审审批通过才落盘；到期/会前/节点预警由 server 通知扫描链共用同一存储生成；实现拆两文件：affairs.py 待办域+存储原语，affairs_schedule.py 日程域）。
 
 链路：server lifespan → 本包 register_all() → 各模块 specs() → registry 注册 ToolSpec；
 executor 按 spec 执行。
@@ -30,6 +31,8 @@ executor 按 spec 执行。
 from office_agent_core.registry import register as _core_register
 
 from . import (
+    affairs,
+    affairs_schedule,
     approval,
     budget,
     compliance,
@@ -50,6 +53,8 @@ from . import (
 
 __all__ = [
     "_core_register",
+    "affairs",
+    "affairs_schedule",
     "approval",
     "budget",
     "compliance",
@@ -88,6 +93,8 @@ _MODULES = (
     summarize,
     file_read,
     terms,
+    affairs,
+    affairs_schedule,
 )
 
 

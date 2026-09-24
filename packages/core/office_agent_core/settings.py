@@ -103,6 +103,12 @@ class Settings(BaseSettings):
     # ---- 主动消息推送（站内通知扫描阈值）----
     APPROVAL_STALE_HOURS: float = 24.0
     NOTIFICATION_MAX_PER_SCAN: int = 50
+    # 个人事务提醒口径（PRD §2.2）：业务时区决定「今天/周五」与日程时间基准；
+    # 到期/会前/项目节点窗口分别为待办截止提前量、会议开始提前量、节点日期提前量
+    BUSINESS_TIMEZONE: str = "Asia/Shanghai"
+    TODO_DUE_LOOKAHEAD_HOURS: float = 24.0
+    MEETING_UPCOMING_HOURS: float = 24.0
+    MILESTONE_LOOKAHEAD_DAYS: int = 3
 
     # ---- IM 审批通知出站（群机器人 webhook；未配置 URL 即整体关闭）----
     # IM_WEBHOOK_TYPE 决定消息体形状：generic（本仓库自定义）/ feishu / dingtalk / wecom

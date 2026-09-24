@@ -195,7 +195,7 @@ HTTP-level smoke: `python tests/smoke_mcp_im.py` (bundled fake MCP server + fake
 | Document comparison | `office.doc.compare` | paragraph-level diff (added/removed/changed + summary), measured facts only |
 | Task decomposition | `office.task.decompose` → `office.task.commit` | missing people/dates stay blank with follow-up prompts; batch creation is always approved + idem_key |
 | Custom templates | `office.template.save` (approved write) → `office.template.apply` | unfilled placeholders stay literal and are listed in `unfilled` |
-| Proactive notifications | `/notifications` (scan / list / read) | approval-stale / task-failed / daily briefing; deduped on `(tenant, username, kind, ref_id)` |
+| Proactive notifications | `/notifications` (scan / list / read) | approval-stale / task-failed / daily briefing (extended to seven signal kinds by PRD §2.2, see "Personal affairs management"); deduped on `(tenant, username, kind, ref_id)` |
 
 HTTP-level smoke: `python tests/smoke_v1_features.py` (17 assertions, re-runnable).
 
@@ -237,6 +237,18 @@ HTTP-level smoke: `python tests/smoke_v1_2_batch_a.py` (9 assertions, re-runnabl
 | Workflow orchestration | `/workflows` (editor page) + `/workflows` CRUD and `/run` | definitions in the `workflows` table (migration-chain evolution, 20-step cap, validated both on save and before run); sequential kernel executor calls; approval-gated steps stop with pending_approval, failures stop with completed steps reported verbatim; remote-tool steps ride the same outbound chain (provenance included) — the in-repo RPA shape, no separate engine |
 
 HTTP-level smoke: `python tests/smoke_v1_2_batch_c.py` (7 assertions, self-contained server).
+
+## Personal Affairs Management (PRD §2.2: todos / schedules / worklog / proactive reminders)
+
+| Capability | Tools / entry | Key guarantees |
+|---|---|---|
+| Todo management | `office.todo.create` / `list` / `update` / `delete` | real persistence in the local affairs store (`DOCS_DIR/data/affairs.json`, read/write locked); create upgraded from a demo receipt to a stored record; update/delete are approved writes, foreign/missing ids get an actionable 404; marking done records `completed_at` (feeds the worklog) |
+| Schedules & meetings | `office.schedule.create` / `office.schedule.freebusy` | one-shot meeting creation (attendees + duration) or project milestones (approved writes); free/busy computed by subtracting the day's busy windows from working hours 09:00-18:00, never guessing availability; "invitations" are honestly in-app notifications, no external email is sent |
+| Worklog | `office.worklog.generate` | personal ledger: done / pending / schedule segments aggregated over a daily/weekly window, measured counts with blanks instead of fabrication, source + fetched_at provenance |
+| Proactive reminders | `/notifications/scan` extended with four signals | todo-due (approaching/overdue), meeting-upcoming (per creator + attendee), milestone-alert (within N days), Friday weekly-draft hint; the daily briefing now embeds today's due/overdue todo and meeting counts; business timezone configurable via `BUSINESS_TIMEZONE` (falls back to UTC with a warning when tzdata is missing); a corrupt affairs store only degrades `affairs_degraded`, never 500 |
+| Example agent | `plugins/personal-affairs-assistant` | read-only lookups (todos / worklog / freebusy) answer directly from one sentence; creating todos/schedules goes through the always-approved chat flow (suspend → approve → resume); daily-report-assistant keywords narrowed in sync to avoid substring route hijacking |
+
+HTTP-level smoke: `python tests/smoke_personal_affairs.py` (8 assertions, re-runnable).
 
 ## Database Migrations
 
