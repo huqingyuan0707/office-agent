@@ -216,6 +216,16 @@ HTTP 级冒烟：`python tests/smoke_v1_features.py`（17 项断言，可重复�
 | 会议协作 | `office.meeting.agenda` / `book` / `risks` | 议程模板直出；预约写口径恒送审；风险关键词预警无命中不编造 |
 | 审批智能辅助 | `office.approval.draft` / `check`、`office.invoice.extract` | 五类单草稿必填校验追问；金额分级（>1000 部门负责人 / >5000 分管副总）+ 高危二次确认 need_confirm；发票四要素只摘录不推断，无命中 degraded |
 
+## V1.2 办公功能·批次 A（PRD §5.3，工具侧三件）
+
+| 功能 | 工具 | 口径要点 |
+|---|---|---|
+| PPT 生成 | `office.pptx.generate` | 大纲（每页标题+要点）直出 .pptx，不调大模型；写口径恒送审 + idem_key，python-pptx 缺失不注册；文件锁 DOCS_DIR 防穿越 |
+| 合规风险检测 | `office.compliance.scan` | 隐私信息（手机号/身份证/银行卡）、绝对化用语、疑似泄密凭据三类确定性规则；只摘录命中片段与位置不推断（凭据值脱敏）；读口径免审 |
+| 预算查询 | `office.budget.query` | 演示台账 + CSV 叠加；剩余额度/使用率为确定性计算并注明口径，附充足/紧张/超支状态；读口径免审，带 source+fetched_at 溯源 |
+
+HTTP 级冒烟：`python tests/smoke_v1_2_batch_a.py`（9 项断言，可重复执行）。
+
 ## 数据库迁移
 
 `alembic` 是持久库 schema 演进唯一入口：async 引擎 `env.py`，URL 唯一出处 `Settings.DATABASE_URL`。

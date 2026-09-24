@@ -12,26 +12,46 @@
 ⑨ office.template.save / office.template.apply：自定义模板（写送审落盘 / 读填充复用）；
 ⑩ office.data.query / analyze / export：数据自助分析（读，演示台账 + CSV 叠加 / 统计 + 趋势 + 异常 / 文本导出不写盘）；
 ⑪ office.meeting.agenda / book / risks：会议协作（读议程模板直出 / 写预约恒送审 / 读风险关键词预警，无命中不编造）；
-⑫ office.approval.draft / check / invoice.extract：审批智能辅助（读草稿必填校验 / 读合规自查与高危二次确认 / 读发票要素提取）。
+⑫ office.approval.draft / check / invoice.extract：审批智能辅助（读草稿必填校验 / 读合规自查与高危二次确认 / 读发票要素提取）；
+⑬ office.pptx.generate：PPT 生成（写，大纲直出 .pptx，恒送审+幂等键，python-pptx 缺失不注册）；
+⑭ office.compliance.scan：合规风险检测（读，隐私/违规用语/泄密凭据三类规则，只摘录不推断）；
+⑮ office.budget.query：预算查询（读，演示台账 + CSV 叠加，剩余额度确定性计算带溯源）。
 
 链路：server lifespan → 本包 register_all() → 各模块 specs() → registry 注册 ToolSpec；
 executor 按 spec 执行。
 对齐：AGENTS.md §3（分层红线：工具实现纯函数）；
-      智能办公Agent 产品需求文档.md §5.1（V1.0 必上线清单）、§5.2（V1.1 数据分析/会议协作/审批辅助）。
+      智能办公Agent 产品需求文档.md §5.1（V1.0 必上线清单）、§5.2（V1.1 数据分析/会议协作/审批辅助）、
+      §5.3（V1.2 PPT 生成/合规风险检测/预算查询）。
 """
 
 from office_agent_core.registry import register as _core_register
 
-from . import approval, data_analysis, doc_compare, kb, meeting, ocr, task_planner, templates, tools
+from . import (
+    approval,
+    budget,
+    compliance,
+    data_analysis,
+    doc_compare,
+    kb,
+    meeting,
+    ocr,
+    pptx_gen,
+    task_planner,
+    templates,
+    tools,
+)
 
 __all__ = [
     "_core_register",
     "approval",
+    "budget",
+    "compliance",
     "data_analysis",
     "doc_compare",
     "kb",
     "meeting",
     "ocr",
+    "pptx_gen",
     "register_all",
     "specs",
     "task_planner",
@@ -40,7 +60,20 @@ __all__ = [
 ]
 
 #: 工具模块清单（新增模块在此追加一行即可被聚合注册）
-_MODULES = (tools, kb, ocr, doc_compare, task_planner, templates, data_analysis, meeting, approval)
+_MODULES = (
+    tools,
+    kb,
+    ocr,
+    doc_compare,
+    task_planner,
+    templates,
+    data_analysis,
+    meeting,
+    approval,
+    pptx_gen,
+    compliance,
+    budget,
+)
 
 
 def register_all() -> list[str]:

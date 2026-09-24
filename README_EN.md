@@ -207,6 +207,16 @@ HTTP-level smoke: `python tests/smoke_v1_features.py` (17 assertions, re-runnabl
 | Meeting collaboration | `office.meeting.agenda` / `book` / `risks` | agenda from templates; booking is an approved write; risk keyword alerts stay blank on no match |
 | Approval assistant | `office.approval.draft` / `check`, `office.invoice.extract` | five form kinds with required-field validation and ask-back prompts; tiered amounts (>1000 dept head / >5000 VP) + high-risk `need_confirm`; invoice fields are quoted verbatim, `degraded` on no match |
 
+## V1.2 Office Features · Batch A (PRD §5.3; three tool-side items)
+
+| Feature | Tools | Key guarantees |
+|---|---|---|
+| PPT generation | `office.pptx.generate` | outline (per-slide title + bullets) rendered straight into .pptx, no LLM calls; approved write + idem_key; not registered when python-pptx is missing; filename locked inside DOCS_DIR |
+| Compliance scanning | `office.compliance.scan` | three deterministic rule sets: privacy data (phone / ID / bank card), absolute claims, leaked credentials; matches are quoted verbatim (credential values masked); read scope, approval-free |
+| Budget query | `office.budget.query` | demo ledger + CSV overlay; remaining/usage are deterministic computations with the formula stated; sufficient/tight/over-budget labels; read scope, approval-free, with source + fetched_at provenance |
+
+HTTP-level smoke: `python tests/smoke_v1_2_batch_a.py` (9 assertions, re-runnable).
+
 ## Database Migrations
 
 `alembic` is the single entry point for schema evolution: async `env.py`, URL sourced only from `Settings.DATABASE_URL`. Model column changes must ship as `autogenerate` migrations (`create_all` never ALTERs); CI runs `alembic check` for drift.
