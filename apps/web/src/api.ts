@@ -263,3 +263,68 @@ export interface AdminOverview {
 }
 
 export const adminOverview = () => request<AdminOverview>('/admin/overview')
+// 工作流编排（定义 CRUD + 顺序执行；步骤引用 registry 工具名，执行走同一条内核链，
+// 写步骤落单即停 pending_approval；远程工具步骤天然可编排，出站溯源随步返回）
+export interface WorkflowStep {
+  tool: string
+  args: object
+}
+export interface WorkflowItem {
+  id: string
+  name: string
+  description: string
+  step_count: number
+  created_by: string
+  updated_at: string
+}
+export interface WorkflowDetail extends WorkflowItem {
+  steps: WorkflowStep[]
+}
+export interface WorkflowRunStep {
+  index: number
+  tool: string
+  status: string
+  latency_ms?: number
+  approval_id?: string
+  provider_id?: string
+  result?: unknown
+}
+export interface WorkflowRun {
+  workflow_id: string
+  workflow_name: string
+  status: string
+  approval_id?: string
+  next_step?: number
+  error?: string
+  failed_step?: number
+  steps: WorkflowRunStep[]
+  trace_id: string
+}
+
+export const listWorkflows = () => request<WorkflowItem[]>('/workflows')
+
+export const createWorkflow = (name: string, description: string, steps: WorkflowStep[]) =>
+  request<WorkflowDetail>('/workflows', {
+    method: 'POST',
+    body: JSON.stringify({ name, description, steps }),
+  })
+
+export const getWorkflow = (id: string) =>
+  request<WorkflowDetail>(`/workflows/${encodeURIComponent(id)}`)
+
+export const updateWorkflow = (
+  id: string,
+  patch: { name?: string; description?: string; steps?: WorkflowStep[] },
+) =>
+  request<WorkflowDetail>(`/workflows/${encodeURIComponent(id)}`, {
+    method: 'PUT',
+    body: JSON.stringify(patch),
+  })
+
+export const deleteWorkflow = (id: string) =>
+  request<{ deleted: string }>(`/workflows/${encodeURIComponent(id)}`, {
+    method: 'DELETE',
+  })
+
+export const runWorkflow = (id: string) =>
+  request<WorkflowRun>(`/workflows/${encodeURIComponent(id)}/run`, { method: 'POST' })
