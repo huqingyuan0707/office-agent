@@ -199,6 +199,14 @@ HTTP-level smoke: `python tests/smoke_mcp_im.py` (bundled fake MCP server + fake
 
 HTTP-level smoke: `python tests/smoke_v1_features.py` (17 assertions, re-runnable).
 
+## V1.1 Office Features (PRD §5.2; read scope is approval-free, writes go through approval)
+
+| Feature | Tools | Key guarantees |
+|---|---|---|
+| Self-serve data analysis | `office.data.query` / `analyze` / `export` | demo ledger + CSV overlay; stats/trends/anomalies report measured facts only; text export never writes to disk |
+| Meeting collaboration | `office.meeting.agenda` / `book` / `risks` | agenda from templates; booking is an approved write; risk keyword alerts stay blank on no match |
+| Approval assistant | `office.approval.draft` / `check`, `office.invoice.extract` | five form kinds with required-field validation and ask-back prompts; tiered amounts (>1000 dept head / >5000 VP) + high-risk `need_confirm`; invoice fields are quoted verbatim, `degraded` on no match |
+
 ## Database Migrations
 
 `alembic` is the single entry point for schema evolution: async `env.py`, URL sourced only from `Settings.DATABASE_URL`. Model column changes must ship as `autogenerate` migrations (`create_all` never ALTERs); CI runs `alembic check` for drift.

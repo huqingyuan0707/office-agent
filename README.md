@@ -208,6 +208,14 @@ HTTP 级冒烟：`python tests/smoke_mcp_im.py`（自带假 MCP Server + 假 IM 
 
 HTTP 级冒烟：`python tests/smoke_v1_features.py`（17 项断言，可重复执行）。
 
+## V1.1 办公功能（PRD §5.2，同为读口径免审 / 写口径送审）
+
+| 功能 | 工具 | 口径要点 |
+|---|---|---|
+| 数据自助分析 | `office.data.query` / `analyze` / `export` | 演示台账 + CSV 叠加；统计/趋势/异常只报实测，文本导出不写盘 |
+| 会议协作 | `office.meeting.agenda` / `book` / `risks` | 议程模板直出；预约写口径恒送审；风险关键词预警无命中不编造 |
+| 审批智能辅助 | `office.approval.draft` / `check`、`office.invoice.extract` | 五类单草稿必填校验追问；金额分级（>1000 部门负责人 / >5000 分管副总）+ 高危二次确认 need_confirm；发票四要素只摘录不推断，无命中 degraded |
+
 ## 数据库迁移
 
 `alembic` 是持久库 schema 演进唯一入口：async 引擎 `env.py`，URL 唯一出处 `Settings.DATABASE_URL`。
