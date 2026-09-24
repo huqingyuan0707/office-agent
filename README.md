@@ -233,6 +233,12 @@ HTTP 级冒烟：`python tests/smoke_v1_2_batch_a.py`（9 项断言，可重复�
 | 数据可视化报表 | `/reports`（报表页） | 数据集四选一 → `office.data.query` 真查（列取自首行键不预设）+ 数值列 CSS 条形图（不引图表库）+ `office.data.analyze` 统计卡 + `office.data.export` markdown 预览与下载；查询失败置空，分析/导出失败本页红条绝不拿假数据顶 |
 | 管理员运营看板 | `/admin`（管理页）+ `GET /admin/overview`（仅 admin） | `services/admin_stats.py` 四表只读聚合（用户分状态 / 任务分状态 / 审批分状态 / 工具调用 Top8 / 最近已决 5 单）；非 admin 403 如实提示权限不足，不降级给假数据 |
 
+## 对话主入口（一句话直达：员工不选智能体、不填参数）
+
+| 能力 | 入口 | 口径要点 |
+|---|---|---|
+| 对话办理 | `/chat`（默认首页） | 一句话 → `POST /runs` 省略 `agent` 自动路由（`runtime/router.py`：规则命中优先，LLM 智能体兜底仅当其 profile 已在 `LLM_PROVIDERS` 配置；全不中 1001 中文列出已装载智能体与能力描述）→ 2s 轮询呈现：路由到的智能体、步骤时间线、终答/末步结果、审批挂起卡（链去审批页）；路由失败原文进气泡，零 mock。工具页降级为管理员调试台 |
+
 ## V1.2 办公功能·批次 C（PRD §5.3，多场景串联 / 可视化编排 / RPA 联动）
 
 | 功能 | 入口 | 口径要点 |

@@ -1,7 +1,8 @@
 // 职责：后端 API 唯一入口（token/base/用户名存取、Authorization 注入、统一信封解析、401 中央处理回调）
 // 链路：各视图 → 本文件具名函数 → request() → fetch(base + /api/v1 + path) → 解析 {code,msg,data,trace_id} 信封
 // 契约：登录 POST /auth/login；工具 GET /agent/tools、POST /agent/tools/{name}/invoke；任务 GET /tasks；
-//      审批 GET /approvals、POST /approvals/{id}/approve|reject；智能体 GET /agents、POST /runs、GET /runs/{id}；
+//      审批 GET /approvals、POST /approvals/{id}/approve|reject；智能体 GET /agents（{total,items}）；
+//      运行 POST /runs（{agent?, goal}——agent 省略 = 按目标自动路由）、GET /runs/{run_id}；
 //      治理 GET /governance/status；运营 GET /admin/overview（admin 可见）
 // 对齐：AGENTS.md §3 信封与溯源口径 + §4 前端红线（401 中央处理，视图内不自跳、禁直写 fetch）
 
@@ -83,27 +84,50 @@ export interface InvokeResult {
   result?: unknown
   provenance?: Provenance
 }
-// 智能体与运行（字段可选：视图按后端实际返回渲染，缺失不编造）
+// 智能体与运行（字段可选：视图按后端实际返回渲染，缺失不编造；后端契约字段名以实测为准）
 export interface AgentItem {
-  id: string
   name: string
   description: string
   tools?: string[]
   max_steps?: number
+  llm?: string
+  rule_count?: number
+}
+export interface AgentList {
+  total: number
+  items: AgentItem[]
 }
 export interface RunStep {
   step_index: number
   tool: string
   status: string
+  planner_source?: string
   args?: unknown
+  result?: unknown
+  approval_id?: string
   trace_id?: string
+  created_at?: string
+}
+export interface RunPendingApproval {
+  approval_id?: string
+  tool?: string
 }
 export interface RunItem {
-  id: string
-  agent_id: string
+  run_id: string
+  agent: string
   goal: string
+  username?: string
   status: string
+  status_label?: string
+  progress?: number
+  error?: string
+  next_step?: number
+  created_at?: string
   steps?: RunStep[]
+  answer?: string
+  validation?: unknown
+  pending_approval?: RunPendingApproval
+  approval_hint?: string
 }
 // 治理状态（全部可选：缺失字段不渲染、不编造）
 export interface GovernanceProvider {
@@ -206,15 +230,18 @@ export const decideApproval = (id: string, action: 'approve' | 'reject', reason 
     body: JSON.stringify({ reason }),
   })
 
-export const listAgents = () => request<AgentItem[]>('/agents')
+export const listAgents = () => request<AgentList>('/agents')
 
-export const createRun = (agentId: string, goal: string) =>
+// 发起运行：agent 显式指定 = 直达该智能体；省略（传空串）= 一句话自动路由（后端挑智能体）
+export const createRun = (agent: string, goal: string) =>
   request<RunItem>('/runs', {
     method: 'POST',
-    body: JSON.stringify({ agent_id: agentId, goal }),
+    body: JSON.stringify({ agent, goal }),
   })
 
-export const getRun = (id: string) => request<RunItem>(`/runs/${encodeURIComponent(id)}`)
+export const createRunAuto = (goal: string) => createRun('', goal)
+
+export const getRun = (runId: string) => request<RunItem>(`/runs/${encodeURIComponent(runId)}`)
 
 export const governanceStatus = () => request<GovernanceStatus>('/governance/status')
 

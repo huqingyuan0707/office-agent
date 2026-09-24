@@ -224,6 +224,12 @@ HTTP-level smoke: `python tests/smoke_v1_2_batch_a.py` (9 assertions, re-runnabl
 | Data visualization reports | `/reports` (Reports page) | pick 1 of 4 datasets → real `office.data.query` (columns taken from the first row, never presumed) + CSS bar chart on the numeric column (no chart lib) + `office.data.analyze` stat cards + `office.data.export` markdown preview & download; failed queries render empty, analyze/export failures stay page-local — never papered over with fake data |
 | Admin operations dashboard | `/admin` (Admin page) + `GET /admin/overview` (admin only) | `services/admin_stats.py` read-only aggregation across four tables (users by status / tasks by status / approvals by status / Top-8 tools by calls / last 5 decided approvals); non-admin gets an honest 403, never downgraded fake data |
 
+## Chat-first entry (one sentence in: no agent picking, no parameter filling)
+
+| Capability | Entry | Key guarantees |
+|---|---|---|
+| Chat assistant | `/chat` (default home) | One sentence → `POST /runs` without `agent` triggers auto-routing (`runtime/router.py`: rule hits first; LLM agents only used as fallback when their profile is configured in `LLM_PROVIDERS`; when nobody can take it, 1001 with an actionable Chinese message listing loaded agents) → 2s polling renders the routed agent, step timeline, final answer / last-step result, and a pending-approval card linking to the approvals page; routing failures surface verbatim in the bubble, zero mock. The tools page becomes an admin debug console |
+
 ## V1.2 Office Features · Batch C (PRD §5.3; multi-scenario chaining / visual orchestration / RPA)
 
 | Feature | Entry | Key guarantees |

@@ -11,7 +11,8 @@ const routes: RouteRecordRaw[] = [
     component: () => import('../views/LoginView.vue'),
     meta: { public: true }, // 公开页：无 token 可进、不显示顶栏
   },
-  { path: '/', redirect: '/tools' },
+  { path: '/', redirect: '/chat' },
+  { path: '/chat', component: () => import('../views/ChatView.vue') },
   { path: '/tools', component: () => import('../views/ToolsView.vue') },
   { path: '/tasks', component: () => import('../views/TasksView.vue') },
   { path: '/approvals', component: () => import('../views/ApprovalsView.vue') },
@@ -26,9 +27,9 @@ const router = createRouter({
   routes,
 })
 
-// 全局守卫：无 token 且非公开页 → /login；已有 token 访问 /login → /tools
+// 全局守卫：无 token 且非公开页 → /login；已有 token 访问 /login → /chat
 router.beforeEach((to) => {
-  if (to.path === '/login') return getToken() ? '/tools' : true
+  if (to.path === '/login') return getToken() ? '/chat' : true
   if (!to.meta.public && !getToken()) return '/login'
   return true
 })

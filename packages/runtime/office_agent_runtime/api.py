@@ -33,6 +33,7 @@ from office_agent_core.contracts import AgentState, state_label
 from office_agent_core.errors import BusinessError, ErrorCode
 from office_agent_runtime import approvals, loader
 from office_agent_runtime.models import RunStep
+from office_agent_runtime.router import route_agent_spec
 from office_agent_runtime.runner import RUN_TASK_TYPE, execute_run, start_run
 from office_agent_server.db import get_db
 from office_agent_server.middleware import current_trace_id
@@ -44,9 +45,13 @@ router = APIRouter(tags=["runtime"])
 
 
 class CreateRunRequest(BaseModel):
-    """发起运行入参（端点私有 DTO）。"""
+    """发起运行入参（端点私有 DTO）。
 
-    agent: str = Field(min_length=1, max_length=64)
+    agent 可选：省略 = 对话主入口的「一句话自动路由」（router.route_agent_spec 按目标挑
+    智能体）；显式指定 = 智能体页原有行为，两种发起方式共用同一条受理链。
+    """
+
+    agent: str = Field(default="", max_length=64)
     goal: str = Field(min_length=1, max_length=500)
 
 
@@ -142,8 +147,12 @@ async def create_run(
     db: AsyncSession = Depends(get_db),
     user: CurrentUser = Depends(get_current_user),
 ) -> dict[str, Any]:
-    """发起运行：受理即跑，code 0 返回 run 概要（执行失败在时间线里，前端轮询）。"""
-    spec = loader.find_agent_spec(payload.agent.strip())
+    """发起运行：受理即跑，code 0 返回 run 概要（执行失败在时间线里，前端轮询）。
+
+    agent 省略时按目标自动路由（规则命中优先 → LLM 智能体兜底，全不中 1001 中文报错）。
+    """
+    wanted = payload.agent.strip()
+    spec = loader.find_agent_spec(wanted) if wanted else route_agent_spec(payload.goal.strip())
     summary = await start_run(
         db,
         spec=spec,

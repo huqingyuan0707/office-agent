@@ -105,6 +105,19 @@ def _provider_of(name: str) -> _ProviderCfg:
     return providers[name]
 
 
+def profile_configured(name: str) -> bool:
+    """LLM profile 是否已在 LLM_PROVIDERS 配置（零网络，只查环境变量）。
+
+    用途：跨智能体路由的 LLM 兜底选中——profile 没配就不该把「谁都不接」的目标
+    塞给 LLM 智能体（受理与执行分离会让用户等一轮才看到失败，不如路由时如实说办不了）。
+    """
+    try:
+        _provider_of(name)
+    except LlmPlanError:
+        return False
+    return True
+
+
 def _tool_schemas(spec: AgentSpec) -> list[dict[str, Any]]:
     """构造 OpenAI tools 参数：取 registry 与 AgentSpec.tools 白名单的交集。
 

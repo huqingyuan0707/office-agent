@@ -50,6 +50,7 @@ const doLogout = () => {
         智能办公 Agent
       </span>
       <nav class="nav-tabs">
+        <RouterLink class="nav-tab" to="/chat">对话</RouterLink>
         <RouterLink class="nav-tab" to="/tools">工具</RouterLink>
         <RouterLink class="nav-tab" to="/tasks">任务</RouterLink>
         <RouterLink class="nav-tab" to="/approvals">审批</RouterLink>

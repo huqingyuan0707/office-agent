@@ -1,0 +1,135 @@
+"""跨智能体路由单测（对话主入口：员工一句话 → 自动挑智能体）
+
+链路：①route_agent_spec 纯函数三分支（规则命中 / LLM 兜底 / 全不中 1001 中文报错）
+      ②POST /runs 省略 agent 的 HTTP 全链路（monkeypatch 假智能体清单，不出网）。
+
+对齐：AGENTS.md §3（分层红线）；.trae/documents/智能体编排层实现方案.md §4
+     （POST /runs 契约：agent 可选即自动路由）；skills/doubao-coding-develop-unit-tests/SKILL.md
+"""
+
+from __future__ import annotations
+
+import pytest
+from test_runtime import _auth, _login
+
+from office_agent_core.errors import BusinessError
+from office_agent_runtime import router as router_mod
+from office_agent_runtime.router import route_agent_spec
+from office_agent_runtime.spec import parse_agent_spec
+
+
+def _rule_bot() -> object:
+    """规则智能体：goal 含「日报」即命中。"""
+    return parse_agent_spec(
+        {
+            "name": "rule-bot",
+            "description": "规则智能体：出日报",
+            "system_prompt": "你是测试助手。",
+            "tools": ["demo.echo"],
+            "max_steps": 2,
+            "rules": [
+                {"match": ["日报"], "steps": [{"tool": "demo.echo", "args": {"text": "hi"}}]}
+            ],
+        }
+    )
+
+
+def _llm_bot() -> object:
+    """LLM 智能体：无 rules，llm profile 兜底路由的候选。"""
+    return parse_agent_spec(
+        {
+            "name": "llm-bot",
+            "description": "LLM 智能体：通用问答",
+            "system_prompt": "你是测试助手。",
+            "tools": ["demo.echo"],
+            "max_steps": 2,
+            "llm": "default",
+        }
+    )
+
+
+def _patch_specs(monkeypatch, specs: list) -> None:
+    """替换路由模块的智能体清单来源（router 直接绑定了 load_agent_specs 名字）。"""
+    monkeypatch.setattr(router_mod, "load_agent_specs", lambda: specs)
+
+
+def _set_llm_profile(monkeypatch) -> None:
+    """写入 LLM_PROVIDERS（profile 名 default，与 _llm_bot 的 llm 字段对齐）。"""
+    monkeypatch.setenv(
+        "LLM_PROVIDERS",
+        '{"default": {"base_url": "http://llm.test/v1", "model": "fake", "api_key": "k"}}',
+    )
+
+
+# ---------------- ① route_agent_spec 纯函数三分支 ----------------
+
+
+def test_route_rule_hit_beats_llm(monkeypatch):
+    """规则命中优先：即使清单里 LLM 智能体排前面，也选规则命中的那个。"""
+    _patch_specs(monkeypatch, [_llm_bot(), _rule_bot()])
+    assert route_agent_spec("请帮我出今天的日报").name == "rule-bot"
+
+
+def test_route_llm_fallback_when_no_rule_hits(monkeypatch):
+    """规则全不中且 LLM profile 已配置 → LLM 智能体兜底（执行期规划决定能不能干）。"""
+    _patch_specs(monkeypatch, [_rule_bot(), _llm_bot()])
+    _set_llm_profile(monkeypatch)
+    assert route_agent_spec("帮我查个完全没规则覆盖的东西").name == "llm-bot"
+
+
+def test_route_llm_not_configured_means_no_fallback(monkeypatch):
+    """规则全不中且 LLM profile 未配置 → 不兜底，如实 1001（不让用户白等一轮执行失败）。"""
+    monkeypatch.delenv("LLM_PROVIDERS", raising=False)
+    _patch_specs(monkeypatch, [_rule_bot(), _llm_bot()])
+    with pytest.raises(BusinessError) as excinfo:
+        route_agent_spec("帮我查个完全没规则覆盖的东西")
+    assert "rule-bot" in excinfo.value.msg
+
+
+def test_route_no_match_raises_actionable(monkeypatch):
+    """全不中 → 1001 中文可操作报错，报错里列出已装载智能体供用户换说法。
+
+    注意清单里只有规则智能体：LLM 智能体在时会兜底接住任何目标，不会走全不中分支。
+    """
+    _patch_specs(monkeypatch, [_rule_bot()])
+    with pytest.raises(BusinessError) as excinfo:
+        route_agent_spec("完全不沾边的一句话")
+    assert "rule-bot" in excinfo.value.msg
+
+
+# ---------------- ② POST /runs 省略 agent 的 HTTP 全链路 ----------------
+
+
+def test_create_run_auto_routes_and_records_agent(client, monkeypatch):
+    """POST /runs 不带 agent：路由到规则智能体并跑通，run 详情里 agent 记录为被路由者。"""
+    _patch_specs(monkeypatch, [_rule_bot(), _llm_bot()])
+    token = _login(client)
+    resp = client.post(
+        "/api/v1/runs",
+        json={"goal": "请帮我出今天的日报"},
+        headers=_auth(token),
+    )
+    assert resp.status_code == 200
+    body = resp.json()
+    assert body["code"] == 0
+    run_id = str(body["data"]["run_id"])
+
+    detail = client.get(f"/api/v1/runs/{run_id}", headers=_auth(token)).json()
+    assert detail["code"] == 0
+    assert detail["data"]["agent"] == "rule-bot"
+    assert detail["data"]["steps"], "规则智能体应至少执行一步 demo.echo"
+
+
+def test_create_run_auto_route_no_match_1001(client, monkeypatch):
+    """POST /runs 不带 agent 且规则智能体接不住（无 LLM 兜底者）：信封 1001，msg 可操作。"""
+    _patch_specs(monkeypatch, [_rule_bot()])
+    token = _login(client)
+    resp = client.post(
+        "/api/v1/runs",
+        json={"goal": "完全不沾边的一句话"},
+        headers=_auth(token),
+    )
+    assert resp.status_code == 400
+    body = resp.json()
+    assert body["code"] == 1001
+    assert "rule-bot" in body["msg"]

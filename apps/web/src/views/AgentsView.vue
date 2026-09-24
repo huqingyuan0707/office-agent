@@ -43,7 +43,7 @@ const stopPolling = () => {
 const refreshRun = async () => {
   if (!run.value) return
   try {
-    run.value = await getRun(run.value.id)
+    run.value = await getRun(run.value.run_id)
     if (TERMINAL_STATUSES.includes(run.value.status)) stopPolling()
   } catch (e) {
     runError.value = (e as Error).message || '运行状态刷新失败'
@@ -88,7 +88,7 @@ const loadAgents = async () => {
   agentsLoading.value = true
   shell.clearError()
   try {
-    agents.value = await listAgents()
+    agents.value = (await listAgents()).items
   } catch (e) {
     agents.value = []
     shell.showError((e as Error).message || '智能体列表加载失败')
@@ -118,9 +118,9 @@ onUnmounted(stopPolling) // 卸载清定时器，防离开页面后仍轮询
       <template v-else>
         <div
           v-for="a in agents"
-          :key="a.id"
-          :class="['tool-card', { active: a.id === currentAgent }]"
-          @click="pickAgent(a.id)"
+          :key="a.name"
+          :class="['tool-card', { active: a.name === currentAgent }]"
+          @click="pickAgent(a.name)"
         >
           <div class="tool-head">
             <strong>{{ a.name }}</strong>
@@ -164,7 +164,7 @@ onUnmounted(stopPolling) // 卸载清定时器，防离开页面后仍轮询
       <span class="badge">{{ run.status }}</span>
       <span v-if="polling" class="badge warn">轮询中</span>
     </h2>
-    <p class="muted">运行 ID：<span class="mono">{{ run.id }}</span></p>
+    <p class="muted">运行 ID：<span class="mono">{{ run.run_id }}</span></p>
     <div v-if="suspended()" class="err-bar">
       <span class="err-text">存在待审批步骤，请到审批页处理</span>
       <RouterLink class="err-link" to="/approvals">前往审批页 →</RouterLink>
