@@ -5,9 +5,13 @@
 </script>
 
 <template>
-  <section class="card">
-    <h2>项目管理</h2>
-    <p class="muted">项目台账查询与一句话任务拆解（PRD §2.9 / §6）</p>
+  <el-card shadow="never">
+    <template #header>
+      <div class="page-head">
+        <span class="card-title">项目管理</span>
+        <span class="head-hint">项目台账查询与一句话任务拆解（PRD §2.9 / §6）</span>
+      </div>
+    </template>
     <el-tabs>
       <el-tab-pane label="项目台账">
         <div class="toolbar">
@@ -61,7 +65,7 @@
         <el-empty description="功能建设中——拆解与批量建单待接口（高危批量操作将弹二次确认）" />
       </el-tab-pane>
     </el-tabs>
-  </section>
+  </el-card>
 </template>
 
 <style scoped>

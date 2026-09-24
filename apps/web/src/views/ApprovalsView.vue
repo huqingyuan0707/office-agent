@@ -1,9 +1,9 @@
 <script setup lang="ts">
-// 职责：审批页 —— 审批表格（含申请内容摘要 + 详情展开）+ 批准/驳回操作（驳回走 RejectDialog），
-//       操作后刷新列表
+// 职责：审批页 —— 审批表格（申请内容摘要 + EP 展开行看送审入参逐项）+ 批准/驳回操作
+//       （驳回走 RejectDialog），操作后刷新列表
 // 链路：router /approvals → api.listApprovals / api.decideApproval；驳回提交失败时弹窗不关、
 //       输入不丢（错误经 props 传给弹窗就地显示）；列表失败 → 壳红条 + 列表置空
-// 对齐：AGENTS.md §4 前端红线（真实接口零 mock、写动作状态如实回显）；
+// 对齐：AGENTS.md §4 前端红线（真实接口零 mock、写动作状态如实回显、var(--*) token + scoped）；
 //       治理口径：写动作恒送审的闸门价值取决于复核员看得见申请内容，故申请内容必须可见
 import { inject, onMounted, ref } from 'vue'
 import { decideApproval, listApprovals } from '../api'
@@ -21,12 +21,11 @@ const loading = ref(true)
 const decidingId = ref('') // 正在处理的审批单（该行按钮禁用并显示进行中）
 const rejectTarget = ref<ApprovalItem | null>(null) // 驳回弹窗目标单
 const rejectError = ref('') // 弹窗内就地显示的提交错误
-const expandedId = ref('') // 展开申请内容详情的那一行（同一时刻只展开一条）
 
-// ID 短显：32 位 hex 截前 8 位（完整值挂 title，详情展开区也有）
+// ID 短显：32 位 hex 截前 8 位（完整值挂 tooltip 与展开区）
 const shortId = (id: string) => (id.length > 10 ? `${id.slice(0, 8)}…` : id)
 
-// 申请内容摘要：title 类语义字段优先、附参数计数（列宽有限，完整 JSON 在详情展开区；
+// 申请内容摘要：title 类语义字段优先、附参数计数（列宽有限，完整 JSON 在展开区；
 // 摘要里绝不堆原始 JSON 长文，防止表格被撑爆出横向滚动、操作列出屏）
 const SUMMARY_KEYS = ['title', 'name', 'goal', 'query', 'keyword', 'path']
 const argsSummary = (args: unknown) => {
@@ -36,7 +35,7 @@ const argsSummary = (args: unknown) => {
     entries.filter(([name]) => name === k).map(([, value]) => value),
   )[0]
   const text = typeof hit === 'string' && hit ? hit : JSON.stringify(args)
-  const brief = text.length > 60 ? `${text.slice(0, 60)}…` : text
+  const brief = text.length > 40 ? `${text.slice(0, 40)}…` : text
   return `${brief}（${entries.length} 项）`
 }
 
@@ -52,10 +51,6 @@ const argEntries = (args: unknown) => {
           ? JSON.stringify(value)
           : String(value),
   }))
-}
-
-const toggleDetail = (id: string) => {
-  expandedId.value = expandedId.value === id ? '' : id
 }
 
 const loadApprovals = async () => {
@@ -89,10 +84,11 @@ const submitDecision = async (id: string, action: 'approve' | 'reject', reason =
   }
 }
 
-const onApprove = (item: ApprovalItem) => submitDecision(item.id, 'approve')
+// el-table 列插槽的 row 被 EP 推断为 DefaultRow，与后端返回项同构；此处收窄回领域类型
+const onApprove = (row: unknown) => submitDecision((row as ApprovalItem).id, 'approve')
 
-const onReject = (item: ApprovalItem) => {
-  rejectTarget.value = item
+const onReject = (row: unknown) => {
+  rejectTarget.value = row as ApprovalItem
   rejectError.value = ''
 }
 
@@ -111,91 +107,85 @@ onMounted(loadApprovals)
 </script>
 
 <template>
-  <section class="card">
-    <h2>
-      审批列表
-      <span v-if="approvals.length" class="badge">{{ approvals.length }}</span>
-    </h2>
-    <div class="table-wrap">
-      <table>
-        <colgroup>
-          <col style="width: 96px" />
-          <col style="width: 158px" />
-          <col />
-          <col style="width: 84px" />
-          <col style="width: 88px" />
-          <col style="width: 152px" />
-          <col style="width: 140px" />
-        </colgroup>
-        <thead>
-          <tr>
-            <th>ID</th>
-            <th>审批类型</th>
-            <th>申请内容</th>
-            <th>状态</th>
-            <th>申请人</th>
-            <th>创建时间</th>
-            <th>操作</th>
-          </tr>
-        </thead>
-        <tbody>
-          <tr v-if="loading">
-            <td colspan="7" class="empty">加载中…</td>
-          </tr>
-          <tr v-else-if="!approvals.length">
-            <td colspan="7" class="empty">暂无审批单</td>
-          </tr>
-          <template v-else>
-            <template v-for="a in approvals" :key="a.id">
-              <tr>
-                <td class="mono id-cell" :title="a.id">{{ shortId(a.id) }}</td>
-                <td>{{ a.action }}</td>
-                <td class="args-cell">
-                  <div class="args-line">
-                    <span class="args-text" :title="JSON.stringify(a.args ?? {})">
-                      {{ argsSummary(a.args) }}
-                    </span>
-                    <button class="btn small" @click="toggleDetail(a.id)">
-                      {{ expandedId === a.id ? '收起' : '详情' }}
-                    </button>
-                  </div>
-                </td>
-                <td>
-                  <StatusBadge :status="a.status" :label="a.status_label || a.status" />
-                </td>
-                <td>{{ a.applicant }}</td>
-                <td class="muted time-cell">{{ a.created_at }}</td>
-                <td class="ops">
-                  <button class="btn small" :disabled="decidingId === a.id" @click="onApprove(a)">
-                    {{ decidingId === a.id ? '处理中…' : '批准' }}
-                  </button>
-                  <button
-                    class="btn small danger"
-                    :disabled="decidingId === a.id"
-                    @click="onReject(a)"
-                  >
-                    驳回
-                  </button>
-                </td>
-              </tr>
-              <!-- 详情行：把送审入参逐项摊开（写动作恒送审的前提是复核员看得见内容） -->
-              <tr v-if="expandedId === a.id" class="detail-row">
-                <td colspan="7">
-                  <dl v-if="argEntries(a.args).length" class="args-detail">
-                    <template v-for="entry in argEntries(a.args)" :key="entry.key">
-                      <dt>{{ entry.key }}</dt>
-                      <dd>{{ entry.value }}</dd>
-                    </template>
-                  </dl>
-                  <p v-else class="muted">该申请单未携带参数</p>
-                </td>
-              </tr>
-            </template>
-          </template>
-        </tbody>
-      </table>
-    </div>
-  </section>
+  <el-card shadow="never">
+    <template #header>
+      <div class="page-head">
+        <span class="card-title">审批列表</span>
+        <el-tag v-if="approvals.length" size="small" type="info" round>
+          {{ approvals.length }} 单
+        </el-tag>
+        <span class="muted head-hint">写动作恒送审：批准后系统以申请人的真实角色出站执行</span>
+      </div>
+    </template>
+
+    <el-skeleton v-if="loading" :rows="6" animated />
+
+    <el-table v-else :data="approvals" stripe style="width: 100%">
+      <!-- 展开行：把送审入参逐项摊开（写动作恒送审的前提是复核员看得见内容） -->
+      <el-table-column type="expand">
+        <template #default="{ row }">
+          <div class="detail-pane">
+            <el-descriptions v-if="argEntries(row.args).length" :column="1" size="small" border>
+              <el-descriptions-item
+                v-for="entry in argEntries(row.args)"
+                :key="entry.key"
+                :label="entry.key"
+              >
+                {{ entry.value }}
+              </el-descriptions-item>
+            </el-descriptions>
+            <el-text v-else type="info" size="small">该申请单未携带参数</el-text>
+          </div>
+        </template>
+      </el-table-column>
+
+      <el-table-column label="ID" width="110">
+        <template #default="{ row }">
+          <el-tooltip :content="row.id" placement="top">
+            <span class="mono">{{ shortId(row.id) }}</span>
+          </el-tooltip>
+        </template>
+      </el-table-column>
+      <el-table-column prop="action" label="审批类型" width="170" show-overflow-tooltip />
+      <el-table-column label="申请内容" min-width="220">
+        <template #default="{ row }">
+          <el-tooltip :content="JSON.stringify(row.args ?? {})" placement="top">
+            <span class="args-text">{{ argsSummary(row.args) }}</span>
+          </el-tooltip>
+        </template>
+      </el-table-column>
+      <el-table-column label="状态" width="110">
+        <template #default="{ row }">
+          <StatusBadge :status="row.status" :label="row.status_label || row.status" />
+        </template>
+      </el-table-column>
+      <el-table-column prop="applicant" label="申请人" width="120" show-overflow-tooltip />
+      <el-table-column label="创建时间" width="175">
+        <template #default="{ row }">
+          <span class="muted time">{{ row.created_at }}</span>
+        </template>
+      </el-table-column>
+      <el-table-column label="操作" width="150" fixed="right">
+        <template #default="{ row }">
+          <el-button
+            size="small"
+            type="primary"
+            plain
+            :disabled="decidingId === row.id"
+            @click="onApprove(row)"
+          >
+            {{ decidingId === row.id ? '处理中…' : '批准' }}
+          </el-button>
+          <el-button size="small" type="danger" plain :disabled="decidingId === row.id" @click="onReject(row)">
+            驳回
+          </el-button>
+        </template>
+      </el-table-column>
+      <template #empty>
+        <el-empty description="暂无审批单" :image-size="80" />
+      </template>
+    </el-table>
+  </el-card>
 
   <!-- 驳回理由弹窗（替代 window.prompt：可就地看错误、不丢已输入内容） -->
   <RejectDialog
@@ -208,70 +198,14 @@ onMounted(loadApprovals)
 </template>
 
 <style scoped>
-/* fixed 布局：列宽由 colgroup 钉死，内容再长也不撑爆表格（全局 nowrap 会导致
-   申请内容长文把操作列挤出屏幕，本页按列覆盖） */
-table {
-  table-layout: fixed;
-}
-/* 溢出兜底：fixed 列宽被窄视口压缩时内容一律裁剪省略，
-   绝不画出单元格叠压到邻列（全局 nowrap 会溢出画出，这里收敛） */
-th,
-td {
-  overflow: hidden;
-  text-overflow: ellipsis;
-}
-.id-cell {
-  overflow: hidden;
-  text-overflow: ellipsis;
-}
-/* 申请内容列：允许换行 + 两行截断，完整 JSON 挂 title、全量在详情展开区 */
-.args-cell {
-  white-space: normal;
-  word-break: break-all;
-}
-.args-line {
-  display: flex;
-  align-items: flex-start;
-  gap: 8px;
-}
-.args-line .btn {
-  flex: none;
+.time {
+  margin: 0;
 }
 .args-text {
-  display: -webkit-box;
-  -webkit-line-clamp: 2;
-  -webkit-box-orient: vertical;
-  overflow: hidden;
   font-size: 13px;
-  min-width: 0;
 }
-/* 时间与操作列保持单行不换（fixed 下 nowrap 内容溢出需裁剪防顶开邻列） */
-.time-cell {
-  overflow: hidden;
-  text-overflow: ellipsis;
-}
-.ops {
-  white-space: nowrap;
-}
-/* 详情行：与主行视觉区隔，入参逐项左键右值 */
-.detail-row td {
-  background: var(--bg);
-  border-top: 1px dashed var(--line-strong);
-  white-space: normal;
-}
-.args-detail {
-  display: grid;
-  grid-template-columns: max-content 1fr;
-  gap: 4px 12px;
-  margin: 0;
-}
-.args-detail dt {
-  color: var(--sub);
-  font-size: 12px;
-}
-.args-detail dd {
-  margin: 0;
-  font-size: 13px;
-  word-break: break-all;
+/* 展开行：与主行视觉区隔 */
+.detail-pane {
+  padding: 6px 12px 10px 44px;
 }
 </style>

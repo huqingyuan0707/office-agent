@@ -5,9 +5,13 @@
 </script>
 
 <template>
-  <section class="card">
-    <h2>邮件与消息</h2>
-    <p class="muted">邮箱自动处理、对外邮件预审与群消息定时摘要（PRD §2.7）</p>
+  <el-card shadow="never">
+    <template #header>
+      <div class="page-head">
+        <span class="card-title">邮件与消息</span>
+        <span class="head-hint">邮箱自动处理、对外邮件预审与群消息定时摘要（PRD §2.7）</span>
+      </div>
+    </template>
     <el-tabs>
       <el-tab-pane label="邮件处理">
         <div class="toolbar">
@@ -49,7 +53,7 @@
         <el-empty description="功能建设中——群消息摘要待接口" />
       </el-tab-pane>
     </el-tabs>
-  </section>
+  </el-card>
 </template>
 
 <style scoped>

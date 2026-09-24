@@ -5,9 +5,13 @@
 </script>
 
 <template>
-  <section class="card">
-    <h2>人事行政</h2>
-    <p class="muted">考勤加班查询、入离职交接与办公资源预订（PRD §2.8）</p>
+  <el-card shadow="never">
+    <template #header>
+      <div class="page-head">
+        <span class="card-title">人事行政</span>
+        <span class="head-hint">考勤加班查询、入离职交接与办公资源预订（PRD §2.8）</span>
+      </div>
+    </template>
     <el-tabs>
       <el-tab-pane label="考勤与加班">
         <div class="toolbar">
@@ -45,7 +49,7 @@
         <el-empty description="功能建设中——资源台账与占用查询待接口" />
       </el-tab-pane>
     </el-tabs>
-  </section>
+  </el-card>
 </template>
 
 <style scoped>

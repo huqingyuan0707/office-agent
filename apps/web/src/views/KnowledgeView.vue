@@ -6,9 +6,13 @@ import { Search } from '@element-plus/icons-vue'
 </script>
 
 <template>
-  <section class="card">
-    <h2>知识库问答</h2>
-    <p class="muted">制度答疑、资料检索与跨源联合检索，结果严格匹配当前用户权限（PRD §2.6）</p>
+  <el-card shadow="never">
+    <template #header>
+      <div class="page-head">
+        <span class="card-title">知识库问答</span>
+        <span class="head-hint">制度答疑、资料检索与跨源联合检索，结果严格匹配当前用户权限（PRD §2.6）</span>
+      </div>
+    </template>
     <el-tabs>
       <el-tab-pane label="制度答疑">
         <div class="ask-bar">
@@ -56,7 +60,7 @@ import { Search } from '@element-plus/icons-vue'
         <el-empty description="功能建设中——待接入 ocr.image" />
       </el-tab-pane>
     </el-tabs>
-  </section>
+  </el-card>
 </template>
 
 <style scoped>

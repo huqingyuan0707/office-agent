@@ -5,9 +5,13 @@
 </script>
 
 <template>
-  <section class="card">
-    <h2>会话审计</h2>
-    <p class="muted">保存历史对话，敏感操作实时告警（PRD §2.13）</p>
+  <el-card shadow="never">
+    <template #header>
+      <div class="page-head">
+        <span class="card-title">会话审计</span>
+        <span class="head-hint">保存历史对话，敏感操作实时告警（PRD §2.13）</span>
+      </div>
+    </template>
     <el-tabs>
       <el-tab-pane label="历史会话">
         <div class="toolbar">
@@ -42,7 +46,7 @@
         <el-empty description="功能建设中——实时告警流待接口" />
       </el-tab-pane>
     </el-tabs>
-  </section>
+  </el-card>
 </template>
 
 <style scoped>

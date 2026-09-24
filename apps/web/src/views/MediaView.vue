@@ -5,9 +5,13 @@
 </script>
 
 <template>
-  <section class="card">
-    <h2>多模态工作台</h2>
-    <p class="muted">业务截图解读与一键 PPT 生成（PRD §2.12）</p>
+  <el-card shadow="never">
+    <template #header>
+      <div class="page-head">
+        <span class="card-title">多模态工作台</span>
+        <span class="head-hint">业务截图解读与一键 PPT 生成（PRD §2.12）</span>
+      </div>
+    </template>
     <el-tabs>
       <el-tab-pane label="图片解读">
         <el-upload drag action="#" disabled>
@@ -39,7 +43,7 @@
         <el-empty description="功能建设中——待接入 office.pptx.generate，批准后产出 .pptx 下载" />
       </el-tab-pane>
     </el-tabs>
-  </section>
+  </el-card>
 </template>
 
 <style scoped>

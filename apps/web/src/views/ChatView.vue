@@ -1,13 +1,14 @@
 <script setup lang="ts">
-// 职责：对话主入口页 —— 员工一句话直达（PRD §4.3 纯自然语言零门槛）：输入目标 →
-//       POST /runs 省略 agent 自动路由（后端挑智能体）→ 2s 轮询 run 详情 →
-//       气泡内呈现：路由到的智能体、步骤时间线、终答/末步结果、审批挂起卡（链去审批页）。
+// 职责：对话主入口页（Element Plus 版）—— 员工一句话直达（PRD §4.3 纯自然语言零门槛）：
+//       输入目标 → POST /runs 省略 agent 自动路由（后端挑智能体）→ 2s 轮询 run 详情 →
+//       气泡内呈现：路由到的智能体、步骤时间线、终答/末步结果、审批挂起提示（链去审批页）。
 // 链路：router /chat → api.createRunAuto / api.getRun（真实接口零 mock：路由不中/调用失败
 //       均以服务端中文 msg 如实进气泡，失败置空不编造）；onUnmounted 清全部轮询定时器。
 // 对齐：AGENTS.md §4 前端红线（401 中央处理、箭头函数、var(--*) token + scoped）；
 //       .trae/documents/智能体编排层实现方案.md §4（POST /runs agent 可选即自动路由）。
 import { inject, nextTick, onUnmounted, ref } from 'vue'
 import { RouterLink } from 'vue-router'
+import { Promotion, Service } from '@element-plus/icons-vue'
 import { createRunAuto, getRun } from '../api'
 import type { RunItem } from '../api'
 import StatusBadge from '../components/StatusBadge.vue'
@@ -30,7 +31,9 @@ interface ChatMsg {
 const messages = ref<ChatMsg[]>([])
 const input = ref('')
 const sending = ref(false)
-const listEl = ref<HTMLElement | null>(null)
+const composing = ref(false) // 中文输入法组词中：Enter 只上屏不发送
+// 结构性类型收窄即可（只用到 setScrollTop），滚动到底无需拿 DOM
+const listRef = ref<{ setScrollTop: (top: number) => unknown } | null>(null)
 let seq = 0
 const timers = new Set<ReturnType<typeof setInterval>>()
 
@@ -38,9 +41,7 @@ const timers = new Set<ReturnType<typeof setInterval>>()
 const TERMINAL_STATUSES = ['succeeded', 'failed', 'cancelled', 'completed']
 
 const scrollBottom = () => {
-  nextTick(() => {
-    if (listEl.value) listEl.value.scrollTop = listEl.value.scrollHeight
-  })
+  nextTick(() => listRef.value?.setScrollTop(1e6))
 }
 
 const pushMsg = (msg: Omit<ChatMsg, 'key'>) => {
@@ -95,17 +96,26 @@ const send = async () => {
   }
 }
 
-// Enter 发送 / Shift+Enter 换行
+// Enter 发送 / Shift+Enter 换行 / 输入法组词中不发送
 const onKeydown = (e: KeyboardEvent) => {
   if (e.key === 'Enter' && !e.shiftKey) {
     e.preventDefault()
+    if (composing.value) return
     void send()
   }
 }
 
+// 时间线节点类型：终态失败红、挂起黄、成功绿、其余灰
+const stepType = (status: string) => {
+  if (['failed', 'cancelled', 'error'].includes(status)) return 'danger'
+  if (['pending', 'running'].includes(status)) return 'warning'
+  if (['succeeded', 'completed', 'done'].includes(status)) return 'success'
+  return 'primary'
+}
+
 const argsBrief = (args: unknown) => {
   const text = JSON.stringify(args ?? {})
-  return text.length > 60 ? `${text.slice(0, 60)}…` : text
+  return text.length > 70 ? `${text.slice(0, 70)}…` : text
 }
 
 // 末步结果：规则智能体常无 LLM 终答，末步真实出参即「办的结果」（如实渲染，无则不显）
@@ -129,75 +139,120 @@ onUnmounted(() => {
 
 <template>
   <div class="chat-page">
-    <section class="card chat-card">
-      <h2>对话办理</h2>
-      <p class="muted hint">
-        用一句话说明要办的事，系统自动挑选智能体执行；涉及审批的写动作会挂起待复核员批准。
-      </p>
+    <el-card class="chat-card" shadow="never">
+      <template #header>
+        <div class="chat-head">
+          <span class="card-title">对话办理</span>
+          <span class="muted head-hint">
+            用一句话说明要办的事，系统自动挑选智能体执行；涉及审批的写动作会挂起待复核员批准
+          </span>
+        </div>
+      </template>
 
-      <div ref="listEl" class="msg-list">
-        <p v-if="!messages.length" class="empty">
-          还没有对话。试试：「生成今天的工作日报」「记一下明天要跟进的事」。
-        </p>
+      <el-scrollbar ref="listRef" class="msg-list">
+        <el-empty
+          v-if="!messages.length"
+          :image-size="86"
+          description="还没有对话。试试：「生成今天的工作日报」「记一下明天要跟进的事」"
+        />
 
         <template v-for="m in messages" :key="m.key">
+          <!-- 用户气泡：右对齐，品牌色实底 -->
           <div v-if="m.role === 'user'" class="row user-row">
             <div class="bubble user-bubble">{{ m.text }}</div>
           </div>
 
+          <!-- 助手气泡：左对齐，头像 + 白底卡 -->
           <div v-else class="row agent-row">
+            <el-avatar :size="30" class="agent-avatar">
+              <el-icon><Service /></el-icon>
+            </el-avatar>
             <div class="bubble agent-bubble">
-              <div v-if="m.error" class="result fail">{{ m.error }}</div>
+              <el-alert v-if="m.error" type="error" :title="m.error" show-icon :closable="false" />
 
               <template v-else-if="m.run">
                 <div class="run-head">
-                  <span class="badge">{{ m.run.agent || '智能体' }}</span>
+                  <el-tag size="small" type="primary" effect="dark" round>
+                    {{ m.run.agent || '智能体' }}
+                  </el-tag>
                   <StatusBadge :status="m.run.status" />
-                  <span v-if="m.polling" class="badge warn">执行中…</span>
+                  <el-tag v-if="m.polling" size="small" type="warning" effect="light" round>
+                    执行中…
+                  </el-tag>
                 </div>
 
-                <div v-if="m.run.steps?.length" class="steps">
-                  <div v-for="s in m.run.steps" :key="s.step_index" class="step-line">
-                    <span class="badge">步骤 {{ s.step_index }}</span>
-                    <strong class="mono">{{ s.tool }}</strong>
-                    <StatusBadge :status="s.status" />
-                    <span class="muted mono args" :title="JSON.stringify(s.args)">
-                      {{ argsBrief(s.args) }}
-                    </span>
-                  </div>
-                </div>
+                <el-timeline v-if="m.run.steps?.length" class="steps">
+                  <el-timeline-item
+                    v-for="s in m.run.steps"
+                    :key="s.step_index"
+                    :type="stepType(s.status)"
+                    size="normal"
+                    hollow
+                  >
+                    <div class="step-line">
+                      <span class="step-no">步骤 {{ s.step_index }}</span>
+                      <strong class="mono">{{ s.tool }}</strong>
+                      <StatusBadge :status="s.status" />
+                    </div>
+                    <el-tooltip :content="JSON.stringify(s.args)" placement="top">
+                      <p class="muted mono args">{{ argsBrief(s.args) }}</p>
+                    </el-tooltip>
+                  </el-timeline-item>
+                </el-timeline>
 
                 <pre v-if="m.run.answer" class="answer">{{ m.run.answer }}</pre>
                 <pre v-else-if="lastResultText(m.run)" class="answer">{{
                   lastResultText(m.run)
                 }}</pre>
 
-                <div v-if="m.run.pending_approval" class="pending-box">
-                  <span class="pending-text">存在待审批写动作，复核员批准后自动继续</span>
-                  <RouterLink class="err-link" to="/approvals">前往审批页 →</RouterLink>
-                </div>
+                <el-alert
+                  v-if="m.run.pending_approval"
+                  class="pending-box"
+                  type="warning"
+                  show-icon
+                  :closable="false"
+                  title="存在待审批写动作，复核员批准后自动继续"
+                >
+                  <RouterLink class="alert-link" to="/approvals">前往审批页 →</RouterLink>
+                </el-alert>
                 <p v-if="m.run.approval_hint" class="muted">{{ m.run.approval_hint }}</p>
-                <p v-if="m.run.error" class="result fail">{{ m.run.error }}</p>
+                <el-alert
+                  v-if="m.run.error"
+                  type="error"
+                  :title="m.run.error"
+                  show-icon
+                  :closable="false"
+                />
               </template>
 
-              <p v-else class="empty">正在挑选智能体…</p>
+              <span v-else class="muted waiting">正在挑选智能体…</span>
             </div>
           </div>
         </template>
-      </div>
+      </el-scrollbar>
 
       <div class="composer">
-        <textarea
+        <el-input
           v-model="input"
-          rows="2"
+          type="textarea"
+          :rows="2"
+          resize="none"
           placeholder="用一句话说明要办的事，Enter 发送（Shift+Enter 换行）"
           @keydown="onKeydown"
-        ></textarea>
-        <button class="btn primary" :disabled="sending || !input.trim()" @click="send">
+          @compositionstart="composing = true"
+          @compositionend="composing = false"
+        />
+        <el-button
+          type="primary"
+          :icon="Promotion"
+          :loading="sending"
+          :disabled="!input.trim()"
+          @click="send"
+        >
           发送
-        </button>
+        </el-button>
       </div>
-    </section>
+    </el-card>
   </div>
 </template>
 
@@ -207,22 +262,22 @@ onUnmounted(() => {
   justify-content: center;
 }
 .chat-card {
-  width: min(860px, 100%);
+  width: min(880px, 100%);
+}
+.chat-head {
   display: flex;
   flex-direction: column;
-}
-.hint {
-  margin-top: -4px;
+  gap: 2px;
 }
 .msg-list {
+  height: 56vh;
   min-height: 320px;
-  max-height: 56vh;
-  overflow-y: auto;
-  padding: 4px 2px;
+  padding-right: 6px;
 }
 .row {
   display: flex;
-  margin: 10px 0;
+  margin: 12px 0;
+  gap: 10px;
 }
 .user-row {
   justify-content: flex-end;
@@ -230,20 +285,29 @@ onUnmounted(() => {
 .agent-row {
   justify-content: flex-start;
 }
+.agent-avatar {
+  flex: none;
+  background: var(--brand-soft);
+  color: var(--brand);
+}
 .bubble {
   max-width: 82%;
-  border-radius: 10px;
-  padding: 10px 12px;
+  border-radius: 12px;
+  padding: 10px 14px;
   white-space: pre-wrap;
   word-break: break-word;
 }
 .user-bubble {
-  background: var(--brand);
+  background: linear-gradient(135deg, var(--brand), #4f8ff5);
   color: #fff;
+  box-shadow: 0 2px 8px rgba(31, 111, 235, 0.22);
 }
 .agent-bubble {
-  background: var(--bg);
+  flex: 1;
+  min-width: 0;
+  background: #fff;
   border: 1px solid var(--line);
+  box-shadow: var(--shadow-card);
 }
 .run-head {
   display: flex;
@@ -252,10 +316,14 @@ onUnmounted(() => {
   flex-wrap: wrap;
 }
 .steps {
-  margin-top: 8px;
-  display: flex;
-  flex-direction: column;
-  gap: 4px;
+  margin-top: 10px;
+  padding-left: 2px;
+}
+.steps :deep(.el-timeline-item__wrapper) {
+  padding-left: 22px;
+}
+.steps :deep(.el-timeline-item) {
+  padding-bottom: 10px;
 }
 .step-line {
   display: flex;
@@ -264,41 +332,45 @@ onUnmounted(() => {
   flex-wrap: wrap;
   font-size: 13px;
 }
-.args {
+.step-no {
+  color: var(--muted);
   font-size: 12px;
 }
+.args {
+  font-size: 12px;
+  margin: 2px 0 0;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
 .answer {
-  margin: 8px 0 0;
-  padding: 8px 10px;
+  margin: 10px 0 0;
+  padding: 10px 12px;
   background: var(--ok-bg);
-  border: 1px solid var(--ok-line);
-  border-radius: 8px;
+  border: 1px solid #cfe8d5;
+  border-radius: var(--radius-sm);
   font-size: 13px;
   max-height: 220px;
   overflow: auto;
+  white-space: pre-wrap;
+  word-break: break-all;
 }
 .pending-box {
-  margin-top: 8px;
-  display: flex;
-  align-items: center;
-  gap: 10px;
-  background: var(--warn-bg);
-  border: 1px solid var(--warn-line);
-  border-radius: 8px;
-  padding: 8px 10px;
+  margin-top: 10px;
 }
-.pending-text {
+.alert-link {
   color: var(--warn);
+  font-weight: 600;
+}
+.waiting {
   font-size: 13px;
 }
 .composer {
   display: flex;
-  gap: 8px;
+  gap: 10px;
   align-items: flex-end;
-  margin-top: 10px;
-}
-.composer textarea {
-  flex: 1;
-  resize: vertical;
+  margin-top: 14px;
+  padding-top: 14px;
+  border-top: 1px solid var(--line);
 }
 </style>

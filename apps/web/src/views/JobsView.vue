@@ -5,9 +5,13 @@
 </script>
 
 <template>
-  <section class="card">
-    <h2>定时任务</h2>
-    <p class="muted">自动拉取工作数据、预生成周报、月度台账等固定办公物料（PRD §2.11）</p>
+  <el-card shadow="never">
+    <template #header>
+      <div class="page-head">
+        <span class="card-title">定时任务</span>
+        <span class="head-hint">自动拉取工作数据、预生成周报、月度台账等固定办公物料（PRD §2.11）</span>
+      </div>
+    </template>
     <div class="toolbar">
       <el-button type="primary" disabled>新建定时任务</el-button>
       <el-button disabled>从模板创建（周报 / 月度台账）</el-button>
@@ -26,7 +30,7 @@
       </el-table-column>
     </el-table>
     <el-empty description="功能建设中——定时任务列表与调度待接口" />
-  </section>
+  </el-card>
 </template>
 
 <style scoped>

@@ -1,12 +1,13 @@
 <script setup lang="ts">
-// 职责：智能体页 —— agent 卡片（描述/工具白名单/max_steps）→ 选定 agent + 输目标 → 发起 run →
-//       2s 轮询 run 详情至终态 → 步骤时间线（step_index/tool/status/args 摘要/trace_id 徽标）；
-//       run 挂起或步骤 pending → 中文提示引导去审批页
+// 职责：智能体页（Element Plus 版）—— agent 卡片（描述/工具白名单/max_steps）→ 选定 agent +
+//       输目标 → 发起 run → 2s 轮询 run 详情至终态 → 步骤时间线（step_index/tool/status/args
+//       摘要/trace 徽标）；run 挂起或步骤 pending → 提示引导去审批页
 // 链路：router /agents → api.listAgents / api.createRun / api.getRun；
 //       onUnmounted 清轮询定时器防泄漏；列表失败 → 壳红条，发起/轮询失败 → 本页红条
-// 对齐：AGENTS.md §4 前端红线（真实接口零 mock、禁直写 fetch、箭头函数）
+// 对齐：AGENTS.md §4 前端红线（真实接口零 mock、禁直写 fetch、箭头函数、var(--*) token + scoped）
 import { inject, onMounted, onUnmounted, ref } from 'vue'
 import { RouterLink } from 'vue-router'
+import { Check, MagicStick, VideoPlay } from '@element-plus/icons-vue'
 import { createRun, getRun, listAgents } from '../api'
 import type { AgentItem, RunItem } from '../api'
 import StatusBadge from '../components/StatusBadge.vue'
@@ -19,7 +20,7 @@ const shell = inject('shellError') as {
 // ---------- agent 列表与发起表单 ----------
 const agents = ref<AgentItem[]>([])
 const agentsLoading = ref(true)
-const currentAgent = ref('') // 选中的 agent id（卡片高亮）
+const currentAgent = ref('') // 选中的 agent 名（卡片高亮）
 const goal = ref('')
 const starting = ref(false)
 
@@ -78,10 +79,18 @@ const suspended = () => {
   )
 }
 
-// args 摘要：超长截断，完整值在 title 里
+// 时间线节点类型：失败红、挂起/运行黄、成功绿、其余蓝
+const stepType = (status: string) => {
+  if (['failed', 'cancelled', 'error'].includes(status)) return 'danger'
+  if (['pending', 'running'].includes(status)) return 'warning'
+  if (['succeeded', 'completed', 'done'].includes(status)) return 'success'
+  return 'primary'
+}
+
+// args 摘要：超长截断，完整值在 tooltip 里
 const argsBrief = (args: unknown) => {
   const text = JSON.stringify(args ?? {})
-  return text.length > 60 ? `${text.slice(0, 60)}…` : text
+  return text.length > 70 ? `${text.slice(0, 70)}…` : text
 }
 
 const loadAgents = async () => {
@@ -97,8 +106,8 @@ const loadAgents = async () => {
   }
 }
 
-const pickAgent = (id: string) => {
-  currentAgent.value = id
+const pickAgent = (name: string) => {
+  currentAgent.value = name
 }
 
 onMounted(loadAgents)
@@ -107,83 +116,199 @@ onUnmounted(stopPolling) // 卸载清定时器，防离开页面后仍轮询
 
 <template>
   <div class="grid">
-    <!-- 左区：agent 卡片 -->
-    <section class="card">
-      <h2>
-        智能体
-        <span v-if="agents.length" class="badge">{{ agents.length }}</span>
-      </h2>
-      <p v-if="agentsLoading" class="empty">加载中…</p>
-      <div v-else-if="!agents.length" class="empty">暂无可用智能体</div>
-      <template v-else>
-        <div
-          v-for="a in agents"
-          :key="a.name"
-          :class="['tool-card', { active: a.name === currentAgent }]"
-          @click="pickAgent(a.name)"
-        >
-          <div class="tool-head">
-            <strong>{{ a.name }}</strong>
-            <span v-if="a.max_steps !== undefined" class="badge">max_steps {{ a.max_steps }}</span>
-          </div>
-          <p class="muted">{{ a.description }}</p>
-          <div v-if="a.tools?.length" class="tool-head agent-tools">
-            <span v-for="t in a.tools" :key="t" class="badge">{{ t }}</span>
-          </div>
+    <!-- 左区：agent 卡片（点选高亮） -->
+    <el-card shadow="never">
+      <template #header>
+        <div class="page-head">
+          <span class="card-title">智能体</span>
+          <el-tag v-if="agents.length" size="small" type="info" round>{{ agents.length }} 个</el-tag>
+          <span class="muted head-hint">选择左侧卡片后填写目标</span>
         </div>
       </template>
-    </section>
+
+      <el-skeleton v-if="agentsLoading" :rows="4" animated />
+      <el-empty v-else-if="!agents.length" :image-size="80" description="暂无可用智能体" />
+      <div v-else class="agent-list">
+        <el-card
+          v-for="a in agents"
+          :key="a.name"
+          :class="['agent-item', { active: a.name === currentAgent }]"
+          shadow="hover"
+          @click="pickAgent(a.name)"
+        >
+          <div class="agent-top">
+            <el-icon class="agent-icon"><MagicStick /></el-icon>
+            <strong class="agent-name">{{ a.name }}</strong>
+            <el-icon v-if="a.name === currentAgent" class="agent-check"><Check /></el-icon>
+            <el-tag v-if="a.max_steps !== undefined" size="small" type="info" effect="plain">
+              最多 {{ a.max_steps }} 步
+            </el-tag>
+          </div>
+          <p class="muted agent-desc">{{ a.description }}</p>
+          <div v-if="a.tools?.length" class="agent-tools">
+            <el-tag v-for="t in a.tools" :key="t" size="small" effect="plain">{{ t }}</el-tag>
+          </div>
+        </el-card>
+      </div>
+    </el-card>
 
     <!-- 右区：发起运行 -->
-    <section class="card">
-      <h2>发起运行</h2>
-      <label class="field">
-        <span>智能体</span>
-        <input :value="currentAgent || ''" placeholder="点击左侧智能体卡片选择" readonly />
-      </label>
-      <label class="field">
-        <span>目标</span>
-        <textarea v-model="goal" rows="4" placeholder="用一句话描述这次要让智能体完成什么"></textarea>
-      </label>
-      <button
-        class="btn primary"
-        :disabled="starting || !currentAgent || !goal.trim()"
+    <el-card shadow="never">
+      <template #header>
+        <div class="page-head"><span class="card-title">发起运行</span></div>
+      </template>
+
+      <el-form label-position="top" @submit.prevent>
+        <el-form-item label="智能体">
+          <el-input :model-value="currentAgent" readonly placeholder="点击左侧智能体卡片选择" />
+        </el-form-item>
+        <el-form-item label="目标">
+          <el-input
+            v-model="goal"
+            type="textarea"
+            :rows="4"
+            placeholder="用一句话描述这次要让智能体完成什么"
+          />
+        </el-form-item>
+      </el-form>
+
+      <el-button
+        type="primary"
+        :icon="VideoPlay"
+        :loading="starting"
+        :disabled="!currentAgent || !goal.trim()"
         @click="startRun"
       >
         {{ starting ? '发起中…' : '启动运行' }}
-      </button>
+      </el-button>
 
-      <div v-if="runError" class="result fail">{{ runError }}</div>
-    </section>
+      <el-alert
+        v-if="runError"
+        class="block-gap"
+        type="error"
+        :title="runError"
+        show-icon
+        :closable="false"
+      />
+    </el-card>
   </div>
 
   <!-- 运行详情：步骤时间线 -->
-  <section v-if="run" class="card block-gap">
-    <h2>
-      运行详情
-      <span class="badge">{{ run.status }}</span>
-      <span v-if="polling" class="badge warn">轮询中</span>
-    </h2>
-    <p class="muted">运行 ID：<span class="mono">{{ run.run_id }}</span></p>
-    <div v-if="suspended()" class="err-bar">
-      <span class="err-text">存在待审批步骤，请到审批页处理</span>
-      <RouterLink class="err-link" to="/approvals">前往审批页 →</RouterLink>
-    </div>
-    <div v-if="run.steps?.length" class="timeline">
-      <div v-for="s in run.steps" :key="s.step_index" class="timeline-item">
-        <div class="tool-head">
-          <span class="badge">步骤 {{ s.step_index }}</span>
+  <el-card v-if="run" class="block-gap" shadow="never">
+    <template #header>
+      <div class="page-head">
+        <span class="card-title">运行详情</span>
+        <StatusBadge :status="run.status" />
+        <el-tag v-if="polling" size="small" type="warning" round>轮询中</el-tag>
+      </div>
+    </template>
+
+    <el-descriptions :column="1" size="small">
+      <el-descriptions-item label="运行 ID">
+        <span class="mono">{{ run.run_id }}</span>
+      </el-descriptions-item>
+    </el-descriptions>
+
+    <el-alert
+      v-if="suspended()"
+      class="block-gap"
+      type="warning"
+      show-icon
+      :closable="false"
+      title="存在待审批步骤，请到审批页处理"
+    >
+      <RouterLink class="alert-link" to="/approvals">前往审批页 →</RouterLink>
+    </el-alert>
+
+    <el-timeline v-if="run.steps?.length">
+      <el-timeline-item
+        v-for="s in run.steps"
+        :key="s.step_index"
+        :type="stepType(s.status)"
+        hollow
+      >
+        <div class="step-line">
+          <span class="step-no">步骤 {{ s.step_index }}</span>
           <strong class="mono">{{ s.tool }}</strong>
           <StatusBadge :status="s.status" />
-          <span v-if="s.trace_id" class="badge trace mono" :title="s.trace_id">
-            trace {{ s.trace_id }}
-          </span>
+          <el-tooltip v-if="s.trace_id" :content="s.trace_id" placement="top">
+            <el-tag size="small" type="info" effect="plain" class="mono">
+              trace {{ s.trace_id.slice(0, 10) }}…
+            </el-tag>
+          </el-tooltip>
         </div>
-        <p v-if="s.args !== undefined" class="muted mono args-brief" :title="JSON.stringify(s.args)">
-          args {{ argsBrief(s.args) }}
-        </p>
-      </div>
-    </div>
-    <p v-else class="empty">暂无步骤记录</p>
-  </section>
+        <el-tooltip v-if="s.args !== undefined" :content="JSON.stringify(s.args)" placement="top">
+          <p class="muted mono args">args {{ argsBrief(s.args) }}</p>
+        </el-tooltip>
+      </el-timeline-item>
+    </el-timeline>
+    <el-empty v-else :image-size="70" description="暂无步骤记录" />
+  </el-card>
 </template>
+
+<style scoped>
+.agent-list {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  max-height: 60vh;
+  overflow-y: auto;
+}
+/* 可点选卡片：选中态品牌描边 + 浅底 */
+.agent-item {
+  cursor: pointer;
+  border-radius: var(--radius-sm);
+  transition: border-color 0.15s ease, background 0.15s ease;
+}
+.agent-item :deep(.el-card__body) {
+  padding: 12px 14px;
+}
+.agent-item.active {
+  border-color: var(--brand);
+  background: var(--brand-soft);
+}
+.agent-top {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+.agent-icon {
+  color: var(--brand);
+}
+.agent-name {
+  font-size: 14px;
+}
+.agent-check {
+  color: var(--brand);
+  font-size: 14px;
+}
+.agent-desc {
+  font-size: 13px;
+  margin: 6px 0 0;
+}
+.agent-tools {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin-top: 8px;
+}
+.step-line {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex-wrap: wrap;
+}
+.step-no {
+  color: var(--muted);
+  font-size: 12px;
+}
+.args {
+  font-size: 12px;
+  margin: 2px 0 0;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  max-width: 640px;
+}
+</style>

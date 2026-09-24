@@ -5,9 +5,13 @@
 </script>
 
 <template>
-  <section class="card">
-    <h2>文档中心</h2>
-    <p class="muted">周报、纪要、邮件等内容生成与文档处理统一入口（PRD §2.1）</p>
+  <el-card shadow="never">
+    <template #header>
+      <div class="page-head">
+        <span class="card-title">文档中心</span>
+        <span class="head-hint">周报、纪要、邮件等内容生成与文档处理统一入口（PRD §2.1）</span>
+      </div>
+    </template>
     <el-tabs>
       <el-tab-pane label="自动生成">
         <el-form inline label-width="72px">
@@ -94,7 +98,7 @@
         <el-empty description="功能建设中——术语库与翻译待接口" />
       </el-tab-pane>
     </el-tabs>
-  </section>
+  </el-card>
 </template>
 
 <style scoped>

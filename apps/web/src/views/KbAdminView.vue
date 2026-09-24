@@ -5,9 +5,13 @@
 </script>
 
 <template>
-  <section class="card">
-    <h2>知识库后台</h2>
-    <p class="muted">管理员上传资料、维护知识库、配置回答规则（PRD §2.13）</p>
+  <el-card shadow="never">
+    <template #header>
+      <div class="page-head">
+        <span class="card-title">知识库后台</span>
+        <span class="head-hint">管理员上传资料、维护知识库、配置回答规则（PRD §2.13）</span>
+      </div>
+    </template>
     <el-tabs>
       <el-tab-pane label="资料上传">
         <el-upload drag action="#" disabled multiple>
@@ -48,7 +52,7 @@
         </el-form>
       </el-tab-pane>
     </el-tabs>
-  </section>
+  </el-card>
 </template>
 
 <style scoped>

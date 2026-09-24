@@ -5,9 +5,13 @@
 </script>
 
 <template>
-  <section class="card">
-    <h2>财务辅助</h2>
-    <p class="muted">个人报销进度、部门费用台账与项目预算剩余额度查询（PRD §2.10）</p>
+  <el-card shadow="never">
+    <template #header>
+      <div class="page-head">
+        <span class="card-title">财务辅助</span>
+        <span class="head-hint">个人报销进度、部门费用台账与项目预算剩余额度查询（PRD §2.10）</span>
+      </div>
+    </template>
     <el-tabs>
       <el-tab-pane label="报销进度">
         <div class="toolbar">
@@ -49,7 +53,7 @@
         <el-empty description="功能建设中——待接入 office.budget.query（结果带充足/紧张/超支标签与溯源）" />
       </el-tab-pane>
     </el-tabs>
-  </section>
+  </el-card>
 </template>
 
 <style scoped>

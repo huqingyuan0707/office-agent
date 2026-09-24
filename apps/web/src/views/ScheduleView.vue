@@ -5,9 +5,13 @@
 </script>
 
 <template>
-  <section class="card">
-    <h2>日程与提醒</h2>
-    <p class="muted">日程安排、会议预约、工作台账与主动提醒（PRD §2.2）</p>
+  <el-card shadow="never">
+    <template #header>
+      <div class="page-head">
+        <span class="card-title">日程与提醒</span>
+        <span class="head-hint">日程安排、会议预约、工作台账与主动提醒（PRD §2.2）</span>
+      </div>
+    </template>
     <el-tabs>
       <el-tab-pane label="我的日程">
         <div class="toolbar">
@@ -62,7 +66,7 @@
         <el-empty description="功能建设中——提醒配置待接入 notifications 接口" />
       </el-tab-pane>
     </el-tabs>
-  </section>
+  </el-card>
 </template>
 
 <style scoped>

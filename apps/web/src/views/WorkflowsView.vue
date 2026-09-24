@@ -1,14 +1,15 @@
 <script setup lang="ts">
-// 职责：编排页 —— 工作流列表 → 选中编辑（名称/说明/步骤：工具下拉选自真实工具清单 +
-//       参数 JSON + 上移/下移/删除）→ 保存（新建/更新）→ 执行 → 步骤时间线
+// 职责：编排页（Element Plus 版）—— 工作流列表 → 选中编辑（名称/说明/步骤：工具下拉选自真实
+//       工具清单 + 参数 JSON + 上移/下移/删除）→ 保存（新建/更新）→ 执行 → 步骤时间线
 //       （tool/status/耗时/远程出处/落单即停提示）；远程工具步骤天然可编排，执行走同一条
 //       内核链，出站溯源随步返回，即本仓库的 RPA 联动形态
 // 链路：router /workflows → api.listWorkflows/createWorkflow/updateWorkflow/deleteWorkflow/
 //       runWorkflow + api.listTools（步骤工具下拉）；列表失败 → 壳红条，保存/执行失败 → 本页红条
-// 对齐：AGENTS.md §4 前端红线（真实接口零 mock、禁直写 fetch、箭头函数、var(--*) token）+
+// 对齐：AGENTS.md §4 前端红线（真实接口零 mock、禁直写 fetch、箭头函数、var(--*) token + scoped）+
 //       PRD §2.11 可视化工作流编排 / §5.3 多场景串联与 RPA 联动
 import { inject, onMounted, ref } from 'vue'
 import { RouterLink } from 'vue-router'
+import { ArrowDown, ArrowUp, Delete, Plus, VideoPlay } from '@element-plus/icons-vue'
 import {
   createWorkflow,
   deleteWorkflow,
@@ -60,22 +61,6 @@ const loadAll = async () => {
   }
 }
 
-// 选中工作流进编辑态（详情含 steps 全文；新建态清空表单）
-const pickWorkflow = async (id: string) => {
-  pageError.value = ''
-  run.value = null
-  shell.clearError()
-  try {
-    const detail: WorkflowDetail = id ? await getWorkflow(id) : await Promise.resolve(newBlank())
-    editingId.value = id
-    editName.value = detail.name
-    editDesc.value = detail.description
-    steps.value = detail.steps.map((s) => ({ tool: s.tool, argsText: stringify(s.args) }))
-  } catch (e) {
-    pageError.value = (e as Error).message || '工作流详情加载失败'
-  }
-}
-
 const newBlank = (): WorkflowDetail => ({
   id: '',
   name: '',
@@ -85,6 +70,22 @@ const newBlank = (): WorkflowDetail => ({
   updated_at: '',
   steps: [],
 })
+
+// 选中工作流进编辑态（详情含 steps 全文；新建态清空表单）
+const pickWorkflow = async (id: string) => {
+  pageError.value = ''
+  run.value = null
+  shell.clearError()
+  try {
+    const detail: WorkflowDetail = id ? await getWorkflow(id) : newBlank()
+    editingId.value = id
+    editName.value = detail.name
+    editDesc.value = detail.description
+    steps.value = detail.steps.map((s) => ({ tool: s.tool, argsText: stringify(s.args) }))
+  } catch (e) {
+    pageError.value = (e as Error).message || '工作流详情加载失败'
+  }
+}
 
 // 步骤编辑：增 / 删 / 上移 / 下移（纯本地重排，保存才落库）
 const addStep = () => {
@@ -146,7 +147,6 @@ const doSave = async () => {
 
 const doDelete = async () => {
   if (!editingId.value || saving.value) return
-  if (!confirm(`删除工作流「${editName.value}」？只删定义，已产审批与审计不受影响。`)) return
   pageError.value = ''
   saving.value = true
   try {
@@ -178,108 +178,281 @@ const doRun = async () => {
   }
 }
 
+// 时间线节点类型：失败红、挂起黄、成功绿、其余蓝
+const stepType = (status: string) => {
+  if (['failed', 'cancelled', 'error'].includes(status)) return 'danger'
+  if (['pending', 'running'].includes(status)) return 'warning'
+  if (['succeeded', 'completed', 'done'].includes(status)) return 'success'
+  return 'primary'
+}
+
 onMounted(loadAll)
 </script>
 
 <template>
   <div class="grid">
     <!-- 左区：工作流列表 -->
-    <section class="card">
-      <h2>
-        工作流
-        <span v-if="items.length" class="badge">{{ items.length }}</span>
-      </h2>
-      <button class="btn primary block-gap" @click="pickWorkflow('')">+ 新建工作流</button>
-      <p v-if="loading" class="empty">加载中…</p>
-      <div v-else-if="!items.length" class="empty">暂无工作流（点新建编排第一条串联链）</div>
-      <template v-else>
-        <div
-          v-for="w in items"
-          :key="w.id"
-          :class="['tool-card', { active: w.id === editingId }]"
-          @click="pickWorkflow(w.id)"
-        >
-          <div class="tool-head">
-            <strong>{{ w.name }}</strong>
-            <span class="badge">{{ w.step_count }} 步</span>
-          </div>
-          <p class="muted">{{ w.description || '（无说明）' }}</p>
+    <el-card shadow="never">
+      <template #header>
+        <div class="page-head">
+          <span class="card-title">工作流</span>
+          <el-tag v-if="items.length" size="small" type="info" round>{{ items.length }} 条</el-tag>
         </div>
       </template>
-    </section>
+
+      <el-button class="block-gap new-btn" type="primary" plain :icon="Plus" @click="pickWorkflow('')">
+        新建工作流
+      </el-button>
+
+      <el-skeleton v-if="loading" :rows="4" animated />
+      <el-empty
+        v-else-if="!items.length"
+        :image-size="80"
+        description="暂无工作流（点新建编排第一条串联链）"
+      />
+      <div v-else class="wf-list">
+        <el-card
+          v-for="w in items"
+          :key="w.id"
+          :class="['wf-item', { active: w.id === editingId }]"
+          shadow="hover"
+          @click="pickWorkflow(w.id)"
+        >
+          <div class="wf-top">
+            <strong>{{ w.name }}</strong>
+            <el-tag size="small" effect="plain">{{ w.step_count }} 步</el-tag>
+          </div>
+          <p class="muted wf-desc">{{ w.description || '（无说明）' }}</p>
+        </el-card>
+      </div>
+    </el-card>
 
     <!-- 右区：编辑器 -->
-    <section class="card">
-      <h2>{{ editingId ? '编辑工作流' : '新建工作流' }}</h2>
-      <label class="field">
-        <span>名称</span>
-        <input v-model="editName" placeholder="如：日报链（拉数→出报→建待办）" />
-      </label>
-      <label class="field">
-        <span>说明</span>
-        <input v-model="editDesc" placeholder="这条链解决什么场景" />
-      </label>
-
-      <h3 class="muted">步骤（按序执行，需审批步骤落单即停）</h3>
-      <div v-if="!steps.length" class="empty">暂无步骤，先添加第一步</div>
-      <div v-for="(s, i) in steps" :key="i" class="card step-card">
-        <div class="tool-head">
-          <span class="badge">步骤 {{ i + 1 }}</span>
-          <button class="btn ghost" :disabled="i === 0" @click="moveStep(i, -1)">上移</button>
-          <button class="btn ghost" :disabled="i === steps.length - 1" @click="moveStep(i, 1)">
-            下移
-          </button>
-          <button class="btn ghost" @click="removeStep(i)">删除</button>
+    <el-card shadow="never">
+      <template #header>
+        <div class="page-head">
+          <span class="card-title">{{ editingId ? '编辑工作流' : '新建工作流' }}</span>
         </div>
-        <label class="field">
-          <span>工具（下拉自真实工具清单，远程工具同样可选）</span>
-          <select v-model="s.tool">
-            <option v-for="t in toolNames" :key="t" :value="t">{{ t }}</option>
-          </select>
-        </label>
-        <label class="field">
-          <span>参数 JSON</span>
-          <textarea v-model="s.argsText" rows="3" spellcheck="false"></textarea>
-        </label>
-      </div>
-      <div class="tool-head block-gap">
-        <button class="btn" @click="addStep">+ 添加步骤</button>
-        <button class="btn primary" :disabled="saving || !editName.trim()" @click="doSave">
-          {{ saving ? '保存中…' : '保存' }}
-        </button>
-        <button v-if="editingId" class="btn" :disabled="running" @click="doRun">
-          {{ running ? '执行中…' : '执行' }}
-        </button>
-        <button v-if="editingId" class="btn ghost" :disabled="saving" @click="doDelete">删除</button>
+      </template>
+
+      <el-form label-position="top" @submit.prevent>
+        <el-form-item label="名称">
+          <el-input v-model="editName" placeholder="如：日报链（拉数→出报→建待办）" />
+        </el-form-item>
+        <el-form-item label="说明">
+          <el-input v-model="editDesc" placeholder="这条链解决什么场景" />
+        </el-form-item>
+      </el-form>
+
+      <h3 class="sub-title">步骤（按序执行，需审批步骤落单即停）</h3>
+      <el-empty v-if="!steps.length" :image-size="70" description="暂无步骤，先添加第一步" />
+      <div class="step-list">
+        <el-card v-for="(s, i) in steps" :key="i" class="step-card" shadow="never">
+          <div class="step-head">
+            <el-tag size="small" type="primary" effect="plain" round>步骤 {{ i + 1 }}</el-tag>
+            <el-button-group class="step-ops">
+              <el-button
+                size="small"
+                :icon="ArrowUp"
+                :disabled="i === 0"
+                title="上移"
+                @click="moveStep(i, -1)"
+              />
+              <el-button
+                size="small"
+                :icon="ArrowDown"
+                :disabled="i === steps.length - 1"
+                title="下移"
+                @click="moveStep(i, 1)"
+              />
+              <el-button size="small" :icon="Delete" title="删除" @click="removeStep(i)" />
+            </el-button-group>
+          </div>
+          <el-form label-position="top" @submit.prevent>
+            <el-form-item label="工具（下拉自真实工具清单，远程工具同样可选）">
+              <el-select v-model="s.tool" style="width: 100%" filterable>
+                <el-option v-for="t in toolNames" :key="t" :label="t" :value="t" />
+              </el-select>
+            </el-form-item>
+            <el-form-item label="参数 JSON">
+              <el-input
+                v-model="s.argsText"
+                type="textarea"
+                :rows="3"
+                spellcheck="false"
+                class="args-input"
+              />
+            </el-form-item>
+          </el-form>
+        </el-card>
       </div>
 
-      <div v-if="pageError" class="result fail">{{ pageError }}</div>
-    </section>
+      <div class="ops-row">
+        <el-button :icon="Plus" @click="addStep">添加步骤</el-button>
+        <el-button type="primary" :loading="saving" :disabled="!editName.trim()" @click="doSave">
+          {{ saving ? '保存中…' : '保存' }}
+        </el-button>
+        <el-button
+          v-if="editingId"
+          type="success"
+          :icon="VideoPlay"
+          :loading="running"
+          @click="doRun"
+        >
+          {{ running ? '执行中…' : '执行' }}
+        </el-button>
+        <el-popconfirm
+          v-if="editingId"
+          title="删除该工作流？只删定义，已产审批与审计不受影响。"
+          confirm-button-text="删除"
+          cancel-button-text="取消"
+          @confirm="doDelete"
+        >
+          <template #reference>
+            <el-button type="danger" plain :disabled="saving">删除</el-button>
+          </template>
+        </el-popconfirm>
+      </div>
+
+      <el-alert
+        v-if="pageError"
+        class="block-gap"
+        type="error"
+        :title="pageError"
+        show-icon
+        :closable="false"
+      />
+    </el-card>
   </div>
 
   <!-- 执行结果：步骤时间线 -->
-  <section v-if="run" class="card block-gap">
-    <h2>
-      执行结果
-      <span class="badge">{{ run.status }}</span>
-    </h2>
-    <div v-if="run.status === 'pending_approval'" class="err-bar">
-      <span class="err-text">第 {{ (run.next_step ?? 0) + 1 }} 步已提交审批，后续步骤暂不执行</span>
-      <RouterLink class="err-link" to="/approvals">前往审批页 →</RouterLink>
-    </div>
-    <p v-if="run.error" class="result fail">第 {{ (run.failed_step ?? 0) + 1 }} 步失败：{{ run.error }}</p>
-    <div v-if="run.steps.length" class="timeline">
-      <div v-for="s in run.steps" :key="s.index" class="timeline-item">
-        <div class="tool-head">
-          <span class="badge">步骤 {{ s.index + 1 }}</span>
+  <el-card v-if="run" class="block-gap" shadow="never">
+    <template #header>
+      <div class="page-head">
+        <span class="card-title">执行结果</span>
+        <StatusBadge :status="run.status" />
+      </div>
+    </template>
+
+    <el-alert
+      v-if="run.status === 'pending_approval'"
+      class="block-gap"
+      type="warning"
+      show-icon
+      :closable="false"
+      :title="`第 ${(run.next_step ?? 0) + 1} 步已提交审批，后续步骤暂不执行`"
+    >
+      <RouterLink class="alert-link" to="/approvals">前往审批页 →</RouterLink>
+    </el-alert>
+    <el-alert
+      v-if="run.error"
+      class="block-gap"
+      type="error"
+      show-icon
+      :closable="false"
+      :title="`第 ${(run.failed_step ?? 0) + 1} 步失败：${run.error}`"
+    />
+
+    <el-timeline v-if="run.steps.length">
+      <el-timeline-item
+        v-for="s in run.steps"
+        :key="s.index"
+        :type="stepType(s.status)"
+        hollow
+      >
+        <div class="step-line">
+          <span class="step-no">步骤 {{ s.index + 1 }}</span>
           <strong class="mono">{{ s.tool }}</strong>
           <StatusBadge :status="s.status" />
-          <span v-if="s.latency_ms !== undefined" class="badge">{{ s.latency_ms }}ms</span>
-          <span v-if="s.provider_id" class="badge">远程 · {{ s.provider_id }}</span>
+          <el-tag v-if="s.latency_ms !== undefined" size="small" effect="plain">
+            {{ s.latency_ms }}ms
+          </el-tag>
+          <el-tag v-if="s.provider_id" size="small" type="primary" effect="plain">
+            远程 · {{ s.provider_id }}
+          </el-tag>
         </div>
-        <pre v-if="s.result !== undefined" class="args-brief">{{ stringify(s.result) }}</pre>
-      </div>
-    </div>
-    <p v-else class="empty">无已完成步骤</p>
-  </section>
+        <pre v-if="s.result !== undefined" class="code-block step-result">{{ stringify(s.result) }}</pre>
+      </el-timeline-item>
+    </el-timeline>
+    <el-empty v-else :image-size="70" description="无已完成步骤" />
+  </el-card>
 </template>
+
+<style scoped>
+.new-btn {
+  width: 100%;
+}
+.wf-list {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  max-height: 56vh;
+  overflow-y: auto;
+}
+.wf-item {
+  cursor: pointer;
+  border-radius: var(--radius-sm);
+  transition: border-color 0.15s ease, background 0.15s ease;
+}
+.wf-item :deep(.el-card__body) {
+  padding: 12px 14px;
+}
+.wf-item.active {
+  border-color: var(--brand);
+  background: var(--brand-soft);
+}
+.wf-top {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.wf-desc {
+  font-size: 13px;
+  margin: 6px 0 0;
+}
+.step-list {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+.step-card {
+  background: #fafbfc;
+  border-radius: var(--radius-sm);
+}
+.step-card :deep(.el-card__body) {
+  padding: 12px 14px;
+}
+.step-head {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.step-ops {
+  margin-left: auto;
+}
+.args-input :deep(textarea) {
+  font-family: Consolas, 'Courier New', monospace;
+  font-size: 13px;
+}
+.ops-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex-wrap: wrap;
+  margin-top: 14px;
+}
+.step-line {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex-wrap: wrap;
+}
+.step-no {
+  color: var(--muted);
+  font-size: 12px;
+}
+.step-result {
+  max-height: 200px;
+  font-size: 12px;
+}
+</style>

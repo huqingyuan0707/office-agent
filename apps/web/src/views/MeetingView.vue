@@ -5,9 +5,13 @@
 </script>
 
 <template>
-  <section class="card">
-    <h2>会议协作</h2>
-    <p class="muted">覆盖会前准备、会中记录、会后纪要与风险预警全流程（PRD §2.5）</p>
+  <el-card shadow="never">
+    <template #header>
+      <div class="page-head">
+        <span class="card-title">会议协作</span>
+        <span class="head-hint">覆盖会前准备、会中记录、会后纪要与风险预警全流程（PRD §2.5）</span>
+      </div>
+    </template>
     <el-steps :active="0" align-center finish-status="wait" class="block-gap">
       <el-step title="会前" description="预约 · 资料 · 议程" />
       <el-step title="会中" description="转录 · 记录 · 重点" />
@@ -41,7 +45,7 @@
         <el-empty description="功能建设中——从纪要自动抓取项目风险点待接口（office.meeting.risks）" />
       </el-tab-pane>
     </el-tabs>
-  </section>
+  </el-card>
 </template>
 
 <style scoped>
