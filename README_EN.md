@@ -28,6 +28,7 @@ packages/core ── governance kernel (frozen; runtime consumes public API only
    │
    ▼
 packages/server ── FastAPI shell (auth / rbac / tasks / approvals / governance)
+   + packages/mcp-bridge ── standard MCP protocol bridge (optional; transport="mcp" providers auto-discovered)
    + packages/tools-office ── built-in office tools (schedule / reports / minutes / knowledge / OCR / doc compare / task planner / templates)
    + plugins/tools-ecommerce ── optional read-only remote bridge (absent when provider unconfigured)
    + apps/web ── Vue3 console (login / tools / tasks / approvals / governance / agent run panel)
@@ -41,6 +42,7 @@ office-agent/
 │   ├── core/            office_agent_core: contracts/registry/policy/executor/linkage/audit
 │   ├── server/          office_agent_server: FastAPI shell (/api/v1, unified envelope)
 │   ├── runtime/         office_agent_runtime: orchestration runtime mounted via mount(app)
+│   ├── mcp-bridge/      office_agent_mcp_bridge: standard MCP bridge (this side is the Client, JSON-RPC over HTTP)
 │   └── tools-office/    office_agent_tools_office: built-in office tool package
 ├── plugins/
 │   ├── tools-ecommerce/          read-only remote bridge tools (order/logistics/stock/coupon/kb)
@@ -59,10 +61,10 @@ office-agent/
 Requires Python 3.11+ (`StrEnum` in core; packages' tests won't run on 3.10).
 
 ```bash
-# 1. Dependencies + the four packages (editable install)
+# 1. Dependencies + the five packages (editable install)
 python -m venv .venv
 .venv\Scripts\pip.exe install -r requirements.txt
-.venv\Scripts\pip.exe install -e packages/core -e packages/server -e packages/runtime -e packages/tools-office
+.venv\Scripts\pip.exe install -e packages/core -e packages/server -e packages/runtime -e packages/tools-office -e packages/mcp-bridge
 
 # 2. Configuration (zero hard-coding; single source: packages/core/office_agent_core/settings.py)
 copy .env.example .env
@@ -164,6 +166,25 @@ External capabilities arrive via `plugins/tools-ecommerce` whitelisted tools. Di
 - **Credentials only via env/secret, never stored**; a CI grep gate forbids business-domain tokens anywhere under `packages/`.
 - **Pull (mode 1) and write-back (mode 2) both verified**: read tools (order/logistics/stock/coupon/kb) fetch with provenance; the first write-back tool `ticket.create` (ticket:write) — invoke always files an approval; once approved it executes outbound as the applicant, and the peer replays idempotently on `(tenant, idem_key)` (same key returns the same ticket, never a duplicate). HTTP-level smoke: `tests/smoke_linkage_writeback.py` 6/6.
 
+### M3: Standard MCP Protocol Bridge (optional, active once installed)
+
+When a peer upgrades from the custom HTTP gateway to a **standard MCP Server**, only one config entry changes — zero business code:
+
+- **Config-based routing**: add `transport` to a `LINKAGE_PROVIDERS` entry (default `"http"` is claimed by the kernel, `"mcp"` by mcp-bridge) — the kernel contains no protocol branches, keeping protocol details out of the main package. See `.env.example`.
+- **Implementation**: this side is the MCP **Client**, hand-rolled JSON-RPC 2.0 over HTTP (protocol `2025-06-18`; methods `initialize` / `tools/list` / `tools/call`), no MCP SDK. `MCPProvider` is **shape-identical** to the HTTP gateway client (`provider_id` + `invoke()` + `aclose()`); registered via `linkage.register_provider()` → registry / executor / approvals / audit / provenance **unchanged**.
+- **Automatic tool registration**: `tools/list` on startup → governance attributes mapped from MCP annotations: `readOnlyHint=true` → read-only scope + no approval + idempotent; **missing annotation or non-read-only → always approved** (strict by default when unknown).
+- **Degradation**: an offline peer only logs a warning and registers nothing — startup is never blocked; error classification is shared with the HTTP gateway (`core/linkage/envelope.py`: upstream 1xxx/3xxx/4xxx pass through verbatim, 5xxx/invalid codes become dependency failures).
+
+### IM Approval Notifications (optional, absent when unconfigured)
+
+When an approval is filed or a stale-approval scan finds new items, a group-bot message goes out (`generic` / `feishu` / `dingtalk` / `wecom` bodies plus Feishu/DingTalk signing):
+
+- Hooked at "approval filed" and "stale scan" as a **side channel** — never enters linkage, never counts toward circuit breaking, never mutates approval state.
+- With `IM_WEBHOOK_URL` unset it returns `{"sent": false, "reason": "not_configured"}` and makes **no network call at all**.
+- Failures/timeouts are fully caught and degraded to a recorded event (`agent.im_webhook`), **never blocking the approval flow**; stale reminders aggregate the first N items to avoid spamming.
+
+HTTP-level smoke: `python tests/smoke_mcp_im.py` (bundled fake MCP server + fake IM endpoint, 5 assertions).
+
 ## V1.0 Office Features (PRD §5.1, all under the same governance)
 
 | Feature | Tool / endpoint | Key guarantees |
@@ -186,7 +207,7 @@ HTTP-level smoke: `python tests/smoke_v1_features.py` (17 assertions, re-runnabl
 
 ```bash
 .venv\Scripts\ruff.exe check .                                   # lint (ruff pinned 0.16.7, also in pre-commit hook)
-.venv\Scripts\python.exe -m pytest packages/core packages/server packages/runtime packages/tools-office -q
+.venv\Scripts\python.exe -m pytest packages/core packages/server packages/runtime packages/tools-office packages/mcp-bridge -q
 python skills/naming-check/scripts/check_naming.py               # naming ratchet (debt may only shrink)
 python skills/anti-shit-code/scripts/check_arch.py               # architecture health (layering / size)
 .venv\Scripts\alembic.exe check                                  # zero model-vs-DB drift
@@ -205,11 +226,11 @@ After cloning, run `git config core.hooksPath githooks` once to enable commit ho
 | M2 | Cross-system HTTP+JWT bridge (tools-ecommerce, pull mode verified E2E) | ✅ |
 | R0-R3 | Orchestration runtime: AgentSpec / dual planners / approval suspend + resume / numeric validation / run panel | ✅ |
 | V1.0 | PRD §5.1 office features (reports / minutes / knowledge / OCR / compare / planner / templates) + notifications | ✅ |
-| M3 | mcp-bridge (standard MCP) + SPI docs | ⏳ planned |
+| M3 | mcp-bridge standard MCP bridge (transport routing + tools/list auto-discovery) + IM approval notifications | ✅ |
 
 ## Documentation
 
-- Decision record: `docs/ADR-0003-办公Agent拆分独立开源项目.md` (Chinese)
+- Decision record: `docs/ADR-0003-办公Agent拆分独立开源项目.md`, `docs/ADR-0004-MCP协议桥与IM审批通知出站.md` (Chinese)
 - Skeleton & extraction plan: `docs/office-agent仓库骨架与内核提取方案.md` (Chinese)
 - Orchestration plan: `.trae/documents/智能体编排层实现方案.md` (Chinese)
 - Contributing: `CONTRIBUTING.md` (Chinese); AI collaboration rules: `AGENTS.md`

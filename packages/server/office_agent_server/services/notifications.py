@@ -26,6 +26,7 @@ from office_agent_core.errors import BusinessError, ErrorCode
 from office_agent_core.settings import settings
 from office_agent_server.db import _now
 from office_agent_server.models import Approval, Notification, Task, User
+from office_agent_server.services import im_notifier
 
 logger = logging.getLogger(__name__)
 
@@ -95,13 +96,15 @@ async def scan_notifications(
 ) -> dict[str, Any]:
     """扫描三类信号生成站内通知（幂等可重复触发）；返回创建统计。"""
     cap = int(max_per_scan if max_per_scan is not None else settings.NOTIFICATION_MAX_PER_SCAN)
+    hours_limit = float(stale_hours if stale_hours is not None else settings.APPROVAL_STALE_HOURS)
     seen = await _existing_dedupe_keys(db, tenant)
     bucket: list[Notification] = []
     by_kind = {KIND_APPROVAL_STALE: 0, KIND_TASK_FAILED: 0, KIND_DAILY_BRIEFING: 0}
+    stale_items: list[dict[str, Any]] = []
     skipped = 0
 
     # ① 审批超时：pending 且创建早于超时点 → 提醒提交人
-    cutoff = _stale_cutoff(stale_hours)
+    cutoff = _stale_cutoff(hours_limit)
     stale_rows = (
         (
             await db.execute(
@@ -134,6 +137,15 @@ async def scan_notifications(
         )
         if created:
             by_kind[KIND_APPROVAL_STALE] += 1
+            stale_items.append(
+                {
+                    "approval_id": row.id,
+                    "action": row.action,
+                    "target": row.target,
+                    "applicant": row.applicant,
+                    "hours": hours,
+                }
+            )
         else:
             skipped += 1
 
@@ -203,6 +215,11 @@ async def scan_notifications(
     if bucket:
         db.add_all(bucket)
         await db.commit()
+    # 旁路 IM 催办：只对本轮**新增**的超时单发一次聚合提醒（重复扫描绝不刷屏）
+    if stale_items:
+        await im_notifier.notify_approval_stale(
+            tenant=tenant, items=stale_items, stale_hours=hours_limit
+        )
     total = len(bucket)
     logger.info(
         "notification scan: tenant=%s created=%d skipped=%d by_kind=%s",
@@ -216,9 +233,7 @@ async def scan_notifications(
         "skipped_existing": skipped,
         "by_kind": by_kind,
         "cap": cap,
-        "stale_hours": float(
-            stale_hours if stale_hours is not None else settings.APPROVAL_STALE_HOURS
-        ),
+        "stale_hours": hours_limit,
     }
 
 

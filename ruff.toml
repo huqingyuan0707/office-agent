@@ -35,7 +35,7 @@ ignore = [
 "office_agent/auth.py" = ["B008"]
 
 [lint.isort]
-known-first-party = ["office_agent", "office_agent_core", "office_agent_server", "office_agent_runtime", "office_agent_tools_office"]
+known-first-party = ["office_agent", "office_agent_core", "office_agent_server", "office_agent_runtime", "office_agent_tools_office", "office_agent_mcp_bridge"]
 
 [lint.mccabe]
 max-complexity = 12

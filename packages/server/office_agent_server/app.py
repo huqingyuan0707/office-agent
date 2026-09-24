@@ -10,7 +10,9 @@
 3. 种子账号（admin + reviewer，SEED_ON_START=false 可关，生产必关）；
 4. 按 Settings 建上游提供方客户端（凭据只来自环境变量）；
 5. 装载内置办公工具包（office-agent-tools-office pip 包）；
-6. 装载 plugins/ 下的工具插件（每个插件自行决定「提供方没配就不注册」）。
+6. 装载 plugins/ 下的工具插件（每个插件自行决定「提供方没配就不注册」）；
+7. 装载 MCP 协议桥（office-agent-mcp-bridge 可选包）：认领 transport="mcp" 的提供方并
+   经 tools/list 自动注册其工具（对端不可用只告警，降级不阻断启动）。
 """
 
 from __future__ import annotations
@@ -45,7 +47,36 @@ try:
 except ImportError:
     _OFFICE_TOOLS_AVAILABLE = False
 
+try:
+    # mcp-bridge 同为可选 pip 包：装了才认领 transport="mcp" 的提供方并发现其工具
+    from office_agent_mcp_bridge import (
+        configure_from_settings as _mcp_configure,
+    )
+    from office_agent_mcp_bridge import (
+        register_all_tools as _mcp_register_tools,
+    )
+
+    _MCP_BRIDGE_AVAILABLE = True
+except ImportError:
+    _MCP_BRIDGE_AVAILABLE = False
+
 logger = logging.getLogger(__name__)
+
+
+async def _load_mcp_tools() -> None:
+    """装载 MCP 协议桥：认领 transport="mcp" 的提供方并发现其工具（失败降级不阻断启动）。"""
+    mcp_ids = _mcp_configure()
+    if not mcp_ids:
+        return
+    outcome = await _mcp_register_tools()
+    logger.info(
+        "MCP 提供方已接入：%s；自动注册工具 %d 个：%s",
+        "、".join(mcp_ids),
+        len(outcome["tools"]),
+        "、".join(outcome["tools"]) or "（无）",
+    )
+    for provider_id, reason in outcome["errors"].items():
+        logger.warning("MCP 提供方 %s 工具发现失败：%s", provider_id, reason)
 
 
 @asynccontextmanager
@@ -72,6 +103,8 @@ async def lifespan(_: FastAPI) -> AsyncIterator[None]:
             logger.warning("内置办公工具包装载失败：%s", str(exc)[:200])
 
     loaded = load_plugin_tools()
+    if _MCP_BRIDGE_AVAILABLE:
+        await _load_mcp_tools()
     logger.info(
         "上游提供方已配置：%s；已装载插件：%s",
         "、".join(providers) or "（无）",

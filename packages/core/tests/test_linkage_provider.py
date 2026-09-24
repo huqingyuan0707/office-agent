@@ -14,6 +14,7 @@ import pytest
 from office_agent_core import linkage
 from office_agent_core.contracts import RemoteBinding
 from office_agent_core.errors import BusinessError, UpstreamError
+from office_agent_core.settings import ProviderConfig
 
 _ENDPOINT = "http://up.test/api/v1/agent-gateway/invoke"
 
@@ -131,3 +132,18 @@ async def test_unconfigured_provider_raises_actionable_error():
     assert excinfo.value.code == 5001
     assert excinfo.value.http_status == 503
     assert "LINKAGE_PROVIDERS" in excinfo.value.msg
+
+
+def test_configure_from_settings_claims_only_own_transport():
+    """协议分流：内核只认领 transport=http 的条目，其余留给对应协议桥包（如 mcp）。"""
+    providers = {
+        "gw": ProviderConfig(base_url="http://gw.test"),
+        "mcp-up": ProviderConfig(base_url="http://mcp.test", path="/mcp", transport="mcp"),
+    }
+
+    ids = linkage.configure_from_settings(providers)
+
+    assert ids == ["gw"]
+    assert isinstance(linkage.get_provider("gw"), linkage.RemoteToolProvider)
+    assert linkage.get_provider("mcp-up") is None
+    assert linkage.configured("mcp-up") is False

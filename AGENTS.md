@@ -11,6 +11,7 @@
 | 仓库结构/包边界/里程碑 | `docs/office-agent仓库骨架与内核提取方案.md` |
 | 产品需求/任务拆解能力口径 | `智能办公Agent 产品需求文档.md`（§6 任务拆解能力详述） |
 | 新增 ADR | `docs/ADR规范与模板.md`（选型变更先写 ADR 再动代码） |
+| 前后端统一约束（入口） | `skills/fullstack-code-rule/SKILL.md` |
 | 后端风格 | `skills/backend-code-style/SKILL.md` |
 | 前端风格 | `skills/frontend-code-style/SKILL.md` |
 | 命名质量 | `skills/naming-check/SKILL.md` |
@@ -57,7 +58,7 @@
 ```bash
 # 后端（仓库根；venv 为 py3.11——office_agent_core 用 StrEnum，3.10 跑不了 packages 测试）
 .venv\Scripts\ruff.exe check .
-.venv\Scripts\python.exe -m pytest packages/core packages/server packages/runtime packages/tools-office -q
+.venv\Scripts\python.exe -m pytest packages/core packages/server packages/runtime packages/tools-office packages/mcp-bridge -q
 python skills/naming-check/scripts/check_naming.py   # 命名质量门禁（棘轮：存量只准减不准增）
 python skills/anti-shit-code/scripts/check_arch.py   # 架构健康门禁（分层/体量，10 处 baseline 债务）
 # 迁移（持久库 schema 演进唯一入口；模型改列必须 autogenerate 迁移，create_all 不做 ALTER）
@@ -65,6 +66,7 @@ python skills/anti-shit-code/scripts/check_arch.py   # 架构健康门禁（分�
 .venv\Scripts\alembic.exe check                      # 漂移自检（CI 用：模型与库不一致即 FAILED）
 # HTTP 级冒烟（先启动服务：.venv\Scripts\python.exe -m office_agent_server）
 .venv\Scripts\python.exe tests\smoke_v1_features.py  # V1.0 七项功能 17 断言（可重复执行）
+.venv\Scripts\python.exe tests\smoke_mcp_im.py       # M3 协议桥 + IM 通知 5 断言（自带假对端，无需预启服务）
 # 前端
 cd apps/web && npm run build
 ```
@@ -82,4 +84,4 @@ cd apps/web && npm run build
 - [x] README 重写：中英双版覆盖 packages 四包 + runtime 编排层 + plugins 示例 + 前端 + alembic + 启动/体验/门禁/里程碑（2026-09-24，替换 M0-M1 旧骨架描述）。
 - [x] 产品文档合并（2026-09-24）：`智能办公Agent - 任务拆解.md` 整体收编进 `智能办公Agent 产品需求文档.md`——原文 §一~§五 → §6 任务拆解能力详述（用户操作流程）、原文 §六 精简需求 → §2.9 条目，新增 §3.7 拆解场景与 §4.1 交叉引用；源文件删除，产品口径只留单一 PRD 为 SSOT。
 - [x] 联动模式②回流落地（2026-09-24）：首个回流写工具 `ticket.create`（ticket:write，恒送审 + idem_key 必填）——复核员批准后以申请人真实角色出站执行（顺带修复 decide_approval roles=[] 直批 4006 断点），电商侧按 `(tenant, idem_key)` 唯一约束幂等回放绝不双单（迁移 a897b11ead1b，电商仓 4364956）；`tests/smoke_linkage_writeback.py` HTTP 级 6/6（同键重放 replayed=True 同一单，EC 库单据数=1）。
-- [x] PRD V1.0 七项功能落地（2026-09-24，全部走同一治理口径，提交 1e631dc / 15d34ce / 432536e / 本条随提交D）：①知识库问答 `kb.ask`（KB_DIR+内置条目，bigram 检索，无命中 degraded）②文案生成 `office.report.generate` 扩 weekly + 新增 `office.minutes.generate`（模板直出缺板块留白）③主动消息推送 `notifications` 表（迁移 4710c1599916）+ 三类扫描信号（审批超时/任务失败/今日简报）+ 列表/scan/已读端点（唯一键去重不刷屏）④图片OCR `ocr.image`（元数据直读 + Tesseract 缺失降级不编造）⑤文档对比 `office.doc.compare`（段落级 diff）⑥任务拆解 `office.task.decompose`（缺人/缺期留空不臆造）+ `office.task.commit`（恒送审批量建单二次确认）⑦自定义模板 `office.template.save`（送审落盘）+ `office.template.apply`（unfilled 如实列出）；HTTP 级冒烟 `tests/smoke_v1_features.py` 17/17（可重复执行）；测试基线 core 14 / server 21 / runtime 25 / tools-office 28 = 88 passed；工具包单测 28 例入 `packages/tools-office/tests/`。
+- [x] M3 协议桥 + IM 审批通知落地（2026-09-24，ADR-0004）：①`packages/mcp-bridge`（`office_agent_mcp_bridge`）——本侧为 MCP **Client**，手写 JSON-RPC 2.0 over HTTP（协议 `2025-06-18`，方法 initialize/tools/list/tools/call，不引 MCP SDK），`MCPProvider` 与 HTTP 网关客户端**同形**（provider_id + invoke + aclose）经 `linkage.register_provider()` 登记 → registry/executor/审批/审计/溯源**零改动**（「换协议不改业务代码」）；配置经 `LINKAGE_PROVIDERS[].transport` 分流（内核 `OWN_TRANSPORT="http"` 只认领自己的，主包无协议分支）；启动期 `tools/list` 自动发现 → 注解 `readOnlyHint=true` 只读免审，**注解缺失/非只读恒送审**（未知即从严），对端离线只告警不注册；错误分级口径抽到 `core/linkage/envelope.py`（上游 1xxx/3xxx/4xxx 原码透传，5xxx/非法码按依赖故障）由 HTTP 网关与 MCP 桥共用。②IM 审批通知 `services/im_notifier.py`（旁路：不进 linkage/不计熔断/不改审批状态；generic/feishu/dingtalk/wecom 四消息体 + 飞书/钉钉加签；未配置直接返回 `not_configured` 不发网络；全 catch 降级记 `agent.im_webhook`），挂「审批落单」与「超时扫描命中新单」两处（聚合前 N 单防刷屏、二次扫描不重复）。HTTP 级冒烟 `tests/smoke_mcp_im.py` 5/5（自带假 MCP Server + 假 IM 对端）；测试基线 core 15 / server 33 / runtime 25 / tools-office 28 / mcp-bridge 23 = **124 passed**；文档同步 `.env.example` / README 中英 / 方案文档 §5§7.4 / 本文件 §5。

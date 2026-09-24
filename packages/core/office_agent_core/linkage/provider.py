@@ -26,12 +26,10 @@ from typing import Any
 import httpx
 
 from office_agent_core.contracts import Provenance, RemoteBinding
-from office_agent_core.errors import BusinessError, UpstreamError
+from office_agent_core.errors import UpstreamError
+from office_agent_core.linkage.envelope import unwrap_envelope
 from office_agent_core.observability import record
 from office_agent_core.settings import ProviderConfig, settings
-
-#: 上游信封里「系统级失败」的下界（>= 该值一律按依赖故障处理）
-_UPSTREAM_SYSTEM_CODE_FLOOR = 5000
 
 
 class RemoteToolProvider:
@@ -165,36 +163,15 @@ class RemoteToolProvider:
         *,
         fetched_at: str,
     ) -> tuple[dict[str, Any], Provenance]:
-        """拆信封：code==0 取 data + 溯源；否则按号段分级抛错。"""
-        code = int(payload.get("code", -1))
-        message = str(payload.get("msg") or "")
-        if code != 0:
-            if code >= _UPSTREAM_SYSTEM_CODE_FLOOR or code < 0:
-                # 上游自己系统级失败：算依赖故障，可重试、计熔断
-                raise UpstreamError(
-                    f"上游提供方 {self.provider_id} 返回系统级失败（code={code}）"
-                    f"{'：' + message if message else ''}"
-                )
-            # 上游域内业务结果（如「对象不存在」）：原码透传，前端按码分支
-            raise BusinessError(
-                code,
-                message or f"上游提供方 {self.provider_id} 拒绝了本次调用",
-                response.status_code if 400 <= response.status_code < 500 else 400,
-            )
-        data = payload.get("data")
-        if not isinstance(data, dict):
-            # 契约要求工具返回对象；形状不符宁可报错，也不塞一个空对象假装成功
-            raise UpstreamError(
-                f"上游提供方 {self.provider_id} 的 data 不是对象（{type(data).__name__}）"
-            )
-        provenance: Provenance = {
-            "provider_id": self.provider_id,
-            "source_endpoint": f"POST {self.endpoint}",
-            "tool": binding.tool,
-            "fetched_at": fetched_at,
-            "upstream_trace_id": str(payload.get("trace_id") or ""),
-        }
-        return data, provenance
+        """拆信封（分级语义见 linkage.envelope，与 MCP 桥共用同一份口径）。"""
+        return unwrap_envelope(
+            payload,
+            provider_id=self.provider_id,
+            tool=binding.tool,
+            source_endpoint=f"POST {self.endpoint}",
+            fetched_at=fetched_at,
+            http_status=response.status_code,
+        )
 
     def _trace(self, binding: RemoteBinding, started: float, *, ok: bool, trace_id: str) -> None:
         """联动链路可观测（成功/失败都记，便于算上游可用率）。"""

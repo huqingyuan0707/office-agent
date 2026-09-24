@@ -82,7 +82,7 @@ HTTP 级冒烟：`tests/smoke_v1_features.py` 17/17（可重复执行）。
 | M0（1 周） | 骨架 + 内核提取 + 测试移植全绿 | py_compile/ruff/pytest 过；grep 领域无关性 PASS |
 | M1（2 周） | server 壳 + tools-office 读层 + docker compose demo | 五分钟跑通报表生成；LLM 挂走纯数字模板降级 |
 | M2（2 周） | 审批闸门 + 写层工具 + web 四页 | 巡检→建单→审批 E2E；引导词 0 命中 |
-| M3 | mcp-bridge + tools-ecommerce 首个外部插件 + SPI 文档 | 电商项目经 MCP 注册成功消费 |
+| M3 | mcp-bridge + tools-ecommerce 首个外部插件 + SPI 文档 | 电商项目经 MCP 注册成功消费 ✅ 已落地：`packages/mcp-bridge`（本侧为 MCP Client，JSON-RPC over HTTP，协议 `2025-06-18`），配置经 `transport` 分流，`tools/list` 自动注册；冒烟 `tests/smoke_mcp_im.py` 5/5（详见 `docs/ADR-0004-MCP协议桥与IM审批通知出站.md`） |
 
 ## 6. 开源工程项
 
@@ -141,6 +141,12 @@ HTTP 级冒烟：`tests/smoke_v1_features.py` 17/17（可重复执行）。
 - **M0-M1（零串联期）**：两仓库完全独立，office-agent 跑自有演示数据；唯一「串联」是内核同步（先落电商再移植的既定纪律）；
 - **M2（HTTP 桥接）**：电商项目把现有 6 连接器 + 查询 service 包成 tools-ecommerce v1，**每个工具 = 调一次电商 REST API（带 JWT）**——不需要真 MCP 协议，docker compose 同网络直调；
 - **M3（MCP 标准化）**：tools-ecommerce 升级为标准 MCP Server，office-agent 经 mcp-bridge 接入。ToolSpec 与 MCP tool 定义天然同构（JSON Schema + 名称 + 描述），即 FRD §11.6「P2 只迁协议栈，接口形态不变」——换协议不改业务代码。
+  - **已落地口径**（`docs/ADR-0004-MCP协议桥与IM审批通知出站.md`）：本侧为 MCP **Client**（消费外部 MCP Server，非对外暴露方）；
+    `packages/mcp-bridge`（`office_agent_mcp_bridge`）手写 JSON-RPC 2.0 over HTTP，不引 MCP SDK；
+    `MCPProvider` 与 HTTP 网关客户端同形（`provider_id` + `invoke()` + `aclose()`）→ 经 `linkage.register_provider()` 登记，registry/executor/审批/审计/溯源零改动；
+    配置经 `LINKAGE_PROVIDERS[].transport` 分流（内核只认领 `"http"`，主包无协议分支）；
+    启动期 `tools/list` 自动发现注册，注解 `readOnlyHint=true` → 只读免审，**注解缺失/非只读 → 恒送审**（未知即从严）；
+    对端离线只告警不注册（降级不阻断启动）；错误分级与 HTTP 网关共用 `core/linkage/envelope.py` 一份口径。
 
 ### 7.5 可选插件红线
 

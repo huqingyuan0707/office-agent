@@ -7,6 +7,11 @@
 - provider 未配置时**报错而非降级**：宁可失败，也不能拿演示假数据顶替真实上游。
 """
 
+from office_agent_core.linkage.envelope import (
+    UPSTREAM_SYSTEM_CODE_FLOOR,
+    looks_like_envelope,
+    unwrap_envelope,
+)
 from office_agent_core.linkage.provider import RemoteToolProvider
 from office_agent_core.linkage.registry import (
     aclose_all,
@@ -21,14 +26,17 @@ from office_agent_core.linkage.registry import (
 )
 
 __all__ = [
+    "UPSTREAM_SYSTEM_CODE_FLOOR",
     "RemoteToolProvider",
     "aclose_all",
     "configure_from_settings",
     "configured",
     "configured_ids",
     "get_provider",
+    "looks_like_envelope",
     "provider_of",
     "register_provider",
     "reset",
     "shutdown_providers",
+    "unwrap_envelope",
 ]

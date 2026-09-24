@@ -31,6 +31,7 @@ packages/core ── 治理内核（冻结，只消费公开 API）
    │
    ▼
 packages/server ── FastAPI 壳（auth / rbac / tasks / approvals / governance）
+   + packages/mcp-bridge ── 标准 MCP 协议桥（可选装配：transport="mcp" 的提供方自动发现注册）
    + packages/tools-office ── 内置办公工具（日程/周报/纪要/知识库/OCR/文档对比/任务拆解/模板）
    + plugins/tools-ecommerce ── 外部系统只读桥接工具（可选，未配置提供方即不注册）
    + apps/web ── Vue3 管理台（登录 / 工具 / 任务 / 审批 / 治理 / 智能体运行面板）
@@ -44,6 +45,7 @@ office-agent/
 │   ├── core/            office_agent_core：契约 / 注册中心 / 策略 / 执行器 / 联动 / 审计
 │   ├── server/          office_agent_server：FastAPI 壳（/api/v1，统一信封，可选静态托管）
 │   ├── runtime/         office_agent_runtime：智能体编排运行时（mount(app) 可选装配）
+│   ├── mcp-bridge/      office_agent_mcp_bridge：标准 MCP 协议桥（本侧为 Client，JSON-RPC over HTTP）
 │   └── tools-office/    office_agent_tools_office：内置办公工具包
 ├── plugins/
 │   ├── tools-ecommerce/     电商只读桥接工具（order/logistics/stock/coupon/kb，远程工具示例）
@@ -62,10 +64,10 @@ office-agent/
 要求 Python 3.11+（core 使用 `StrEnum`，3.10 跑不了 packages 测试）。
 
 ```powershell
-# 1. 依赖 + 四个包（可编辑安装）
+# 1. 依赖 + 五个包（可编辑安装）
 python -m venv .venv
 .venv\Scripts\pip.exe install -r requirements.txt
-.venv\Scripts\pip.exe install -e packages/core -e packages/server -e packages/runtime -e packages/tools-office
+.venv\Scripts\pip.exe install -e packages/core -e packages/server -e packages/runtime -e packages/tools-office -e packages/mcp-bridge
 
 # 2. 配置（全部零硬编码，键的唯一出处 packages/core/office_agent_core/settings.py）
 copy .env.example .env
@@ -167,6 +169,31 @@ rules:                 # 无 LLM 时的规则规划（也是 LLM 故障降级路
 - **凭据只走环境变量/secret，绝不入库**；主包 `packages/` 禁止出现任何业务域词元（CI grep 门禁）。
 - **拉取（模式①）+ 回流（模式②）均已实测**：读工具（order/logistics/stock/coupon/kb）拉取带溯源；首个回流写工具 `ticket.create`（ticket:write）——invoke 恒送审，复核员批准后以申请人身份出站执行，对端按 `(tenant, idem_key)` 唯一约束幂等回放（同键重放返回原单绝不双单）；HTTP 级冒烟 `tests/smoke_linkage_writeback.py` 6/6。
 
+### M3：标准 MCP 协议桥（可选，装上即生效）
+
+对端从「自定义 HTTP 网关」升级为**标准 MCP Server** 时，本侧只改一处配置，业务代码一行不改：
+
+- **配置分流**：`LINKAGE_PROVIDERS` 条目加 `transport`（默认 `"http"` 归内核认领，`"mcp"` 归 mcp-bridge 认领）——
+  内核不出现任何协议分支，协议细节不外泄进主包。示例见 `.env.example`。
+- **实现**：本侧为 MCP **Client**，手写 JSON-RPC 2.0 over HTTP（协议版本 `2025-06-18`，方法
+  `initialize` / `tools/list` / `tools/call`），不引 MCP SDK；`MCPProvider` 与 HTTP 网关客户端
+  **同形**（`provider_id` + `invoke()` + `aclose()`），经 `linkage.register_provider()` 登记 →
+  registry / executor / 审批 / 审计 / 溯源链路**零改动**。
+- **工具自动注册**：启动时 `tools/list` 发现 → 按 MCP 注解映射治理属性：
+  `readOnlyHint=true` → 只读 Scope + 免审批 + 幂等；**注解缺失或非只读 → 恒送审**（未知即从严）。
+- **降级口径**：对端离线只告警不注册，不阻断启动；错误分级与 HTTP 网关共用同一份口径
+  （`core/linkage/envelope.py`：上游 1xxx/3xxx/4xxx 原码透传，5xxx/非法码按依赖故障）。
+
+### IM 审批通知出站（可选，留空即缺席）
+
+审批单产生 / 超时扫描命中新单时推送到群机器人（`generic` / `feishu` / `dingtalk` / `wecom` 四种消息体 + 飞书/钉钉加签）：
+
+- 挂在「审批落单」与「超时扫描」两处，是**旁路**——不进 linkage、不计熔断、不改审批状态；
+- 未配置 `IM_WEBHOOK_URL` 直接返回 `{"sent": false, "reason": "not_configured"}`，**不发任何网络请求**；
+- 推送失败/超时全 catch 只降级记录（`agent.im_webhook` 事件），**绝不阻断审批流**；超时催办聚合前 N 单防刷屏。
+
+HTTP 级冒烟：`python tests/smoke_mcp_im.py`（自带假 MCP Server + 假 IM 对端，5 项断言）。
+
 ## V1.0 办公功能（PRD §5.1，全部走同一治理口径）
 
 | 功能 | 工具 / 端点 | 口径要点 |
@@ -190,7 +217,7 @@ HTTP 级冒烟：`python tests/smoke_v1_features.py`（17 项断言，可重复�
 
 ```powershell
 .venv\Scripts\ruff.exe check .                                   # lint（ruff 钉 0.16.7，githooks pre-commit 同步校验）
-.venv\Scripts\python.exe -m pytest packages/core packages/server packages/runtime packages/tools-office -q
+.venv\Scripts\python.exe -m pytest packages/core packages/server packages/runtime packages/tools-office packages/mcp-bridge -q
 python skills/naming-check/scripts/check_naming.py               # 命名质量（棘轮：存量只准减）
 python skills/anti-shit-code/scripts/check_arch.py               # 架构健康（分层/体量）
 .venv\Scripts\alembic.exe check                                  # 模型与库零漂移
@@ -209,11 +236,11 @@ cd apps\web; npm run build                                       # 前端构建�
 | M2 | 跨系统 HTTP+JWT 桥接（tools-ecommerce，拉取模式实测） | ✅ |
 | R0-R3 | 编排运行时：AgentSpec / 双 planner / 审批挂起续跑 / 数值校验 / 运行面板 | ✅ |
 | V1.0 | PRD §5.1 七项办公功能（周报/纪要/知识库/OCR/对比/拆解/模板）+ 站内通知 | ✅ |
-| M3 | mcp-bridge 标准 MCP 协议 + SPI 文档 | ⏳ 规划中 |
+| M3 | mcp-bridge 标准 MCP 协议桥（transport 分流 + tools/list 自动注册）+ IM 审批通知出站 | ✅ |
 
 ## 文档
 
-- 决策记录：`docs/ADR-0003-办公Agent拆分独立开源项目.md`
+- 决策记录：`docs/ADR-0003-办公Agent拆分独立开源项目.md`、`docs/ADR-0004-MCP协议桥与IM审批通知出站.md`
 - 骨架与内核提取：`docs/office-agent仓库骨架与内核提取方案.md`
 - 编排层方案：`.trae/documents/智能体编排层实现方案.md`
 - 贡献：`CONTRIBUTING.md`（PR 检查清单）；AI 协作纪律：`AGENTS.md`

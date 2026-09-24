@@ -20,6 +20,10 @@ from office_agent_core.settings import ProviderConfig, settings
 _lock = threading.RLock()
 _providers: dict[str, RemoteToolProvider] = {}
 
+#: 内核自带的传输实现标识：只有 transport 等于该值的条目由本内核认领，
+#: 其余取值（如 "mcp"）留给对应协议桥包——内核不解析、也不拒绝未知协议。
+OWN_TRANSPORT = "http"
+
 
 def register_provider(provider: RemoteToolProvider, *, replace: bool = True) -> RemoteToolProvider:
     """登记提供方（同名默认覆盖，便于测试与热更新）。"""
@@ -56,10 +60,16 @@ def provider_of(provider_id: str) -> RemoteToolProvider:
 
 
 def configure_from_settings(providers: dict[str, ProviderConfig] | None = None) -> list[str]:
-    """按 Settings 建好全部提供方客户端，返回已配置的 provider_id 列表。"""
+    """按 Settings 建好**本内核认领**的提供方客户端，返回已配置的 provider_id 列表。
+
+    transport 不等于 ``OWN_TRANSPORT`` 的条目跳过（交给对应协议桥包认领，
+    如 mcp-bridge 处理 ``transport="mcp"``）——内核不认协议细节，也不越权建错客户端。
+    """
     source = settings.LINKAGE_PROVIDERS if providers is None else providers
     ids: list[str] = []
     for provider_id, config in source.items():
+        if config.transport != OWN_TRANSPORT:
+            continue
         register_provider(RemoteToolProvider.from_config(provider_id, config))
         ids.append(provider_id)
     return sorted(ids)

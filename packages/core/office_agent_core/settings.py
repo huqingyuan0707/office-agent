@@ -24,12 +24,18 @@ def is_default_seed_password(password: str) -> bool:
 
 
 class ProviderConfig(BaseModel):
-    """一个上游工具提供方的接入配置（凭据只经环境变量注入）。"""
+    """一个上游工具提供方的接入配置（凭据只经环境变量注入）。
+
+    ``transport`` 是**协议分流键**：内核只认领自己的 ``"http"``（自定义网关），
+    其余取值（如 ``"mcp"``）由对应协议桥包认领——内核不解析协议细节，
+    因此新增一种传输协议不需要动主包任何一行代码。
+    """
 
     base_url: str
     token: SecretStr = SecretStr("")
     path: str = "/api/v1/agent-gateway/invoke"
     timeout_seconds: float = 10.0
+    transport: str = "http"
 
     def as_env_dict(self) -> dict[str, Any]:
         """脱敏投影（日志/巡检可打印，token 一律不出现）。"""
@@ -37,6 +43,7 @@ class ProviderConfig(BaseModel):
             "base_url": self.base_url,
             "path": self.path,
             "timeout_seconds": self.timeout_seconds,
+            "transport": self.transport,
             "token_configured": bool(self.token.get_secret_value()),
         }
 
@@ -97,8 +104,18 @@ class Settings(BaseSettings):
     APPROVAL_STALE_HOURS: float = 24.0
     NOTIFICATION_MAX_PER_SCAN: int = 50
 
+    # ---- IM 审批通知出站（群机器人 webhook；未配置 URL 即整体关闭）----
+    # IM_WEBHOOK_TYPE 决定消息体形状：generic（本仓库自定义）/ feishu / dingtalk / wecom
+    IM_WEBHOOK_URL: str = ""
+    IM_WEBHOOK_SECRET: SecretStr = SecretStr("")
+    IM_WEBHOOK_TYPE: str = "generic"
+    IM_WEBHOOK_TIMEOUT_SECONDS: float = 5.0
+    # 审批超时提醒一次最多列几条（防群消息刷屏；0 表示只报总数）
+    IM_WEBHOOK_MAX_ITEMS: int = 5
+
     # ---- 跨系统联动 ----
-    # 键 = provider_id；值 = {base_url, path, token, timeout_seconds}。
+    # 键 = provider_id；值 = {base_url, path, token, timeout_seconds, transport}。
+    # transport 缺省 "http"（本内核自带的自定义网关）；"mcp" 由 mcp-bridge 包认领。
     # 环境变量示例（JSON）：
     # LINKAGE_PROVIDERS={"ecommerce":{"base_url":"http://127.0.0.1:8100","token":"<jwt>"}}
     LINKAGE_PROVIDERS: dict[str, ProviderConfig] = {}

@@ -25,6 +25,7 @@ from office_agent_core.errors import BusinessError, ErrorCode
 from office_agent_server.db import _now
 from office_agent_server.models import Approval, User
 from office_agent_server.security import split_roles
+from office_agent_server.services import im_notifier
 
 logger = logging.getLogger(__name__)
 
@@ -67,6 +68,14 @@ async def create_approval(
         tool_name,
         applicant,
         tenant,
+    )
+    # 旁路 IM 提醒（审批单已落库，通知失败只降级不阻断；未配置 webhook 时直接返回）
+    await im_notifier.notify_approval_created(
+        tenant=tenant,
+        applicant=applicant,
+        tool_name=tool_name,
+        target=row.target,
+        approval_id=row.id,
     )
     return row
 
