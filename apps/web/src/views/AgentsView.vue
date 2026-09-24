@@ -247,12 +247,11 @@ onUnmounted(stopPolling) // 卸载清定时器，防离开页面后仍轮询
 </template>
 
 <style scoped>
+/* 卡片列表不设内层滚动：描述与工具标签完整展开，滚动统一由 .layout-main 承担 */
 .agent-list {
   display: flex;
   flex-direction: column;
   gap: 10px;
-  max-height: 60vh;
-  overflow-y: auto;
 }
 /* 可点选卡片：选中态品牌描边 + 浅底 */
 .agent-item {
