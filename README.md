@@ -226,6 +226,13 @@ HTTP 级冒烟：`python tests/smoke_v1_features.py`（17 项断言，可重复�
 
 HTTP 级冒烟：`python tests/smoke_v1_2_batch_a.py`（9 项断言，可重复执行）。
 
+## V1.2 办公功能·批次 B（PRD §5.3，前端两页：真实接口零 mock）
+
+| 功能 | 入口 | 口径要点 |
+|---|---|---|
+| 数据可视化报表 | `/reports`（报表页） | 数据集四选一 → `office.data.query` 真查（列取自首行键不预设）+ 数值列 CSS 条形图（不引图表库）+ `office.data.analyze` 统计卡 + `office.data.export` markdown 预览与下载；查询失败置空，分析/导出失败本页红条绝不拿假数据顶 |
+| 管理员运营看板 | `/admin`（管理页）+ `GET /admin/overview`（仅 admin） | `services/admin_stats.py` 四表只读聚合（用户分状态 / 任务分状态 / 审批分状态 / 工具调用 Top8 / 最近已决 5 单）；非 admin 403 如实提示权限不足，不降级给假数据 |
+
 ## 数据库迁移
 
 `alembic` 是持久库 schema 演进唯一入口：async 引擎 `env.py`，URL 唯一出处 `Settings.DATABASE_URL`。

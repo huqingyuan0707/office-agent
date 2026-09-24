@@ -2,7 +2,7 @@
 // 链路：各视图 → 本文件具名函数 → request() → fetch(base + /api/v1 + path) → 解析 {code,msg,data,trace_id} 信封
 // 契约：登录 POST /auth/login；工具 GET /agent/tools、POST /agent/tools/{name}/invoke；任务 GET /tasks；
 //      审批 GET /approvals、POST /approvals/{id}/approve|reject；智能体 GET /agents、POST /runs、GET /runs/{id}；
-//      治理 GET /governance/status
+//      治理 GET /governance/status；运营 GET /admin/overview（admin 可见）
 // 对齐：AGENTS.md §3 信封与溯源口径 + §4 前端红线（401 中央处理，视图内不自跳、禁直写 fetch）
 
 const TOKEN_KEY = 'office_token'
@@ -217,3 +217,22 @@ export const createRun = (agentId: string, goal: string) =>
 export const getRun = (id: string) => request<RunItem>(`/runs/${encodeURIComponent(id)}`)
 
 export const governanceStatus = () => request<GovernanceStatus>('/governance/status')
+
+// 运营总览（GET /admin/overview：仅 admin 可见；非 admin 403，前端如实提示不造数据；
+// Top 榜与最近裁决只做计数与已决单聚合，名单明细不出聚合口）
+export interface AdminOverview {
+  users: { total: number; active: number; frozen: number }
+  tasks: { [key: string]: number }
+  approvals: { [key: string]: number }
+  tool_calls: { total: number; top_tools: { name: string; count: number }[] }
+  recent_decisions: {
+    id: string
+    action: string
+    applicant: string
+    approver: string
+    status: string
+    decided_at: string
+  }[]
+}
+
+export const adminOverview = () => request<AdminOverview>('/admin/overview')

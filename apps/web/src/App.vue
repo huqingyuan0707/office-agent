@@ -54,6 +54,8 @@ const doLogout = () => {
         <RouterLink class="nav-tab" to="/tasks">任务</RouterLink>
         <RouterLink class="nav-tab" to="/approvals">审批</RouterLink>
         <RouterLink class="nav-tab" to="/agents">智能体</RouterLink>
+        <RouterLink class="nav-tab" to="/reports">报表</RouterLink>
+        <RouterLink class="nav-tab" to="/admin">管理</RouterLink>
         <RouterLink class="nav-tab" to="/governance">治理</RouterLink>
       </nav>
       <span class="topbar-right">

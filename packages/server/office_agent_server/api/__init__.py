@@ -5,7 +5,7 @@
 
 from fastapi import APIRouter
 
-from office_agent_server.api import approvals, auth, governance, notifications, tasks, tools
+from office_agent_server.api import admin, approvals, auth, governance, notifications, tasks, tools
 
 api_router = APIRouter()
 api_router.include_router(auth.router)
@@ -14,3 +14,4 @@ api_router.include_router(tasks.router)
 api_router.include_router(approvals.router)
 api_router.include_router(notifications.router)
 api_router.include_router(governance.router)
+api_router.include_router(admin.router)
