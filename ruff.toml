@@ -1,6 +1,7 @@
 # office-agent ruff 配置（同源电商仓库 backend/pyproject.toml 口径；ruff 钉 0.16.7）
 line-length = 100
 target-version = "py310"
+exclude = ["alembic/versions"]  # autogenerate 生成的迁移脚本不做人工风格审查
 
 [lint]
 select = [
@@ -36,7 +37,7 @@ ignore = [
 "packages/runtime/office_agent_runtime/runner.py" = ["C901"]
 
 [lint.isort]
-known-first-party = ["office_agent", "office_agent_core", "office_agent_server"]
+known-first-party = ["office_agent", "office_agent_core", "office_agent_server", "office_agent_runtime", "office_agent_tools_office"]
 
 [lint.mccabe]
 max-complexity = 12

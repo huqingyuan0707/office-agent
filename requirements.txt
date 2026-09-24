@@ -3,6 +3,8 @@ fastapi>=0.110
 uvicorn>=0.29
 SQLAlchemy>=2.0
 aiosqlite>=0.20
+# 迁移：持久库 schema 演进唯一入口（alembic upgrade head），见 alembic/env.py
+alembic>=1.13
 pydantic-settings>=2.0
 httpx>=0.27
 python-jose>=3.3

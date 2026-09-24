@@ -59,6 +59,9 @@
 .venv\Scripts\python.exe -m pytest packages/core packages/server -q
 python skills/naming-check/scripts/check_naming.py   # 命名质量门禁（棘轮：存量只准减不准增）
 python skills/anti-shit-code/scripts/check_arch.py   # 架构健康门禁（分层/体量，12 处 baseline 债务）
+# 迁移（持久库 schema 演进唯一入口；模型改列必须 autogenerate 迁移，create_all 不做 ALTER）
+.venv\Scripts\alembic.exe upgrade head               # 应用迁移（新库直接建全）
+.venv\Scripts\alembic.exe check                      # 漂移自检（CI 用：模型与库不一致即 FAILED）
 # 前端
 cd apps/web && npm run build
 ```
@@ -70,4 +73,5 @@ cd apps/web && npm run build
 - [x] ruff 配置落位：根 `ruff.toml` + 三子包各自 pyproject.toml（嵌套配置，根配置管不到 packages 内）；B904 修复 4 处、DTZ005 修复 1 处（显式 UTC）、security.py 统一 python-jose（消除 PyJWT 双依赖）。
 - [x] M1 审批闭环：`REVIEWER_USERNAME/PASSWORD` 复核员双账号 + `office.memo.submit` 需审批写工具（office:write）+ `tests/smoke_approval.py` HTTP 级实测——invoke 落单 / 同人 1001 红线 / 复核员批准执行 / 任务留痕 / 驳回流，8/8 passed。
 - [x] 办公文档工具包 `office_agent/tools_docs.py`：office.docx/xlsx.read（office:read 免审批，带 source+extracted_at 溯源）+ office.docx/pptx.write（office:write 需审批，审批通过才写盘）——依赖缺失自动降级不注册，读写锁 DOCS_DIR 防路径穿越；`tests/smoke_docs.py` HTTP 实测 8/8（含穿越拒绝与驳回流）。
-- [ ] **已知问题**：`runner.execute_run` 复杂度 19 已临时豁免（触碰时拆分偿还）；core 14 / server 15 / runtime 15 passed（runtime 测试收集失败已修复）。
+- [x] alembic 引入：仓库根 `alembic.ini + alembic/`（async 引擎 env.py，URL 唯一出处 Settings.DATABASE_URL；基线 `init schema` 全表全列）；dev 库已 stamp，`alembic check` 零漂移。模型改列一律 autogenerate 迁移，禁止再手改库。
+- [ ] **已知问题**：`runner.execute_run` 复杂度 19 已临时豁免（触碰时拆分偿还）；core 14 / server 15 / runtime 21 / tools-office 4 passed。

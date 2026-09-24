@@ -4,6 +4,8 @@
 生产切 PG 只需换 ``DATABASE_URL``（Settings），模型层无需改动。
 
 口径：主键 String(32) uuid hex；时间 naive UTC（与 SQLite 落库口径一致）。
+持久库 schema 演进走 alembic（仓库根 ``alembic upgrade head``）；create_all 只补建
+缺失表、不做 ALTER，仅供测试/内存库与全新部署兜底，改模型列必须同步生成迁移。
 """
 
 from __future__ import annotations
