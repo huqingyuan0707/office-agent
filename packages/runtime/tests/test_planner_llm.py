@@ -144,6 +144,43 @@ def test_llm_planner_parses_tool_calls(monkeypatch):
     assert seen["first_role"] == "system"
 
 
+# ---------------- ①b 提示词注入业务当天日期（小模型抗编造的时间基准） ----------------
+
+
+def test_llm_planner_injects_business_today(monkeypatch):
+    """plan 与 answer 的 user 消息都必须带业务当天日期。"""
+    from office_agent_runtime.planner import llm as llm_module
+
+    _set_providers(monkeypatch)
+    seen: list[str] = []
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        body = json.loads(request.content)
+        seen.append("\n".join(str(item["content"]) for item in body["messages"]))
+        if body.get("tools"):
+            return httpx.Response(
+                200, json=_chat_response([_tool_call("demo.echo", {"text": "hello"})])
+            )
+        return httpx.Response(200, json={"choices": [{"message": {"content": "好"}}]})
+
+    _mount_fake_llm(monkeypatch, handler)
+
+    async def _run():
+        planner = LlmFunctionCallPlanner.from_spec(_llm_spec())
+        try:
+            await planner.plan("请演示")
+            await planner.answer("请演示", [{"index": 0, "tool": "demo.echo", "result": {"n": 1}}])
+        finally:
+            await planner.aclose()
+
+    asyncio.run(_run())
+    today = llm_module._business_today()
+    # 基准本身是 ISO 日期（时区数据缺失时降级本机时区，故不硬编码时区断言）
+    assert len(today) == 10 and today[4] == "-" and today[7] == "-"
+    assert len(seen) == 2
+    assert all(f"今天是 {today}" in text for text in seen), seen
+
+
 # ---------------- ② LLM 正常 → 整条 run 走 LLM 提议，来源记 llm ----------------
 
 

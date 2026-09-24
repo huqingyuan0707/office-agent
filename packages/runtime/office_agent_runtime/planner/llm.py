@@ -11,6 +11,10 @@
 Provider 配置：环境变量 ``LLM_PROVIDERS``（JSON，与 LINKAGE_PROVIDERS 同构）：
   {"default":{"base_url":"https://api.openai.com/v1","model":"gpt-4o-mini","api_key":"sk-..."}}
   Ollama 即 base_url=http://127.0.0.1:11434/v1，api_key 可为空。
+该键由「直接读 os.environ」获取，写在 .env 里需启动时载入进程环境
+（见 office_agent_server.__main__.load_env_file；Settings 的 env_file 只填配置模型）。
+
+提示词注入业务当天日期（_business_today）：小模型不知道「今天」，不注入就会编造日期参数。
 
 红线：
 - 不改 packages/core；凭据只走环境变量，绝不入库入码；
@@ -25,11 +29,14 @@ import json
 import logging
 import os
 from dataclasses import dataclass
+from datetime import datetime
 from typing import Any
+from zoneinfo import ZoneInfo
 
 import httpx
 
 from office_agent_core import registry as tool_registry
+from office_agent_core.settings import settings
 from office_agent_runtime.spec import AgentSpec, PlannerStep
 
 logger = logging.getLogger(__name__)
@@ -103,6 +110,23 @@ def _provider_of(name: str) -> _ProviderCfg:
         known = "/".join(sorted(providers)) or "（未配置）"
         raise LlmPlanError(f"LLM profile「{name}」未在 {_LLM_ENV_KEY} 中配置，可用：{known}")
     return providers[name]
+
+
+def _business_today() -> str:
+    """业务当天日期（YYYY-MM-DD），注入提示词供 LLM 作时间基准。
+
+    小模型不知道「今天」是哪天，会凭空编造日期参数（实测 qwen2.5:0.5b 把
+    「明天」算成 2023 年）——给一个真实基准，比在 prompt 里叮嘱「禁止编造」有效。
+    时区取 Settings.BUSINESS_TIMEZONE（与个人事务提醒同一口径）；Windows 缺 tzdata
+    时降级本机时区并只告警，绝不因时区数据缺失阻断规划（降级不阻断同链路口径）。
+    """
+    try:
+        return datetime.now(ZoneInfo(settings.BUSINESS_TIMEZONE)).date().isoformat()
+    except Exception:  # ZoneInfoNotFoundError / 时区键非法
+        logger.warning(
+            "业务时区 %s 不可用（缺 tzdata？），日期提示降级本机时区", settings.BUSINESS_TIMEZONE
+        )
+        return datetime.now().astimezone().date().isoformat()
 
 
 def profile_configured(name: str) -> bool:
@@ -209,8 +233,9 @@ class LlmFunctionCallPlanner:
             {
                 "role": "user",
                 "content": (
-                    f"请为目标规划所需的工具调用步骤。你只能使用提供的 tools，"
-                    f"每一步通过 tool_calls 返回 tool 名与 JSON args。\n目标：{goal}"
+                    f"今天是 {_business_today()}。请为目标规划所需的工具调用步骤。"
+                    f"你只能使用提供的 tools，每一步通过 tool_calls 返回 tool 名与 JSON args；"
+                    f"args 中不确定的字段省略或留空，禁止编造日期与时间。\n目标：{goal}"
                 ),
             }
         )
@@ -241,7 +266,7 @@ class LlmFunctionCallPlanner:
         messages: list[dict[str, Any]] = []
         if self._spec.system_prompt:
             messages.append({"role": "system", "content": self._spec.system_prompt})
-        messages.append({"role": "user", "content": f"目标：{goal}"})
+        messages.append({"role": "user", "content": f"今天是 {_business_today()}。目标：{goal}"})
         messages.append(
             {
                 "role": "user",
@@ -249,7 +274,7 @@ class LlmFunctionCallPlanner:
                     "以下是本次运行各步骤工具返回的 JSON（回答的唯一数据来源）：\n"
                     f"{json.dumps(observations, ensure_ascii=False)}\n"
                     "请据此用中文回答目标。回答中出现的每个数字必须直接来自上述 JSON 字段，"
-                    "禁止推算、汇总或编造任何数字。"
+                    "禁止推算、汇总或编造任何数字；数据不足就如实说明数据不足。"
                 ),
             }
         )
