@@ -9,6 +9,7 @@
 | --- | --- |
 | 决策/回滚/红线出处 | `docs/ADR-0003-办公Agent拆分独立开源项目.md` |
 | 仓库结构/包边界/里程碑 | `docs/office-agent仓库骨架与内核提取方案.md` |
+| 产品需求/任务拆解能力口径 | `智能办公Agent 产品需求文档.md`（§6 任务拆解能力详述） |
 | 新增 ADR | `docs/ADR规范与模板.md`（选型变更先写 ADR 再动代码） |
 | 后端风格 | `skills/backend-code-style/SKILL.md` |
 | 前端风格 | `skills/frontend-code-style/SKILL.md` |
@@ -77,3 +78,4 @@ cd apps/web && npm run build
 - [x] `runner.execute_run` C901 豁免偿还（2026-09-24）：循环执行态与私有助手整体迁入 `packages/runtime/office_agent_runtime/runloop.py`（RunLoop 类：prepare_plan / run_step / run / finish），runner.py 只留受理入口与薄装配；execute_run 签名保持（resolve_pending 注入契约）。根 ruff.toml 与 runtime pyproject 两处 C901 per-file-ignore 已删，全文件最高复杂度 7；HTTP 级 E2E 复验通过（日报直出 / 待办挂起→批准→续跑）。
 - [ ] 测试基线 core 14 / server 15 / runtime 25 = 54 passed（tools-office 无独立测试，行为由 runtime 冒烟覆盖）。
 - [x] README 重写：中英双版覆盖 packages 四包 + runtime 编排层 + plugins 示例 + 前端 + alembic + 启动/体验/门禁/里程碑（2026-09-24，替换 M0-M1 旧骨架描述）。
+- [x] 产品文档合并（2026-09-24）：`智能办公Agent - 任务拆解.md` 整体收编进 `智能办公Agent 产品需求文档.md`——原文 §一~§五 → §6 任务拆解能力详述（用户操作流程）、原文 §六 精简需求 → §2.9 条目，新增 §3.7 拆解场景与 §4.1 交叉引用；源文件删除，产品口径只留单一 PRD 为 SSOT。
