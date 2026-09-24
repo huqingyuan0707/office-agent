@@ -1,7 +1,7 @@
 """tools-office 单元测试（handler 直调，不起 HTTP 服务）。
 
-覆盖：日报/周报模板直出与参数红线、会议纪要、kb.ask 检索与降级、ocr.image 元数据与降级、
-      路径守卫防穿越。
+覆盖：日报/周报模板直出与参数红线、会议纪要、ocr.image 元数据与降级、
+      路径守卫防穿越（kb.ask 检索用例见 test_kb_ask.py）。
 对齐：AGENTS.md §5（验证命令）；智能办公Agent 产品需求文档.md §5.1。
 """
 
@@ -83,42 +83,6 @@ async def test_minutes_blank_when_missing() -> None:
 async def test_minutes_action_item_requires_task() -> None:
     with pytest.raises(BusinessError):
         await tools._minutes_generate(CTX, {"title": "周会", "action_items": [{"owner": "张三"}]})
-
-
-# ---------------- 知识库问答 ----------------
-
-
-async def test_kb_ask_hits_builtin_entry() -> None:
-    data = await kb._kb_ask(CTX, {"query": "报销超过1000元需要谁审批"})
-    assert data["count"] >= 1
-    assert data["results"][0]["source"] == "builtin-demo"
-    assert "报销" in data["results"][0]["title"] or "报销" in data["results"][0]["snippet"]
-
-
-async def test_kb_ask_no_hit_degrades_without_fabrication() -> None:
-    data = await kb._kb_ask(CTX, {"query": "zzzqxj999"})
-    assert data["degraded"] is True
-    assert data["results"] == []
-    assert data["degraded_reason"]
-
-
-async def test_kb_ask_rejects_bad_top_k() -> None:
-    with pytest.raises(BusinessError):
-        await kb._kb_ask(CTX, {"query": "考勤", "top_k": 99})
-    with pytest.raises(BusinessError):
-        await kb._kb_ask(CTX, {"query": ""})
-
-
-async def test_kb_ask_reads_local_files(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
-    kb_dir = tmp_path / "kb"
-    kb_dir.mkdir()
-    (kb_dir / "sop.md").write_text(
-        "# 会议室预定\n通过日历工具预定后自动锁会议室。", encoding="utf-8"
-    )
-    monkeypatch.setattr(settings, "KB_DIR", str(kb_dir))
-    data = await kb._kb_ask(CTX, {"query": "会议室怎么预定", "top_k": 1})
-    assert data["results"][0]["source"] == "local-kb:sop.md"
-    assert data["kb_dir_missing"] is False
 
 
 # ---------------- 图片 OCR ----------------

@@ -200,7 +200,7 @@ HTTP 级冒烟：`python tests/smoke_mcp_im.py`（自带假 MCP Server + 假 IM 
 | 功能 | 工具 / 端点 | 口径要点 |
 |---|---|---|
 | 文案生成 | `office.report.generate`（daily/weekly）、`office.minutes.generate` | 模板直出；数值只取入参原值，缺板块留白不编造 |
-| 知识库问答 | `kb.ask`（KB_DIR `*.md/*.txt` + 内置演示条目） | 只摘录命中原文片段，无命中 degraded 如实告知 |
+| 知识库问答 | `kb.ask`（KB_DIR `*.md/*.txt` + 内置演示条目） | 双通道检索：配 `EMBEDDING_*` 走向量语义检索（按段落余弦排序 + 相似度门槛，改说法也能命中），未配置/对端不可用回退字符检索并在 `retrieval_mode`、`retrieval_fallback_reason` 如实标注；只摘录命中原文片段，无命中 degraded 如实告知 |
 | 图片 OCR | `ocr.image` | 元数据直读；Tesseract 缺失降级只回元数据，绝不编造文字 |
 | 文档对比 | `office.doc.compare` | 段落级 diff（新增/删除/修改 + 摘要），只报实测差异 |
 | 任务拆解 | `office.task.decompose` → `office.task.commit` | 缺人/缺期留空不臆造（missing_info 追问）；批量建单恒送审 + idem_key |

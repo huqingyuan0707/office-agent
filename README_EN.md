@@ -191,7 +191,7 @@ HTTP-level smoke: `python tests/smoke_mcp_im.py` (bundled fake MCP server + fake
 | Feature | Tool / endpoint | Key guarantees |
 |---|---|---|
 | Copywriting (daily/weekly/minutes) | `office.report.generate` (daily/weekly), `office.minutes.generate` | template-driven; numbers come only from inputs; missing sections are left blank, never fabricated |
-| Knowledge-base Q&A | `kb.ask` (KB_DIR `*.md/*.txt` + built-in demo entries) | quotes matched source text only; reports `degraded` honestly on no match |
+| Knowledge-base Q&A | `kb.ask` (KB_DIR `*.md/*.txt` + built-in demo entries) | dual-channel retrieval: with `EMBEDDING_*` configured it does vector semantic search (per-paragraph cosine + a similarity floor, so rephrased questions still hit); otherwise, or when the endpoint is unreachable, it falls back to character bigrams and says so in `retrieval_mode` / `retrieval_fallback_reason`; quotes matched source text only and reports `degraded` honestly on no match |
 | Image OCR | `ocr.image` | real metadata; falls back to metadata-only when Tesseract is absent — never fabricates text |
 | Document comparison | `office.doc.compare` | paragraph-level diff (added/removed/changed + summary), measured facts only |
 | Task decomposition | `office.task.decompose` → `office.task.commit` | missing people/dates stay blank with follow-up prompts; batch creation is always approved + idem_key |

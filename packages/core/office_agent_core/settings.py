@@ -100,6 +100,21 @@ class Settings(BaseSettings):
     DOCS_DIR: str = "data/docs"
     KB_DIR: str = "data/knowledge"
 
+    # ---- 本地向量检索（知识库语义检索；base_url 与 model 任一为空即回退字符检索，不发网络）----
+    # 契约与 LLM_PROVIDERS 一致：OpenAI 兼容 /embeddings，base_url 以 /v1 结尾，
+    # Ollama 时 api_key 可空（例：http://127.0.0.1:11434/v1 + qwen3-embedding:0.6b，全本地不出域）。
+    EMBEDDING_BASE_URL: str = ""
+    EMBEDDING_MODEL: str = ""
+    EMBEDDING_API_KEY: SecretStr = SecretStr("")
+    EMBEDDING_TIMEOUT_SECONDS: float = 30.0
+    # 余弦相似度门槛：低于它的段落块不算命中（余弦对任意文本都给分，不过滤就会把
+    # 「库里没有的问题」也排出一二三名，等于把无命中伪装成有命中）。
+    # 实测口径（qwen3-embedding:0.6b + 4 条内置制度条目，16 个查询）——**两簇有重叠**：
+    #   相关 top1 ∈ [0.378, 0.728]；不相关 top1 ∈ [0.235, 0.449]（最高那条与差旅话题相邻）
+    # 故本值只是精确率/召回率的取舍杆，不是干净分界线：0.35 偏召回（宁返弱相关也不漏）。
+    # 换模型/换语料必须重新校准；命中分数在出参 score 里原样暴露，调用方可自行判强弱。
+    EMBEDDING_MIN_SCORE: float = 0.35
+
     # ---- 主动消息推送（站内通知扫描阈值）----
     APPROVAL_STALE_HOURS: float = 24.0
     NOTIFICATION_MAX_PER_SCAN: int = 50
