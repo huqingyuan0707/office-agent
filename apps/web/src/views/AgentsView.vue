@@ -30,8 +30,9 @@ const runError = ref('') // 发起 / 轮询失败红条（本页级，与壳红�
 const polling = ref(false)
 let timer: ReturnType<typeof setInterval> | undefined
 
-// 终态集合：轮询到即停（终态命名以后端 run 契约为准，命中任一即收敛）
-const TERMINAL_STATUSES = ['succeeded', 'failed', 'cancelled', 'completed']
+// 终态集合：轮询到即停。run.status 是后端大写枚举（DONE/FAILED），步骤为小写——统一转小写比对
+const TERMINAL_STATUSES = ['succeeded', 'failed', 'cancelled', 'completed', 'done']
+const isTerminal = (status: string) => TERMINAL_STATUSES.includes((status || '').toLowerCase())
 
 const stopPolling = () => {
   if (timer !== undefined) {
@@ -45,7 +46,7 @@ const refreshRun = async () => {
   if (!run.value) return
   try {
     run.value = await getRun(run.value.run_id)
-    if (TERMINAL_STATUSES.includes(run.value.status)) stopPolling()
+    if (isTerminal(run.value.status)) stopPolling()
   } catch (e) {
     runError.value = (e as Error).message || '运行状态刷新失败'
     stopPolling()
@@ -74,16 +75,18 @@ const suspended = () => {
   const r = run.value
   if (!r) return false
   return (
-    ['pending', 'awaiting_approval', 'suspended'].includes(r.status) ||
-    (r.steps ?? []).some((s) => s.status === 'pending')
+    ['pending', 'awaiting_approval', 'suspended', 'waiting_approval'].includes(
+      (r.status || '').toLowerCase()
+    ) || (r.steps ?? []).some((s) => s.status === 'pending')
   )
 }
 
 // 时间线节点类型：失败红、挂起/运行黄、成功绿、其余蓝
 const stepType = (status: string) => {
-  if (['failed', 'cancelled', 'error'].includes(status)) return 'danger'
-  if (['pending', 'running'].includes(status)) return 'warning'
-  if (['succeeded', 'completed', 'done'].includes(status)) return 'success'
+  const s = (status || '').toLowerCase()
+  if (['failed', 'cancelled', 'error'].includes(s)) return 'danger'
+  if (['pending', 'running'].includes(s)) return 'warning'
+  if (['succeeded', 'completed', 'done'].includes(s)) return 'success'
   return 'primary'
 }
 

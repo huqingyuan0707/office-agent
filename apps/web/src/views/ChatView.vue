@@ -37,8 +37,9 @@ const listRef = ref<{ setScrollTop: (top: number) => unknown } | null>(null)
 let seq = 0
 const timers = new Set<ReturnType<typeof setInterval>>()
 
-// 终态集合：与智能体页同口径，轮询命中即停
-const TERMINAL_STATUSES = ['succeeded', 'failed', 'cancelled', 'completed']
+// 终态集合：与智能体页同口径，轮询命中即停。run.status 是后端大写枚举（DONE/FAILED）——转小写比对
+const TERMINAL_STATUSES = ['succeeded', 'failed', 'cancelled', 'completed', 'done']
+const isTerminal = (status: string) => TERMINAL_STATUSES.includes((status || '').toLowerCase())
 
 const scrollBottom = () => {
   nextTick(() => listRef.value?.setScrollTop(1e6))
@@ -64,7 +65,7 @@ const pollRun = (msg: ChatMsg) => {
       const view = await getRun(msg.run.run_id)
       msg.run = view
       scrollBottom()
-      if (TERMINAL_STATUSES.includes(view.status)) {
+      if (isTerminal(view.status)) {
         msg.polling = false
         stopPoll(timer)
       }

@@ -19,13 +19,15 @@ const TONE: { [key: string]: string } = {
   pending: 'warning',
   pending_approval: 'warning',
   awaiting_approval: 'warning',
+  waiting_approval: 'warning',
   suspended: 'warning',
   running: 'primary',
   doing: 'primary',
   skipped: 'info',
 }
 
-const tone = computed(() => TONE[props.status] ?? 'info')
+// run.status 是后端大写枚举（DONE/FAILED/WAITING_APPROVAL），其余口径小写——统一转小写取色
+const tone = computed(() => TONE[(props.status || '').toLowerCase()] ?? 'info')
 </script>
 
 <template>
