@@ -10,7 +10,7 @@
 ⑦ office.doc.compare：文档对比（读，两份 docx 段落级 diff + 变更摘要）；
 ⑧ office.task.decompose / office.task.commit：任务拆解（读）与批量建单（写，恒送审+幂等）；
 ⑨ office.template.save / office.template.apply：自定义模板（写送审落盘 / 读填充复用）；
-⑩ office.data.query / analyze / export：数据自助分析（读，演示台账 + CSV 叠加 / 统计 + 趋势 + 异常 / 文本导出不写盘）；
+⑩ office.data.query / analyze / export：数据自助分析（读，演示台账 + CSV 叠加 / 统计 + 趋势 + 异常 / markdown-csv 文本与 xlsx-base64 导出不写盘，渲染收口 data_export）；
 ⑪ office.meeting.agenda / book / risks：会议协作（读议程模板直出 / 写预约恒送审 / 读风险关键词预警，无命中不编造）；
 ⑫ office.approval.draft / check / invoice.extract / opinion / submit：审批智能辅助（读草稿必填校验 / 读合规自查与高危二次确认 / 读发票要素提取 / 读审批说明与意见确定性成稿 / 写一键提交恒送审+幂等键批准后落台账）；
 ⑬ office.pptx.generate：PPT 生成（写，大纲直出 .pptx，恒送审+幂等键，python-pptx 缺失不注册）；
@@ -22,6 +22,7 @@
 ⑲ office.todo.list / update / delete、office.schedule.create / freebusy、office.worklog.generate：个人事务管理（PRD §2.2——本地事务存储，读免审；写恒送审审批通过才落盘；到期/会前/节点预警由 server 通知扫描链共用同一存储生成；实现拆两文件：affairs.py 待办域+存储原语，affairs_schedule.py 日程域）。
 ⑳ office.meeting.materials / digest / followup：会议全流程补充三件（PRD §2.5 缺口——会前资料包逐文件真实抽取汇编、会中速记按关键词归类决议/行动/风险要点原句摘录、会后行动项×待办台账五态对账跟进；实时语音转录需音频基建如实后置；meeting_flow.py，全读免审）。
 ㉑ office.mail.classify / reply_draft / action_items / precheck：邮件智能处理（PRD §2.7——入参驱动全读免审，不接真实邮箱杜绝假数据源；归类四类关键词口径 / 回复草稿缺项留占位不代编 / 行动项三字段正则提不出置 null / 预审复用 compliance 规则+语气词表命中即二次确认；群消息摘要与自动发信如实后置，见 mail.py docstring）。
+㉒ office.data.query.save / list / run / delete + office.data.chart_insight：常用查询保存与一句话复用、图表自动解读（PRD §2.4 新增——save/delete 写恒送审落盘 data_queries/、list/run 读免审按租户隔离实时重查；insight 读免审，统计+最高/最低/2σ 异常标注+中文简报+同数据 SVG 条形图；见 data_saved.py / data_insight.py）。
 
 链路：server lifespan → 本包 register_all() → 各模块 specs() → registry 注册 ToolSpec；
 executor 按 spec 执行。
@@ -42,6 +43,8 @@ from . import (
     compliance,
     compose,
     data_analysis,
+    data_insight,
+    data_saved,
     doc_compare,
     file_ask,
     file_read,
@@ -69,6 +72,8 @@ __all__ = [
     "compliance",
     "compose",
     "data_analysis",
+    "data_insight",
+    "data_saved",
     "doc_compare",
     "file_ask",
     "file_read",
@@ -96,6 +101,8 @@ _MODULES = (
     task_planner,
     templates,
     data_analysis,
+    data_insight,
+    data_saved,
     meeting,
     meeting_flow,
     mail,

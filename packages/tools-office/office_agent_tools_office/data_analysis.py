@@ -1,23 +1,28 @@
-"""数据自助分析工具（office.data.query / analyze / export，对齐 PRD §2.4 V1.1 首项）。
+"""数据自助分析工具（office.data.query / analyze / export，对齐 PRD §2.4）。
 
 职责：
 - office.data.query（office:read）：按数据集查本地演示台账（项目/工时/业绩/考勤四类内置
   + DOCS_DIR/data/{dataset}.csv 可选叠加），等值过滤 + limit，带 source + fetched_at 溯源；
 - office.data.analyze（office:read）：数值序列统计（个数/求和/均值/最值）+ 首尾趋势 +
   均值±2σ 异常标记 + 中文结论简报，数值只取入参原值，空序列直接 1001 拒绝（不编造）；
-- office.data.export（office:read）：columns + rows 渲染 markdown/csv 文本（不写盘，
-  落盘由调用方决定），缺值留空并在 unfilled 如实列出。
+- office.data.export（office:read）：columns + rows 渲染 markdown/csv 文本或 .xlsx
+  二进制（base64 信封，不写盘，落盘由调用方决定），缺值留空并在 unfilled 如实列出；
+  表格渲染实现收口到 data_export（同一行为只允许一个实现）。
+
+常用查询保存与复用见 data_saved（office.data.query.save/list/run）；
+图表解读（分类序列 + SVG 图片）见 data_insight（office.data.chart_insight）。
 
 链路：__init__.register_all() → registry.register(spec) → executor.call 执行 handler。
 红线：三工具全是读口径（免审批）；纯本地实现，不触及 ORM / FastAPI；CSV 叠加读失败
       只降级不阻断，绝不 500。
 对齐：AGENTS.md §3（分层红线/降级绝不 500/溯源）；智能办公Agent 产品需求文档.md §2.4
-      （自然语言取数/智能分析/输出导出——保存常用查询后置，见模块末尾说明）。
+      （自然语言取数/智能分析/输出导出 Excel-Markdown 多格式）。
 """
 
 from __future__ import annotations
 
 import asyncio
+import base64
 import copy
 import csv
 import io
@@ -31,6 +36,13 @@ from office_agent_core.contracts import ToolContext, ToolSpec
 from office_agent_core.errors import BusinessError, ErrorCode
 from office_agent_core.registry import register
 from office_agent_core.settings import settings
+
+from .data_export import (
+    render_csv_text,
+    render_markdown_table,
+    render_workbook_base64,
+    safe_filename_hint,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -244,46 +256,48 @@ def _rows_or_raise(rows: Any) -> list[dict[str, Any]]:
     return list(rows)
 
 
-def _render_markdown(title: str, columns: list[str], rows: list[dict[str, Any]]) -> str:
-    """渲染 markdown 表格（缺值留空，绝不填假值）。"""
-    lines = [f"# {title}", "", "| " + " | ".join(columns) + " |"]
-    lines.append("| " + " | ".join("---" for _ in columns) + " |")
-    for row in rows:
-        lines.append("| " + " | ".join(str(row.get(col, "")) for col in columns) + " |")
-    return "\n".join(lines)
-
-
-def _render_csv(columns: list[str], rows: list[dict[str, Any]]) -> str:
-    """渲染 csv 文本（缺值留空；换行符统一 \\n）。"""
-    buffer = io.StringIO()
-    writer = csv.writer(buffer, lineterminator="\n")
-    writer.writerow(columns)
-    for row in rows:
-        writer.writerow([row.get(col, "") for col in columns])
-    return buffer.getvalue()
-
-
 async def _data_export(ctx: ToolContext, args: dict[str, Any]) -> dict[str, Any]:
-    """office.data.export：渲染导出文本（不写盘），缺列留空 + unfilled 如实列出。"""
+    """office.data.export：渲染导出产物（不写盘），缺列留空 + unfilled 如实列出。
+
+    markdown/csv 走文本 content；excel 走 base64 的 .xlsx 二进制（encoding/mime/
+    filename_hint 指引调用方落盘，写盘动作走审批闸门）。
+    """
     _ = ctx
     title = str(args.get("title") or "").strip()
     if not title:
         raise BusinessError(ErrorCode.PARAM_INVALID, "参数 title 不能为空：请传入导出标题")
     fmt = str(args.get("format") or "markdown").strip()
-    if fmt not in ("markdown", "csv"):
+    if fmt not in ("markdown", "csv", "excel"):
         raise BusinessError(
-            ErrorCode.PARAM_INVALID, f"参数 format 只能是 markdown/csv（当前：{fmt}）"
+            ErrorCode.PARAM_INVALID, f"参数 format 只能是 markdown/csv/excel（当前：{fmt}）"
         )
     columns = _columns_or_raise(args.get("columns"))
     rows = _rows_or_raise(args.get("rows"))
     unfilled = [col for col in columns if any(col not in row for row in rows)]
+    if fmt == "excel":
+        raw = await asyncio.to_thread(render_workbook_base64, title, columns, rows)
+        return {
+            "title": title,
+            "format": fmt,
+            "content": base64.b64encode(raw).decode("ascii"),
+            "encoding": "base64",
+            "mime": "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+            "filename_hint": safe_filename_hint(title, ".xlsx"),
+            "row_count": len(rows),
+            "unfilled": unfilled,
+            "note": "base64 的 .xlsx 二进制，未写盘；落盘由调用方决定（写盘动作走审批闸门）",
+        }
     content = (
-        _render_markdown(title, columns, rows) if fmt == "markdown" else _render_csv(columns, rows)
+        render_markdown_table(title, columns, rows)
+        if fmt == "markdown"
+        else render_csv_text(columns, rows)
     )
     return {
         "title": title,
         "format": fmt,
         "content": content,
+        "encoding": "text",
+        "mime": "text/markdown" if fmt == "markdown" else "text/csv",
         "row_count": len(rows),
         "unfilled": unfilled,
         "note": "纯文本导出，未写盘；落盘由调用方决定（写盘动作走审批闸门）",
@@ -338,15 +352,16 @@ def specs() -> tuple[ToolSpec, ...]:
         ToolSpec(
             name="office.data.export",
             scope=SCOPE_READ,
-            description="导出 markdown/csv 文本：columns + rows 渲染（不写盘），缺值留空并在 unfilled 如实列出",
+            description="导出 markdown/csv 文本或 .xlsx 二进制（base64 信封）：columns + rows 渲染"
+            "（不写盘），缺值留空并在 unfilled 如实列出",
             params={
                 "type": "object",
                 "properties": {
                     "title": {"type": "string", "description": "导出标题", "minLength": 1},
                     "format": {
                         "type": "string",
-                        "description": "导出格式（markdown/csv，默认 markdown）",
-                        "enum": ["markdown", "csv"],
+                        "description": "导出格式（markdown/csv 文本，excel 走 base64；默认 markdown）",
+                        "enum": ["markdown", "csv", "excel"],
                     },
                     "columns": {
                         "type": "array",
@@ -370,8 +385,7 @@ def specs() -> tuple[ToolSpec, ...]:
 def register_all() -> list[str]:
     """注册三个数据分析工具；返回已注册工具名列表。
 
-    后置说明：PRD §2.4 的「保存常用查询 / 一句话复用」需持久化写动作（恒送审 +
-    落盘/落库），与 office.template.save 同口径，放在下一步单独做（本文件只收读口径，
-    避免读写混单）。
+    PRD §2.4「保存常用查询 / 一句话复用」见 data_saved，「Excel 导出」见 data_export
+    （本文件只收读口径查数/统计，渲染实现收口 data_export，避免读写混单与双实现）。
     """
     return [register(spec).name for spec in specs()]

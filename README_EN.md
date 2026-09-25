@@ -220,7 +220,9 @@ HTTP-level smoke: `python tests/smoke_file_ask.py` (7 assertions: real PDF extra
 
 | Feature | Tools | Key guarantees |
 |---|---|---|
-| Self-serve data analysis | `office.data.query` / `analyze` / `export` | demo ledger + CSV overlay; stats/trends/anomalies report measured facts only; text export never writes to disk |
+| Self-serve data analysis | `office.data.query` / `analyze` / `export` | demo ledger + CSV overlay; stats/trends/anomalies report measured facts only; text export never writes to disk; `export` also supports `excel` (base64 .xlsx envelope, approval-free read scope, renderers centralized in `data_export.py`) |
+| Saved queries & one-sentence reuse (PRD §2.4) | `office.data.query.save` / `list` / `run` / `delete` | the (dataset + filters + limit) triple lands in `DOCS_DIR/data_queries/`; save/delete are approved writes with idem_key (duplicate names rejected, never silently overwritten; the duplicate check runs at approval-execution time); list/run are approval-free reads isolated per tenant; run re-queries live with the same implementation, never a stale snapshot; corrupt archives report honest 1001, never 500 |
+| Automatic chart insight (PRD §2.4) | `office.data.chart_insight` | per-category stats + highest/lowest/±2σ anomaly labels pinned to category names + Chinese brief + same-data SVG bar chart (anomalies in red); images go out as plain-text SVG with zero third-party deps (deliberately avoiding matplotlib + CJK fonts — the browser renders them in system fonts); approval-free read scope, values quoted verbatim |
 | Meeting collaboration | `office.meeting.agenda` / `book` / `risks` | agenda from templates; booking is an approved write; risk keyword alerts stay blank on no match |
 | Approval assistant | `office.approval.draft` / `check` / `opinion` / `submit`, `office.invoice.extract` | five form kinds with required-field validation and ask-back prompts; tiered amounts (>1000 dept head / >5000 VP) + high-risk `need_confirm`; invoice fields are quoted verbatim, `degraded` on no match; deterministic drafting of application notes and review opinions (rejection requires a reason); one-click submit is an approved write with idem_key — the ticket lands in the local ledger only after review approval, same-key replay never double-books |
 | Approval urging | `POST /approvals/{id}/urge` | applicant or admin sends one IM reminder for a pending ticket (side-channel: never changes approval state, never persists; honestly reports not_configured; decided tickets rejected with 4004); stale-ticket alerts stay on the notification scanner |
@@ -242,7 +244,9 @@ HTTP-level smoke: `python tests/smoke_v1_2_batch_a.py` (9 assertions, re-runnabl
 
 | Feature | Entry | Key guarantees |
 |---|---|---|
-| Data visualization reports | `/reports` (Reports page) | pick 1 of 4 datasets → real `office.data.query` (columns taken from the first row, never presumed) + CSS bar chart on the numeric column (no chart lib) + `office.data.analyze` stat cards + `office.data.export` markdown preview & download; failed queries render empty, analyze/export failures stay page-local — never papered over with fake data |
+| Data visualization reports | `/reports` (Reports page) | pick 1 of 4 datasets → real `office.data.query` (columns taken from the first row, never presumed) + CSS bar chart on the numeric column (no chart lib) + `office.data.analyze` stat cards + `office.data.chart_insight` interpretation (anomaly tags + verbatim SVG rendering; a failed insight only empties its own block) + `office.data.export` preview & download in three formats (Markdown/CSV/Excel, excel restored from base64 to .xlsx); failed queries render empty, analyze/insight/export failures stay page-local — never papered over with fake data |
+
+HTTP-level smoke: `python tests/smoke_2_4_data.py` (11 assertions, re-runnable: full save → approve → reuse → excel/SVG → delete chain).
 | Admin operations dashboard | `/admin` (Admin page) + `GET /admin/overview` (admin only) | `services/admin_stats.py` read-only aggregation across four tables (users by status / tasks by status / approvals by status / Top-8 tools by calls / last 5 decided approvals); non-admin gets an honest 403, never downgraded fake data |
 
 ## Chat-first entry (one sentence in: no agent picking, no parameter filling)
@@ -271,19 +275,6 @@ HTTP-level smoke: `python tests/smoke_v1_2_batch_c.py` (7 assertions, self-conta
 | Cross-domain chaining | `plugins/office-assistant` | one sentence (agent omitted) auto-routes here and chains three domains inside a single run. Main path is `llm: default` (local qwen3:8b) which orchestrates steps on the fly and phrases the `kb.ask` query itself; when the LLM is unavailable it falls back to the `rules` chain — `office.data.query` → `office.report.generate` (metric values injected from the previous step's **real output** via `{steps[0].result.count}`, 100% numeric consistency) → `kb.ask` policy lookup, fully traceable. Caveat: the LLM proposes all steps in one shot without seeing prior outputs, so stats inputs may be invented — cross-step data passing stays more reliable via rules |
 
 HTTP-level smoke: `python tests/smoke_personal_affairs.py` (8 assertions, re-runnable).
-
-## Email Intelligence (PRD §2.7: classify / reply drafts / action items / pre-send check)
-
-| Capability | Tool | Notes |
-|---|---|---|
-| Mail triage | `office.mail.classify` | Four keyword-based categories (spam / action / reply / informational, priority spam>action>reply>info); no match stays informational, never inferred |
-| Reply drafts | `office.mail.reply_draft` | Formal/friendly template output; missing parts (salutation/body points/signature) surface as `placeholders` instead of being invented; bullet points are carried into the body verbatim |
-| Action items | `office.mail.action_items` | Regex extraction of action sentence + owner (@X / 由X / X负责) + due date (ISO or Chinese wording); undeterminable fields are null, never fabricated; converting to todos is left to `office.todo.create` (approved write) |
-| Pre-send check | `office.mail.precheck` | Reuses the three `office.compliance.scan` rule families (privacy / absolute claims / leaked credentials, credential values masked) plus a tone-risk word list (必须/立刻/怎么还没…), any hit sets `need_confirm=True` |
-
-All four tools are read-scoped (no approval) and **input-driven** — no real mailbox is wired in, so there is no fake data source. Scheduled group-chat digests (needs an IM message source via linkage) and auto-sending (an outbound write channel, needs mailbox integration) are honestly deferred. The `plugins/office-assistant` whitelist now carries all four tools.
-
-HTTP-level smoke: `python tests/smoke_mail.py` (6 assertions, re-runnable).
 
 ## Database Migrations
 

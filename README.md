@@ -229,7 +229,9 @@ HTTP 级冒烟：`python tests/smoke_file_ask.py`（7 项断言：PDF 真实抽�
 
 | 功能 | 工具 | 口径要点 |
 |---|---|---|
-| 数据自助分析 | `office.data.query` / `analyze` / `export` | 演示台账 + CSV 叠加；统计/趋势/异常只报实测，文本导出不写盘 |
+| 数据自助分析 | `office.data.query` / `analyze` / `export` | 演示台账 + CSV 叠加；统计/趋势/异常只报实测，文本导出不写盘；`export` 另支持 `excel`（base64 的 .xlsx 信封，读口径免审，渲染收口 `data_export.py`） |
+| 常用查询保存与复用（PRD §2.4） | `office.data.query.save` / `list` / `run` / `delete` | 口径三件套（dataset+filters+limit）落盘 `DOCS_DIR/data_queries/`；save/delete 写恒送审 + idem_key（同名拒绝不静默覆盖，重名检查在批准执行期）；list/run 读免审按租户隔离，run 用同一实现实时重查非过期快照；损坏存档 1001 中文绝不 500 |
+| 图表自动解读（PRD §2.4） | `office.data.chart_insight` | 分类序列统计 + 最高/最低/均值±2σ 异常标注到分类名 + 中文简报 + 同数据 SVG 条形图（异常标红）；图片走 SVG 纯文本零第三方依赖（刻意避开 matplotlib + 中文字体，浏览器系统字体渲染不乱码）；读口径免审，数值原值直出 |
 | 会议协作 | `office.meeting.agenda` / `book` / `risks` | 议程模板直出；预约写口径恒送审；风险关键词预警无命中不编造 |
 | 审批智能辅助 | `office.approval.draft` / `check` / `opinion` / `submit`、`office.invoice.extract` | 五类单草稿必填校验追问；金额分级（>1000 部门负责人 / >5000 分管副总）+ 高危二次确认 need_confirm；发票四要素只摘录不推断，无命中 degraded；审批说明/意见确定性成稿（驳回必须附理由）；一键提交写口径恒送审 + idem_key，批准后落本地台账，同键重放绝不双单 |
 | 审批一键催办 | `POST /approvals/{id}/urge` | 本人或管理员对 pending 单发一次 IM 提醒（旁路：不改审批状态、不落库；IM 未配置如实 not_configured，已决单拒催 4004）；超时预警由通知扫描链承担 |
@@ -251,7 +253,9 @@ HTTP 级冒烟：`python tests/smoke_v1_2_batch_a.py`（9 项断言，可重复�
 
 | 功能 | 入口 | 口径要点 |
 |---|---|---|
-| 数据可视化报表 | `/reports`（报表页） | 数据集四选一 → `office.data.query` 真查（列取自首行键不预设）+ 数值列 CSS 条形图（不引图表库）+ `office.data.analyze` 统计卡 + `office.data.export` markdown 预览与下载；查询失败置空，分析/导出失败本页红条绝不拿假数据顶 |
+| 数据可视化报表 | `/reports`（报表页） | 数据集四选一 → `office.data.query` 真查（列取自首行键不预设）+ 数值列 CSS 条形图（不引图表库）+ `office.data.analyze` 统计卡 + `office.data.chart_insight` 图表解读（异动标签 + SVG 原样渲染，失败只空解读块不挡统计卡）+ `office.data.export` 三格式（Markdown/CSV/Excel）预览与下载（excel 走 base64 还原 .xlsx）；查询失败置空，分析/解读/导出失败本页红条绝不拿假数据顶 |
+
+HTTP 级冒烟：`python tests/smoke_2_4_data.py`（11 项断言，可重复执行：保存→批准→复用→excel/SVG→删除全链）。
 | 管理员运营看板 | `/admin`（管理页）+ `GET /admin/overview`（仅 admin） | `services/admin_stats.py` 四表只读聚合（用户分状态 / 任务分状态 / 审批分状态 / 工具调用 Top8 / 最近已决 5 单）；非 admin 403 如实提示权限不足，不降级给假数据 |
 
 ## 对话主入口（一句话直达：员工不选智能体、不填参数）
@@ -280,19 +284,6 @@ HTTP 级冒烟：`python tests/smoke_v1_2_batch_c.py`（7 项断言，自带起�
 | 跨域串联 | `plugins/office-assistant` | 一句话（不指定智能体）自动路由到这里，一条 run 内串起三域。主路径 `llm: default`（本地 qwen3:8b）现场编排多步并自行组织 `kb.ask` 检索问句；LLM 不可用自动落回 `rules` 兜底链——`office.data.query` 查数 → `office.report.generate` 出报告（指标值用 `{steps[0].result.count}` 从上一步**真实出参**注入，数值一致率 100%）→ `kb.ask` 引制度条文，全链溯源。注意：LLM 一次性提议全部步骤、拿不到上一步输出，统计类入参可能编数，跨步取数以规则链更可靠 |
 
 HTTP 级冒烟：`python tests/smoke_personal_affairs.py`（8 项断言，可重复执行）。
-
-## 邮件智能处理（PRD §2.7：归类 / 回复草稿 / 行动项 / 外发预审）
-
-| 能力 | 工具 | 口径要点 |
-|---|---|---|
-| 邮件归类 | `office.mail.classify` | 四类关键词规则（垃圾/需行动/需回复/仅知会，spam>action>reply>info 优先级）；未命中归 informational 不推断 |
-| 回复草稿 | `office.mail.reply_draft` | formal/friendly 两档模板直出；缺项（称呼/正文要点/署名）留 `placeholders` 占位不代编；要点原样编号进正文 |
-| 行动项提取 | `office.mail.action_items` | 动作句 + 责任人（@X/由X/X负责）+ 期限（ISO 日期/中文时间）三字段正则摘录，提不出置 null 不臆造；转待办交 `office.todo.create`（写恒送审）落库 |
-| 外发预审 | `office.mail.precheck` | 复用 `office.compliance.scan` 三类规则（隐私/绝对化用语/泄密凭据，凭据值脱敏）+ 语气风险词表（必须/立刻/怎么还没…），命中即 `need_confirm=True` 二次确认 |
-
-四工具全读口径免审、**入参驱动**（不接真实邮箱，杜绝假数据源）；群消息定时摘要（需 IM 消息源经 linkage 接入）与自动发信（对外写通道需邮箱对接）如实后置。`plugins/office-assistant` 白名单已挂四工具。
-
-HTTP 级冒烟：`python tests/smoke_mail.py`（6 项断言，可重复执行）。
 
 ## 数据库迁移
 

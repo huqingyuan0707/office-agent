@@ -1,11 +1,8 @@
 <script setup lang="ts">
-// 职责：报表页（Element Plus 版）—— 数据集四选一 → office.data.query 真查 → 表格（列取自首行键，
-//       不预设 schema）+ 占比条形图（el-progress）+ office.data.analyze 统计卡（el-statistic）+
-//       office.data.export markdown 预览与下载
-// 链路：router /reports → api.invokeTool（query/analyze/export 三连）；查询失败 → 壳红条 + 置空，
-//       分析/导出失败 → 本页红条（两路错误互不影响，失败绝不拿假数据顶）
-// 对齐：AGENTS.md §4 前端红线（真实接口零 mock、禁直写 fetch、箭头函数、var(--*) token + scoped）+
-//       PRD §5.3 数据可视化报表（复用 V1.1 数据工具链，图表用 EP 进度条不引新依赖）
+// 职责：报表页 —— 数据集四选 → query 真查表格 + 条形图 + analyze 统计卡 +
+//       chart_insight 图表解读（异动标注 + SVG 图）+ export 多格式预览与下载（列取自首行键，不预设 schema）
+// 链路：router /reports → api.invokeTool（query/analyze/insight/export 四连）；查询失败 → 壳红条 + 置空，分析/解读/导出失败 → 本页红条（互不影响，绝不拿假数据顶）
+// 对齐：AGENTS.md §4 前端红线（真实接口零 mock、禁直写 fetch、箭头函数、var(--*) token + scoped）+ PRD §2.4 多格式导出与图表解读 + §5.3 数据可视化报表
 import { inject, onMounted, ref } from 'vue'
 import { DataAnalysis, Download, Refresh } from '@element-plus/icons-vue'
 import { invokeTool } from '../api'
@@ -49,9 +46,24 @@ interface AnalyzeStats {
 }
 const stats = ref<AnalyzeStats | null>(null)
 const analyzing = ref(false)
+// ---------- 图表解读（PRD §2.4：自动解读 + 异动标注 + SVG 图，失败只影响本块不挡统计卡）----------
+interface Insight {
+  brief?: string
+  highlights?: { category: string; value: number; reason: string }[]
+  chart_svg?: string
+}
+const insight = ref<Insight | null>(null)
 const exportText = ref('')
+const exportFormats = [
+  { label: 'Markdown', value: 'markdown' },
+  { label: 'CSV', value: 'csv' },
+  { label: 'Excel (.xlsx)', value: 'excel' },
+]
+const exportFormat = ref<string>('markdown')
+const exportKind = ref<string>('text') // 后端回的 encoding：text 直显，base64（excel）只下载
+const exportFilename = ref<string>('')
 const exporting = ref(false)
-const pageError = ref('') // 分析 / 导出失败红条（本页级，与壳红条分开）
+const pageError = ref('') // 分析 / 解读 / 导出失败红条（本页级，与壳红条分开）
 
 const labelOf = (id: string) => DATASETS.find((d) => d.id === id)?.label ?? id
 const catKeyOf = (id: string) => DATASETS.find((d) => d.id === id)?.catKey ?? ''
@@ -91,6 +103,7 @@ const doQuery = async () => {
   rows.value = []
   columns.value = []
   stats.value = null
+  insight.value = null
   exportText.value = ''
   source.value = ''
   shell.clearError()
@@ -124,11 +137,32 @@ const doAnalyze = async () => {
       values: numValues(),
     })
     stats.value = (data.result ?? {}) as AnalyzeStats
+    await doInsight() // 解读失败只影响解读块（内部已隔离），统计卡不受影响
   } catch (e) {
     stats.value = null
     pageError.value = (e as Error).message || '统计分析失败'
   } finally {
     analyzing.value = false
+  }
+}
+
+const doInsight = async () => {
+  // 分类/数值与条形图同源（当前分类列原文 + 数值列原值），不编造
+  const cats = barRows().map((r) => r.category)
+  const vals = numValues()
+  if (!cats.length || cats.length !== vals.length) {
+    insight.value = null
+    return
+  }
+  try {
+    const data = await invokeTool('office.data.chart_insight', {
+      title: `${labelOf(dataset.value)} · ${numKey.value}`,
+      categories: cats,
+      values: vals,
+    })
+    insight.value = (data.result ?? {}) as Insight
+  } catch {
+    insight.value = null // 解读失败如实空态，不污染统计卡
   }
 }
 
@@ -139,11 +173,18 @@ const doExport = async () => {
   try {
     const data = await invokeTool('office.data.export', {
       title: labelOf(dataset.value),
-      format: 'markdown',
+      format: exportFormat.value,
       columns: columns.value,
       rows: rows.value,
     })
-    exportText.value = ((data.result ?? {}) as { content?: string }).content ?? ''
+    const result = (data.result ?? {}) as {
+      content?: string
+      encoding?: string
+      filename_hint?: string
+    }
+    exportText.value = result.content ?? ''
+    exportKind.value = result.encoding ?? 'text'
+    exportFilename.value = result.filename_hint ?? `${dataset.value}-report.md`
   } catch (e) {
     exportText.value = ''
     pageError.value = (e as Error).message || '导出失败'
@@ -152,14 +193,19 @@ const doExport = async () => {
   }
 }
 
-// 导出下载：把后端返回的真实文本存为本地 .md（客户端落盘，非 mock 数据）
+// 导出下载：文本格式存文本文件，excel（base64）还原二进制存 .xlsx（客户端落盘，非 mock 数据）
 const download = () => {
   if (!exportText.value) return
-  const blob = new Blob([exportText.value], { type: 'text/markdown;charset=utf-8' })
+  const isXlsx = exportKind.value === 'base64'
+  const blob = isXlsx
+    ? new Blob([Uint8Array.from(atob(exportText.value), (c) => c.charCodeAt(0))], {
+        type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+      })
+    : new Blob([exportText.value], { type: 'text/plain;charset=utf-8' })
   const url = URL.createObjectURL(blob)
   const a = document.createElement('a')
   a.href = url
-  a.download = `${dataset.value}-report.md`
+  a.download = exportFilename.value || `${dataset.value}-report.md`
   a.click()
   URL.revokeObjectURL(url)
 }
@@ -268,13 +314,38 @@ onMounted(doQuery)
       </div>
       <p v-if="stats?.brief" class="muted">{{ stats.brief }}</p>
 
-      <div v-if="rows.length" class="export-row">
-        <el-button :loading="exporting" @click="doExport">
-          {{ exporting ? '导出中…' : '预览 markdown 导出' }}
-        </el-button>
-        <el-button v-if="exportText" :icon="Download" @click="download">下载 .md</el-button>
+      <!-- 图表解读：后端 chart_insight 原样呈现（SVG 由浏览器渲染，失败如实空态） -->
+      <div v-if="insight" class="insight-block">
+        <span class="sub-title">图表解读</span>
+        <p class="muted">{{ insight.brief }}</p>
+        <div class="trend-row">
+          <el-tag
+            v-for="h in insight.highlights ?? []"
+            :key="`${h.category}-${h.reason}`"
+            size="small"
+            :type="h.reason.includes('异常') ? 'danger' : 'info'"
+            effect="light"
+            round
+          >
+            {{ h.category }} · {{ h.reason }}
+          </el-tag>
+        </div>
+        <div v-if="insight.chart_svg" class="svg-box" v-html="insight.chart_svg" />
       </div>
-      <pre v-if="exportText" class="code-block">{{ exportText }}</pre>
+
+      <div v-if="rows.length" class="export-row">
+        <el-select v-model="exportFormat" style="width: 150px">
+          <el-option v-for="o in exportFormats" :key="o.value" :label="o.label" :value="o.value" />
+        </el-select>
+        <el-button :loading="exporting" @click="doExport">
+          {{ exporting ? '导出中…' : '预览导出' }}
+        </el-button>
+        <el-button v-if="exportText" :icon="Download" @click="download">
+          下载 {{ exportFilename || 'report' }}
+        </el-button>
+      </div>
+      <pre v-if="exportText && exportKind === 'text'" class="code-block">{{ exportText }}</pre>
+      <p v-if="exportText && exportKind === 'base64'" class="muted">Excel 二进制已就绪，点「下载」存为 .xlsx。</p>
 
       <el-alert
         v-if="pageError"
@@ -322,5 +393,17 @@ onMounted(doQuery)
   display: flex;
   gap: 10px;
   margin-top: 14px;
+}
+/* 图表解读块：简报 + 异动标签 + 后端 SVG 原样渲染区 */
+.insight-block {
+  margin-top: 12px;
+  padding: 10px 12px;
+  background: #fafbfc;
+  border: 1px solid var(--line);
+}
+.svg-box {
+  margin-top: 8px;
+  overflow-x: auto;
+  background: #fff;
 }
 </style>

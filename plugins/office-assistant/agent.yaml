@@ -22,12 +22,17 @@ system_prompt: |
 tools:
   - office.data.query
   - office.data.analyze
-  - office.report.generate
-  - kb.ask
+  - office.data.export
+  - office.data.chart_insight
+  - office.data.query.save
+  - office.data.query.list
+  - office.data.query.run
   - office.mail.classify
   - office.mail.reply_draft
   - office.mail.action_items
   - office.mail.precheck
+  - office.report.generate
+  - kb.ask
 max_steps: 8
 llm: default
 rules:
