@@ -15,7 +15,7 @@ import pytest
 from office_agent_core.contracts import ToolContext
 from office_agent_core.errors import BusinessError
 from office_agent_core.settings import settings
-from office_agent_tools_office import kb
+from office_agent_tools_office import kb, retrieval
 
 CTX = ToolContext(tenant="t1", username="alice", roles=["office:read", "office:write"])
 
@@ -82,7 +82,7 @@ async def test_kb_ask_semantic_retrieval_when_configured(
         # 只按「语义归属」给向量：问句与差旅段落同向（余弦 1.0），其余正交（0.0 被门槛滤掉）
         return [[1.0, 0.0] if ("签字" in text or "差旅" in text) else [0.0, 1.0] for text in texts]
 
-    monkeypatch.setattr(kb, "_embed_texts", fake_embed)
+    monkeypatch.setattr(retrieval, "embed_texts", fake_embed)
     data = await kb._kb_ask(CTX, {"query": "出差花销找谁签字"})
     assert data["retrieval_mode"] == "embedding"
     assert data["embedding_model"] == "fake-embedding"

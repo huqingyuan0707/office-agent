@@ -1,9 +1,11 @@
 """文件解析与批量重命名工具（office.file.read / docs.rename，对齐 PRD §2.1 文件解析/批量处理）。
 
 职责：
-- office.file.read（office:read）：DOCS_DIR 内 docx/xlsx/csv/txt/md 内容提取——
-  docx 取段落 + 表格文本 + 图片清单，xlsx 取每表行列数 + 前 N 行文本，纯文本直读；
-  PDF 明确降级（pypdf 未安装：degraded + 原因，不编造半页文字）；缺文件 404；
+- office.file.read（office:read）：DOCS_DIR 内 docx/xlsx/csv/txt/md/pdf 内容提取——
+  docx 取段落 + 表格文本 + 图片清单，xlsx 取每表行列数 + 前 N 行文本，纯文本直读，
+  PDF 走 pypdf 逐页抽取文本（页数如实返回；加密/损坏文件报解析失败）；
+  解析引擎（pypdf/python-docx/openpyxl）缺失只 degraded + 原因，不编造内容；缺文件 404；
+- 内容提取原语 extract_document 同时供 office.file.ask（file_ask.py）做文件内容问答；
 - office.docs.rename（office:write + 恒送审）：DOCS_DIR 内批量重命名（pairs 上限 20 对，
   双向 basename 防穿越 + 后缀白名单 + 禁止覆盖已存在目标）；重放因源文件已迁走而
   诚实失败，故标 idempotent=False（不谎称幂等）。
@@ -12,8 +14,9 @@
 红线：纯本地实现，不触及 ORM / FastAPI；文件名一律锁 DOCS_DIR（paths.resolve_under_docs，
       与 tools_docs.py 同款口径）；解析引擎缺失只降级不阻断，绝不 500。
 对齐：AGENTS.md §3（分层/数据不出域在本地盘的对应实现）；智能办公Agent 产品需求文档.md
-      §2.1（文件解析：Word/PDF/Excel 提取——PDF 待引擎；批量处理：重命名/提图/批量摘要——
-      提图并入 file.read 图片清单，批量摘要复用 office.text.summarize texts 多篇模式，
+      §2.1（文件解析：Word/PDF/Excel 提取、解读与问答——问答见 file_ask.py；
+      批量处理：重命名/提图/批量摘要——提图并入 file.read 图片清单，
+      批量摘要复用 office.text.summarize texts 多篇模式，
       批量转 PDF 需 soffice 外部二进制，明确后置，三者均不重复造）。
 """
 
@@ -36,13 +39,16 @@ logger = logging.getLogger(__name__)
 SCOPE_READ = "office:read"
 SCOPE_WRITE = "office:write"
 
-_READ_SUFFIXES = (".docx", ".xlsx", ".csv", ".txt", ".md", ".pdf")
+#: 文件解析后缀白名单（office.file.read / office.file.ask 共用）
+READ_SUFFIXES = (".docx", ".xlsx", ".csv", ".txt", ".md", ".pdf")
+#: 单文件体积上限（office.file.read / office.file.ask 共用）
+MAX_FILE_BYTES = 200_000
 _RENAME_SUFFIXES = (".docx", ".xlsx", ".csv", ".txt", ".md", ".png", ".jpg", ".pptx")
-_MAX_FILE_BYTES = 200_000
 _MAX_TEXT_CHARS = 20000
 _MAX_PAIRS = 20
 _MAX_SHEET_ROWS = 200
 _MAX_SHEET_COLS = 20
+_MAX_PDF_PAGES = 50
 
 try:
     import docx as _docx_module
@@ -59,6 +65,16 @@ try:
 except ImportError:
     _openpyxl_module = None
     _XLSX_AVAILABLE = False
+
+try:
+    import pypdf as _pypdf_module
+    from pypdf.errors import PdfReadError
+
+    _PDF_AVAILABLE = True
+except ImportError:
+    _pypdf_module = None
+    PdfReadError = ValueError  # 引擎缺失时的占位异常类型：_read_pdf 只在可用时被调用
+    _PDF_AVAILABLE = False
 
 
 def _truncate(text: str) -> tuple[str, bool]:
@@ -116,6 +132,28 @@ def _read_xlsx(path: Path) -> dict[str, Any]:
     return {"text": text, "truncated": truncated, "sheets": sheets}
 
 
+def _read_pdf(path: Path) -> dict[str, Any]:
+    """PDF 逐页文本抽取（pypdf）：页码 + 页文本，页数如实返回。
+
+    只做文本层抽取：扫描件（纯图片页）取不到文字时如实留空，不编造。
+    加密文件不猜密码（空密码解不开即报错由调用方转成 1001 可操作提示）。
+    """
+    assert _pypdf_module is not None
+    try:
+        reader = _pypdf_module.PdfReader(str(path))
+        if reader.is_encrypted and not reader.decrypt(""):
+            raise ValueError("PDF 已加密（空密码无法打开）：请先解除密码保护后再解析")
+        pages: list[str] = []
+        for index, page in enumerate(reader.pages[:_MAX_PDF_PAGES]):
+            page_text = (page.extract_text() or "").strip()
+            if page_text:
+                pages.append(f"第 {index + 1} 页\n{page_text}")
+    except PdfReadError as exc:
+        raise ValueError(f"PDF 内容解析失败：{str(exc)[:100]}") from exc
+    text, truncated = _truncate("\n\n".join(pages))
+    return {"text": text, "truncated": truncated, "pages": len(reader.pages)}
+
+
 def _read_textlike(path: Path) -> dict[str, Any]:
     """csv/txt/md 直读（csv 按行逗号转竖线拼可读文本，不做语义解析）。"""
     raw = path.read_text(encoding="utf-8-sig", errors="replace")
@@ -129,16 +167,21 @@ def _read_textlike(path: Path) -> dict[str, Any]:
     return {"text": text, "truncated": truncated}
 
 
-def _extract(path: Path) -> dict[str, Any]:
-    """按后缀分发提取（同步 IO，调用方包 asyncio.to_thread）。"""
+def extract_document(path: Path) -> dict[str, Any]:
+    """按后缀分发提取文档文本（同步 IO，调用方包 asyncio.to_thread）。
+
+    公开给同包 file_ask.py 复用（文件内容问答需要同一份提取口径，不重复实现）。
+    """
     suffix = path.suffix.lower()
     if suffix == ".pdf":
-        return {
-            "text": "",
-            "truncated": False,
-            "degraded": True,
-            "degraded_reason": "PDF 解析引擎缺失（pypdf 未安装）：请先转存为 docx/txt 后再解析",
-        }
+        if not _PDF_AVAILABLE:
+            return {
+                "text": "",
+                "truncated": False,
+                "degraded": True,
+                "degraded_reason": "PDF 解析引擎缺失（pypdf 未安装）：请先转存为 docx/txt 后再解析",
+            }
+        return {"degraded": False, "degraded_reason": "", **_read_pdf(path)}
     if suffix == ".docx":
         if not _DOCX_AVAILABLE:
             return {
@@ -164,15 +207,15 @@ async def _file_read(ctx: ToolContext, args: dict[str, Any]) -> dict[str, Any]:
     """office.file.read：DOCS_DIR 内文档内容提取 + 溯源（缺文件 404）。"""
     _ = ctx
     filename = str(args.get("filename") or "").strip()
-    path = resolve_under_docs(filename, _READ_SUFFIXES)
+    path = resolve_under_docs(filename, READ_SUFFIXES)
     if not path.is_file():
         raise BusinessError(
             ErrorCode.NOT_FOUND, f"文件不存在：{path.name}（请先放入文档工作目录）", 404
         )
-    if path.stat().st_size > _MAX_FILE_BYTES:
+    if path.stat().st_size > MAX_FILE_BYTES:
         raise BusinessError(ErrorCode.PARAM_INVALID, "文件过大（超 200KB），请拆分后再解析")
     try:
-        result = await asyncio.to_thread(_extract, path)
+        result = await asyncio.to_thread(extract_document, path)
     except (OSError, ValueError) as exc:
         logger.warning("文件解析失败 %s：%s", path.name, str(exc)[:120])
         raise BusinessError(ErrorCode.PARAM_INVALID, f"文件解析失败：{str(exc)[:120]}") from exc
@@ -228,7 +271,7 @@ def specs() -> tuple[ToolSpec, ...]:
         ToolSpec(
             name="office.file.read",
             scope=SCOPE_READ,
-            description="提取文档内容：DOCS_DIR 内 docx（含表格文本与图片清单）/xlsx（每表行列数与前 N 行）/csv/txt/md 直读；PDF 引擎缺失如实降级；缺文件 404",
+            description="提取文档内容：DOCS_DIR 内 docx（含表格文本与图片清单）/xlsx（每表行列数与前 N 行）/csv/txt/md 直读/PDF 逐页文本抽取；解析引擎缺失如实降级；缺文件 404",
             params={
                 "type": "object",
                 "properties": {

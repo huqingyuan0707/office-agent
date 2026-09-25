@@ -200,6 +200,22 @@ HTTP-level smoke: `python tests/smoke_mcp_im.py` (bundled fake MCP server + fake
 
 HTTP-level smoke: `python tests/smoke_v1_features.py` (17 assertions, re-runnable).
 
+## Content Generation & Document Processing (PRD §2.1; tool side)
+
+| Feature | Tools | Key guarantees |
+|---|---|---|
+| Copywriting (monthly added) | `office.report.generate` (daily/weekly/monthly) | monthly reports aggregate measured counts over the month window; numbers come only from inputs, missing sections stay blank |
+| Generic drafting | `office.memo.compose` | five template kinds (notice/email/proposal/summary/briefing); missing sections stay blank, never fabricated |
+| Text processing | `office.text.summarize` / `office.text.normalize` | extractive summaries (single doc + multi-doc via `texts`, verbatim sentences only) and whitespace-only normalisation; prose polishing needs an LLM and is explicitly deferred (see module footer) |
+| Document parsing | `office.file.read` | docx paragraphs/tables/image list, xlsx sheet dimensions + first N rows, plain csv/txt/md, and **real page-by-page PDF text extraction via pypdf** (page count returned honestly; missing engine / encrypted / corrupted files degrade or return 1001 instead of inventing text); read scope, 404 on missing file |
+| Document Q&A | `office.file.ask` | retrieves **paragraph-level** fragments from a given DOCS_DIR file and quotes source text only (so "what is X in this file" lands on the right paragraph); reuses the `retrieval.py` dual channel (vector semantic search when `EMBEDDING_*` is set — rephrased questions still hit; otherwise/by failure it falls back to character bigrams and says so in `retrieval_mode`/`retrieval_fallback_reason`); zero hits or no text layer degrade honestly. **Stated boundary**: cosine scores every text, so a garbage query still scored 0.37–0.39 in testing (the 0.35 floor is a precision/recall knob, not a clean separator) — `score` is exposed verbatim for the caller to judge |
+| Batch document ops | `office.docs.rename` | batch rename (≤20 pairs) is an approved write, refuses to overwrite, replay fails honestly (idempotent=False); image extraction is folded into `office.file.read`'s image list and multi-doc summaries reuse the `texts` mode; batch PDF conversion needs system LibreOffice and is explicitly deferred |
+| Custom templates | `office.template.save` → `office.template.apply` | save weekly-report/leave-note templates and reuse them; unfilled placeholders stay literal and are listed in `unfilled` |
+| Internal terminology | `office.terms.translate` | built-in glossary + `DOCS_DIR/terms.csv`, deterministic longest-first replacement for term consistency; zero hits returned verbatim; full-sentence multilingual translation needs an LLM and is explicitly deferred |
+| Document comparison | `office.doc.compare` | paragraph-level diff + change summary, measured facts only |
+
+HTTP-level smoke: `python tests/smoke_file_ask.py` (7 assertions: real PDF extraction / paragraph Q&A / vector semantic channel / degradation / traversal rejection; re-runnable).
+
 ## V1.1 Office Features (PRD §5.2; read scope is approval-free, writes go through approval)
 
 | Feature | Tools | Key guarantees |

@@ -1,7 +1,7 @@
 """文件解析与批量重命名单测（handler 直调，不起 HTTP 服务）。
 
-覆盖：docx 段落 + 表格文本 + 图片清单、xlsx 行列与文本、txt 直读、PDF 引擎缺失降级、
-      缺文件 404、穿越拒绝、批量重命名成功/禁覆盖/源缺失/注册口径。
+覆盖：docx 段落 + 表格文本 + 图片清单、xlsx 行列与文本、txt 直读、PDF 真实逐页抽取与
+      引擎缺失降级、缺文件 404、穿越拒绝、批量重命名成功/禁覆盖/源缺失/注册口径。
 固件隔离：monkeypatch settings.DOCS_DIR 到 tmp_path，仓库 data 目录零污染。
 对齐：AGENTS.md §5（验证命令）；智能办公Agent 产品需求文档.md §2.1（文件解析/批量处理）。
 """
@@ -45,6 +45,45 @@ def _make_docx(path: Path, with_image: Path | None = None) -> None:
     document.save(str(path))
 
 
+def _make_pdf(path: Path, text: str, pages: int = 1) -> None:
+    """手写最小 PDF（含真实计算的 xref 偏移）：N 页、每页一行文本。
+
+    结构化生成而非引第三方库（reportlab 非本项目依赖）；偏移量必须准确，否则 pypdf 解析失败。
+    """
+    page_ids = [4 + index for index in range(pages)]
+    content_ids = [4 + pages + index for index in range(pages)]
+    kids = b" ".join(f"{page_id} 0 R".encode() for page_id in page_ids)
+    objects: list[bytes] = [
+        b"<< /Type /Catalog /Pages 2 0 R >>",
+        b"<< /Type /Pages /Kids [" + kids + b"] /Count " + str(pages).encode() + b" >>",
+        b"<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica >>",
+    ]
+    for page_index in range(pages):
+        objects.append(
+            b"<< /Type /Page /Parent 2 0 R /MediaBox [0 0 300 200] /Contents "
+            + str(content_ids[page_index]).encode()
+            + b" 0 R /Resources << /Font << /F1 3 0 R >> >> >>"
+        )
+    for page_index in range(pages):
+        stream = f"BT /F1 12 Tf 20 100 Td (page {page_index + 1}: {text}) Tj ET".encode("ascii")
+        objects.append(
+            b"<< /Length " + str(len(stream)).encode() + b" >>\nstream\n" + stream + b"\nendstream"
+        )
+    out = bytearray(b"%PDF-1.4\n")
+    offsets: list[int] = []
+    for number, body in enumerate(objects, 1):
+        offsets.append(len(out))
+        out += f"{number} 0 obj\n".encode() + body + b"\nendobj\n"
+    xref_at = len(out)
+    out += f"xref\n0 {len(objects) + 1}\n".encode() + b"0000000000 65535 f \n"
+    for offset in offsets:
+        out += f"{offset:010d} 00000 n \n".encode()
+    out += (
+        f"trailer\n<< /Size {len(objects) + 1} /Root 1 0 R >>\nstartxref\n{xref_at}\n%%EOF\n"
+    ).encode()
+    path.write_bytes(bytes(out))
+
+
 # ---------------- 文件解析 ----------------
 
 
@@ -81,13 +120,38 @@ async def test_read_txt_direct(docs_dir: Path) -> None:
     assert data["source"] == "local-docs:note.txt"
 
 
-async def test_read_pdf_engine_missing_degrades(docs_dir: Path) -> None:
-    """PDF 引擎缺失如实降级（不编造半页文字）。"""
+async def test_read_pdf_extracts_pages(docs_dir: Path) -> None:
+    """PDF 走 pypdf 真实抽取：文本与页数如实返回（不引入 reportlab，手写最小 PDF）。"""
+    _make_pdf(docs_dir / "plan.pdf", "Office Agent PDF Check", pages=2)
+    data = await file_read._file_read(CTX, {"filename": "plan.pdf"})
+    assert data["format"] == "pdf"
+    assert data["degraded"] is False
+    assert data["pages"] == 2
+    assert "Office Agent PDF Check" in data["text"]
+    assert "第 1 页" in data["text"]
+
+
+async def test_read_pdf_engine_missing_degrades(
+    docs_dir: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """引擎缺失如实降级（不编造半页文字）——按「pypdf 未安装」模拟。"""
+    monkeypatch.setattr(file_read, "_PDF_AVAILABLE", False)
     (docs_dir / "scan.pdf").write_bytes(b"%PDF-1.4 fake")
     data = await file_read._file_read(CTX, {"filename": "scan.pdf"})
     assert data["degraded"] is True
     assert "pypdf" in data["degraded_reason"]
     assert data["text"] == ""
+
+
+async def test_read_pdf_broken_file_rejects(docs_dir: Path) -> None:
+    """损坏 PDF → 1001 可操作提示（不 500、不假装读出内容）。"""
+    (docs_dir / "broken.pdf").write_bytes(b"not a pdf at all")
+    try:
+        await file_read._file_read(CTX, {"filename": "broken.pdf"})
+    except BusinessError as exc:
+        assert exc.code == 1001
+    else:
+        raise AssertionError("损坏 PDF 应被 1001 拒绝")
 
 
 async def test_read_missing_file_404(docs_dir: Path) -> None:
