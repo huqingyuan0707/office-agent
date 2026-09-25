@@ -144,6 +144,9 @@ const quickSend = (goal: string) => {
   void send(goal)
 }
 
+// 空态引导示例：与终答标签同口径，点击即发起
+const emptyExamples = ['生成今天的工作日报', '记一下明天要跟进的事']
+
 // ---------- 文档卡：末步结果里 markdown 产物按固定格式渲染（PRD §2.1 一键导出 Word） ----------
 interface RunDoc {
   title: string
@@ -327,11 +330,24 @@ onUnmounted(() => {
       </template>
 
       <el-scrollbar ref="listRef" class="msg-list">
-        <el-empty
-          v-if="!messages.length"
-          :image-size="86"
-          description="还没有对话。试试：「生成今天的工作日报」「记一下明天要跟进的事」"
-        />
+        <!-- 空态引导：示例短语渲染为可点击标签，点一下即发起（与终答标签同机制） -->
+        <el-empty v-if="!messages.length" :image-size="86">
+          <template #description>
+            <span class="empty-hint">还没有对话。试试：</span>
+            <el-tag
+              v-for="ex in emptyExamples"
+              :key="ex"
+              class="example-tag"
+              size="small"
+              type="primary"
+              effect="light"
+              round
+              @click="quickSend(ex)"
+            >
+              {{ ex }}
+            </el-tag>
+          </template>
+        </el-empty>
 
         <template v-for="m in messages" :key="m.key">
           <!-- 用户气泡：右对齐，品牌色实底 -->
@@ -654,6 +670,9 @@ onUnmounted(() => {
   background: var(--brand-soft);
   border-color: var(--brand);
   color: var(--brand);
+}
+.empty-hint {
+  vertical-align: middle;
 }
 .alert-link {
   color: var(--warn);
