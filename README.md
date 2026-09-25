@@ -273,7 +273,7 @@ HTTP 级冒烟：`python tests/smoke_v1_2_batch_c.py`（7 项断言，自带起�
 | 事务汇总 | `office.worklog.generate` | 个人工作台账：日/周窗口内已完成/待完成/日程三段聚合直出，实测计数留白不编造，带 source+fetched_at 溯源 |
 | 智能主动推送 | `/notifications/scan` 扩展四类信号 | 待办到期提醒（临近/逾期两口径）、会议临近通知（创建人+参会人逐人）、项目节点预警（N 天内）、周五主动提示周报草稿；今日简报并入「今日到期/逾期待办数 + 今日会议数」；业务时区 `BUSINESS_TIMEZONE` 可配（缺 tzdata 降级 UTC 只告警）；事务存储损坏只降级 `affairs_degraded` 绝不 500 |
 | 示例智能体 | `plugins/personal-affairs-assistant` | 查待办/台账/空闲只读直达；建待办/建日程走对话恒送审挂起→批准续跑；daily-report-assistant 关键词同步收窄避免子串抢路由 |
-| 跨域串联 | `plugins/office-assistant` | 一句话（不指定智能体）自动路由到这里，一条 run 内串起三域：`office.data.query` 查数 → `office.report.generate` 出报告（指标值用 `{steps[0].result.count}` 从上一步**真实出参**注入，数值一致率 100%）→ `kb.ask` 引制度条文；三步同一 `trace_id`，全链溯源 |
+| 跨域串联 | `plugins/office-assistant` | 一句话（不指定智能体）自动路由到这里，一条 run 内串起三域。主路径 `llm: default`（本地 qwen3:8b）现场编排多步并自行组织 `kb.ask` 检索问句；LLM 不可用自动落回 `rules` 兜底链——`office.data.query` 查数 → `office.report.generate` 出报告（指标值用 `{steps[0].result.count}` 从上一步**真实出参**注入，数值一致率 100%）→ `kb.ask` 引制度条文，全链溯源。注意：LLM 一次性提议全部步骤、拿不到上一步输出，统计类入参可能编数，跨步取数以规则链更可靠 |
 
 HTTP 级冒烟：`python tests/smoke_personal_affairs.py`（8 项断言，可重复执行）。
 

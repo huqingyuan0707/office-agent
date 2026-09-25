@@ -8,12 +8,12 @@
 # 不硬编码（故报告数值一致率 100%，是跨步取数的实证而非演示数字）。
 #
 # 两条如实说明：
-# 1. 每条链末步 kb.ask 的问句是固化的制度问题——规则规划从目标里抽不出关键词，
-#    这是「预置脚本」的边界；配好 LLM_PROVIDERS 后改 llm: default 即由模型现场
-#    编排并自行组织检索问句（降级链：LLM 不可用自动落回本文件 rules，不阻断）。
-# 2. 本文件 llm 留空：走规则规划以保证跨域链的数值一致率（0.5B 时代结论见 AGENTS §6）。
-#    项目本地模型已切到 qwen3:8b（.env 的 LLM_PROVIDERS），要让模型现场编排检索问句，
-#    把本文件 llm 改成 default 即可（降级链不变：LLM 不可用自动落回 rules）。
+# 1. 每条链末步 kb.ask 的问句是固化的制度问题——这是**规则兜底链**的边界；
+#    本文件 llm: default 后由 qwen3:8b 现场编排多步并自行组织检索问句，
+#    LLM 不可用/未返回 tool_calls 时自动落回本文件 rules（降级链不阻断）。
+# 2. llm 字段口径（2026-09-25 更新）：本地模型已切 qwen3:8b（.env LLM_PROVIDERS），
+#    实测规划能返回合法 tool_calls 且含糊目标会回头追问不硬编造，故升为 LLM 主路径；
+#    rules 保留作降级兜底（0.5b 时代结论见 AGENTS §6）。
 name: office-assistant
 description: 跨域办公助手：一句话串起数据查询、文档生成与制度问答（多步编排，数字全部来自上一步真实结果）
 system_prompt: |
@@ -25,7 +25,7 @@ tools:
   - office.report.generate
   - kb.ask
 max_steps: 8
-llm: ""
+llm: default
 rules:
   # 规则一：经营数据复盘 → 查业绩台账 → 出周报（记录数取自步骤 0 真实出参）→ 引披露口径
   - match: ["经营复盘", "经营分析", "数据分析", "数据报告"]
