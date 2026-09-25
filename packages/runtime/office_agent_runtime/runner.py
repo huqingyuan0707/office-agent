@@ -40,7 +40,8 @@ from typing import Any
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from office_agent_core.contracts import AgentState
-from office_agent_runtime.checkpoint import dumps
+from office_agent_runtime.checkpoint import dumps, summarize_run
+from office_agent_runtime.router import GREETING_GUIDE
 from office_agent_runtime.runloop import RunLoop
 from office_agent_runtime.spec import AgentSpec
 from office_agent_server.models import Task
@@ -76,6 +77,53 @@ async def start_run(
     db.add(task)
     await db.flush()  # 先落行拿 id（后续 RunStep.run_id / 异步轮询都要用）
     return await execute_run(db, task=task, spec=spec, goal=goal, user=user, trace_id=trace_id)
+
+
+async def instant_greeting_run(
+    db: AsyncSession,
+    *,
+    goal: str,
+    user: CurrentUser,
+) -> dict[str, Any]:
+    """纯寒暄即时回复：零工具调用，直接建 DONE 的 Task 行（answer=使用引导终答）。
+
+    链路：POST /runs 省略 agent 且目标纯寒暄 → 本函数 → code 0 即时返回 →
+    对话页走正常 run 路径渲染终答、轮询一次即停（与 1001 错误分支无关，气泡必有内容）。
+    只在自动路由前拦截：显式指定 agent 的直达调用不受影响（由所选智能体如实规划）。
+    """
+    answer = f"你好！我是智能办公助手。{GREETING_GUIDE}"
+    payload = {
+        "agent": "",
+        "goal": goal,
+        "status": AgentState.DONE.value,
+        "steps_done": 0,
+        "error": "",
+        "answer": answer,
+        "validation": None,
+    }
+    checkpoint = {
+        "agent": "",
+        "goal": goal,
+        "next_step": 0,
+        "steps": [],
+        "error": "",
+        "answer": answer,
+    }
+    task = Task(
+        tenant=user.tenant,
+        username=user.username,
+        type=RUN_TASK_TYPE,
+        status=AgentState.DONE.value,
+        progress=1.0,
+        input=dumps({"agent": "", "goal": goal}),
+        output=dumps(payload),
+        checkpoint=dumps(checkpoint),
+    )
+    db.add(task)
+    await db.flush()  # 落行拿 id（概要与后续 GET /runs/{id} 都要用）
+    summary = summarize_run(task, checkpoint)
+    summary["answer"] = answer
+    return summary
 
 
 async def execute_run(

@@ -155,8 +155,12 @@ def test_create_run_auto_route_no_match_1001(client, monkeypatch):
     assert "rule-bot" in body["msg"]
 
 
-def test_create_run_auto_greeting_1001(client, monkeypatch):
-    """POST /runs 不带 agent 且目标纯寒暄：即使有 LLM 兜底者也不接，信封 1001 秒回。"""
+def test_create_run_auto_greeting_instant_done(client, monkeypatch):
+    """POST /runs 不带 agent 且目标纯寒暄：200 即时 DONE run，answer 含使用引导。
+
+    行为：零工具调用、零 LLM 出站（即使有 LLM 兜底者也不接），对话页走正常 run
+    路径渲染终答；详情可查（DONE + 空步骤 + 同一 answer）。
+    """
     _patch_specs(monkeypatch, [_rule_bot(), _llm_bot()])
     _set_llm_profile(monkeypatch)
     token = _login(client)
@@ -165,7 +169,41 @@ def test_create_run_auto_greeting_1001(client, monkeypatch):
         json={"goal": "你好"},
         headers=_auth(token),
     )
-    assert resp.status_code == 400
+    assert resp.status_code == 200
     body = resp.json()
-    assert body["code"] == 1001
-    assert "一句话" in body["msg"]
+    assert body["code"] == 0
+    data = body["data"]
+    assert data["status"] == "DONE"
+    assert "一句话" in str(data.get("answer") or "")
+    run_id = str(data["run_id"])
+
+    detail = client.get(f"/api/v1/runs/{run_id}", headers=_auth(token)).json()
+    assert detail["code"] == 0
+    assert detail["data"]["status"] == "DONE"
+    assert detail["data"]["steps"] == []
+    assert "一句话" in str(detail["data"].get("answer") or "")
+
+
+def test_create_run_explicit_agent_greeting_not_intercepted(client, monkeypatch):
+    """显式指定智能体 + 寒暄目标：不拦截，照常跑所选智能体（规则不中则 FAILED 留痕）。
+
+    注意受理层显式路径走 ``loader.find_agent_spec``（真插件目录），与自动路由的
+    ``router.load_agent_specs`` 打包补丁不是同一绑定，这里一并把前者指到假清单。
+    """
+    from office_agent_runtime import loader as loader_mod
+
+    specs = [_rule_bot(), _llm_bot()]
+    _patch_specs(monkeypatch, specs)
+    by_name = {spec.name: spec for spec in specs}
+    monkeypatch.setattr(loader_mod, "find_agent_spec", lambda name: by_name[name])
+    token = _login(client)
+    resp = client.post(
+        "/api/v1/runs",
+        json={"agent": "rule-bot", "goal": "你好"},
+        headers=_auth(token),
+    )
+    assert resp.status_code == 200
+    body = resp.json()
+    assert body["code"] == 0
+    assert body["data"]["agent"] == "rule-bot"
+    assert body["data"]["status"] == "FAILED"

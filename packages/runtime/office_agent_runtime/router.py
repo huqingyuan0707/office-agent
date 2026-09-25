@@ -57,6 +57,12 @@ _GREETING_TRIM = " \t\r\n，。、；;：:！!？?～~·.…—-「」『』\"'(
 #: 问候语气尾字（「你好呀」→ 剥「你好」后再剥一字「呀」，余空即纯寒暄）。
 _GREETING_TRAILERS = ("呀", "啊", "呢", "吧", "哦", "哟", "呐")
 
+#: 纯寒暄引导文案唯一出处（路由 1001 与即时 DONE run 的终答共用，改说法只改这里）。
+GREETING_GUIDE = (
+    "请用一句话说明要办的事，例如：「生成今天的工作日报」「查一下今天日程」"
+    "「记一下明天要跟进的事」「做一次经营数据分析」。"
+)
+
 
 def _strip_leading_greetings(text: str) -> str:
     """剥除开头的问候词（含标点与一字语气尾）：返回剩余业务文本（余空即纯寒暄）。"""
@@ -77,8 +83,12 @@ def _strip_leading_greetings(text: str) -> str:
                 break
 
 
-def _is_greeting_only(goal: str) -> bool:
-    """整句是否纯寒暄：问候词剥除后无剩余（「你好，帮我出日报」余下业务词，不算）。"""
+def is_greeting_only(goal: str) -> bool:
+    """整句是否纯寒暄：问候词剥除后无剩余（「你好，帮我出日报」余下业务词，不算）。
+
+    公开供受理层复用：POST /runs 省略 agent 时纯寒暄直接走即时 DONE run（200 秒回），
+    不经本模块的 1001——对话页走正常 run 路径渲染终答，不依赖前端错误分支。
+    """
     text = goal.strip().lower()
     if not text:
         return False
@@ -95,12 +105,10 @@ def route_agent_spec(goal: str) -> AgentSpec:
     """
     specs = load_agent_specs()
     known = "；".join(f"{spec.name}（{spec.description}）" for spec in specs) or "暂无已装载智能体"
-    if _is_greeting_only(goal):
+    if is_greeting_only(goal):
         raise BusinessError(
             ErrorCode.PARAM_INVALID,
-            "你好！我是智能办公助手，请用一句话说明要办的事，例如："
-            "「生成今天的工作日报」「查一下今天日程」「记一下明天要跟进的事」"
-            f"「做一次经营数据分析」。已装载智能体：{known}，换个说法即可办理",
+            f"你好！我是智能办公助手，{GREETING_GUIDE}已装载智能体：{known}，换个说法即可办理",
         )
     for spec in specs:
         if spec.rules and RulePlanner(spec).plan(goal):

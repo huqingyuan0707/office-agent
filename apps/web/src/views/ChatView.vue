@@ -49,7 +49,9 @@ const pushMsg = (msg: Omit<ChatMsg, 'key'>) => {
   const full = { ...msg, key: ++seq } as ChatMsg
   messages.value.push(full)
   scrollBottom()
-  return full
+  // 返回数组里的响应式代理：push 存的是代理，直接改 raw 对象会绕过依赖收集，
+  // 后续 msg.run / msg.error 赋值必须经代理才可靠触发重渲染（错误气泡不再卡在“挑选”态）
+  return messages.value[messages.value.length - 1] as ChatMsg
 }
 
 const stopPoll = (timer: ReturnType<typeof setInterval>) => {

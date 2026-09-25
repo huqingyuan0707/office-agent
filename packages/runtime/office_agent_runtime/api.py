@@ -33,8 +33,13 @@ from office_agent_core.contracts import AgentState, state_label
 from office_agent_core.errors import BusinessError, ErrorCode
 from office_agent_runtime import approvals, loader
 from office_agent_runtime.models import RunStep
-from office_agent_runtime.router import route_agent_spec
-from office_agent_runtime.runner import RUN_TASK_TYPE, execute_run, start_run
+from office_agent_runtime.router import is_greeting_only, route_agent_spec
+from office_agent_runtime.runner import (
+    RUN_TASK_TYPE,
+    execute_run,
+    instant_greeting_run,
+    start_run,
+)
 from office_agent_server.db import get_db
 from office_agent_server.middleware import current_trace_id
 from office_agent_server.models import Task
@@ -149,14 +154,20 @@ async def create_run(
 ) -> dict[str, Any]:
     """发起运行：受理即跑，code 0 返回 run 概要（执行失败在时间线里，前端轮询）。
 
-    agent 省略时按目标自动路由（规则命中优先 → LLM 智能体兜底，全不中 1001 中文报错）。
+    agent 省略时按目标自动路由（纯寒暄即时 DONE 回复 → 规则命中优先 →
+    LLM 智能体兜底，全不中 1001 中文报错）。
     """
     wanted = payload.agent.strip()
-    spec = loader.find_agent_spec(wanted) if wanted else route_agent_spec(payload.goal.strip())
+    goal = payload.goal.strip()
+    if not wanted and is_greeting_only(goal):
+        summary = await instant_greeting_run(db, goal=goal, user=user)
+        await db.commit()
+        return ok(summary, "已回复")
+    spec = loader.find_agent_spec(wanted) if wanted else route_agent_spec(goal)
     summary = await start_run(
         db,
         spec=spec,
-        goal=payload.goal.strip(),
+        goal=goal,
         user=user,
         trace_id=current_trace_id(),
     )
