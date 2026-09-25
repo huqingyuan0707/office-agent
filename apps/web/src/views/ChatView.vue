@@ -1,15 +1,17 @@
 <script setup lang="ts">
 // 职责：对话主入口页（Element Plus 版）—— 员工一句话直达（PRD §4.3 纯自然语言零门槛）：
 //       输入目标 → POST /runs 省略 agent 自动路由（后端挑智能体）→ 2s 轮询 run 详情 →
-//       气泡内呈现：路由到的智能体、步骤时间线、终答/末步结果、审批挂起提示（链去审批页）。
+//       气泡内呈现：路由到的智能体、步骤时间线、终答/末步结果、审批挂起提示（链去审批页）；
+//       末步结果是 markdown 文档产物（日报/纪要等）时渲染为固定格式文档卡（不摊参数），
+//       「下载 Word」经 office.docx.render 真接口取 base64 还原 Blob 客户端落盘。
 // 链路：router /chat → api.createRunAuto / api.getRun（真实接口零 mock：路由不中/调用失败
 //       均以服务端中文 msg 如实进气泡，失败置空不编造）；onUnmounted 清全部轮询定时器。
 // 对齐：AGENTS.md §4 前端红线（401 中央处理、箭头函数、var(--*) token + scoped）；
 //       .trae/documents/智能体编排层实现方案.md §4（POST /runs agent 可选即自动路由）。
 import { inject, nextTick, onUnmounted, ref } from 'vue'
 import { RouterLink } from 'vue-router'
-import { Promotion, Service } from '@element-plus/icons-vue'
-import { createRunAuto, getRun } from '../api'
+import { Download, Promotion, Service } from '@element-plus/icons-vue'
+import { createRunAuto, getRun, invokeTool } from '../api'
 import type { RunItem } from '../api'
 import StatusBadge from '../components/StatusBadge.vue'
 
@@ -142,6 +144,157 @@ const quickSend = (goal: string) => {
   void send(goal)
 }
 
+// ---------- 文档卡：末步结果里 markdown 产物按固定格式渲染（PRD §2.1 一键导出 Word） ----------
+interface RunDoc {
+  title: string
+  markdown: string
+}
+
+// 文档字段口径：办公工具 markdown 产物的常见键（命中即整块按文档渲染，其余参数不摊开）
+const DOC_FIELDS = ['report', 'worklog', 'minutes', 'agenda', 'content', 'summary', 'markdown']
+
+const runDoc = (run: RunItem): RunDoc | null => {
+  const steps = run.steps ?? []
+  for (let i = steps.length - 1; i >= 0; i -= 1) {
+    const result = steps[i].result
+    if (!result || typeof result !== 'object') continue
+    const bag = result as Record<string, unknown>
+    for (const key of DOC_FIELDS) {
+      const value = bag[key]
+      if (typeof value !== 'string' || value.length < 40 || !value.includes('\n')) continue
+      const title =
+        (typeof bag.title === 'string' && bag.title.trim()) ||
+        (/^#\s+(.+)$/m.exec(value)?.[1] ?? '').trim() ||
+        run.goal
+      // 首行「# 标题」与文档标题重复时剥掉（卡片头已展示标题，正文不重复）
+      const lines = value.split('\n')
+      const markdown =
+        lines[0]?.trim() === `# ${title}` ? lines.slice(1).join('\n').replace(/^\n+/, '') : value
+      return { title, markdown }
+    }
+  }
+  return null
+}
+
+const escapeHtml = (s: string) =>
+  s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
+
+// 行内只认 **加粗**，其余先转义再替换（自家渲染器零依赖零 XSS 面）
+const mdInline = (s: string) => escapeHtml(s).replace(/\*\*([^*]+)\*\*/g, '<strong>$1</strong>')
+
+// markdown 子集渲染：# 标题 / - 与 1. 列表 / | 表格 | / > 引用 / --- 分隔线 / **加粗**
+const renderMarkdown = (md: string): string => {
+  const out: string[] = []
+  let list: 'ul' | 'ol' | null = null
+  let table: string[][] = []
+  const closeList = () => {
+    if (list) {
+      out.push(`</${list}>`)
+      list = null
+    }
+  }
+  const flushTable = () => {
+    const rows = table.filter((r) => !r.every((c) => /^:?-{2,}:?$/.test(c)))
+    if (rows.length) {
+      const head = rows[0] ?? []
+      const body = rows.slice(1)
+      out.push(
+        `<table><thead><tr>${head.map((c) => `<th>${mdInline(c)}</th>`).join('')}</tr></thead>`,
+        body.length
+          ? `<tbody>${body.map((r) => `<tr>${r.map((c) => `<td>${mdInline(c)}</td>`).join('')}</tr>`).join('')}</tbody>`
+          : '',
+        '</table>',
+      )
+    }
+    table = []
+  }
+  for (const raw of md.split(/\r?\n/)) {
+    const line = raw.trim()
+    if (line.startsWith('|')) {
+      closeList()
+      table.push(line.replace(/^\||\|$/g, '').split('|').map((c) => c.trim()))
+      continue
+    }
+    flushTable()
+    if (!line) {
+      closeList()
+      continue
+    }
+    const h = /^(#{1,4})\s+(.*)$/.exec(line)
+    if (h) {
+      closeList()
+      const lv = Math.min(h[1].length + 1, 6)
+      out.push(`<h${lv}>${mdInline(h[2])}</h${lv}>`)
+      continue
+    }
+    if (/^(-{3,}|\*{3,})$/.test(line)) {
+      closeList()
+      out.push('<hr/>')
+      continue
+    }
+    const bullet = /^[-*•]\s+(.*)$/.exec(line)
+    if (bullet) {
+      if (list !== 'ul') {
+        closeList()
+        out.push('<ul>')
+        list = 'ul'
+      }
+      out.push(`<li>${mdInline(bullet[1])}</li>`)
+      continue
+    }
+    const ordered = /^\d+[.、)]\s*(.*)$/.exec(line)
+    if (ordered) {
+      if (list !== 'ol') {
+        closeList()
+        out.push('<ol>')
+        list = 'ol'
+      }
+      out.push(`<li>${mdInline(ordered[1])}</li>`)
+      continue
+    }
+    const quote = /^>\s?(.*)$/.exec(line)
+    if (quote) {
+      closeList()
+      out.push(`<blockquote>${mdInline(quote[1])}</blockquote>`)
+      continue
+    }
+    closeList()
+    out.push(`<p>${mdInline(line)}</p>`)
+  }
+  closeList()
+  flushTable()
+  return out.join('')
+}
+
+// 下载 Word：office.docx.render 真接口（读免审）→ base64 还原 Blob 客户端落盘，零 mock
+const downloadingKey = ref(0)
+
+const downloadDocx = async (msg: ChatMsg) => {
+  const doc = msg.run ? runDoc(msg.run) : null
+  if (!doc || downloadingKey.value) return
+  downloadingKey.value = msg.key
+  try {
+    const res = await invokeTool('office.docx.render', { title: doc.title, markdown: doc.markdown })
+    const payload = res.result as { content?: string; filename?: string } | undefined
+    if (!payload?.content) throw new Error('服务端未返回 Word 内容，请稍后重试')
+    const bytes = Uint8Array.from(atob(payload.content), (c) => c.charCodeAt(0))
+    const url = URL.createObjectURL(
+      new Blob([bytes], {
+        type: 'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+      }),
+    )
+    const a = document.createElement('a')
+    a.href = url
+    a.download = payload.filename || `${doc.title}.docx`
+    a.click()
+    URL.revokeObjectURL(url)
+  } catch (e) {
+    shell.showError((e as Error).message || '下载 Word 失败')
+  } finally {
+    downloadingKey.value = 0
+  }
+}
+
 // 末步结果：规则智能体常无 LLM 终答，末步真实出参即「办的结果」（如实渲染，无则不显）
 const lastResultText = (run: RunItem) => {
   const steps = run.steps ?? []
@@ -235,6 +388,23 @@ onUnmounted(() => {
                     @click="quickSend(seg.text)"
                   >{{ seg.text }}</el-tag><span v-else>{{ seg.text }}</span></template
                 ></pre>
+                <!-- 末步结果是 markdown 文档产物：固定格式文档卡渲染（不摊参数）+ 下载 Word -->
+                <div v-else-if="runDoc(m.run)" class="doc-card">
+                  <div class="doc-head">
+                    <span class="doc-title">{{ runDoc(m.run)!.title }}</span>
+                    <el-button
+                      size="small"
+                      type="primary"
+                      :icon="Download"
+                      :loading="downloadingKey === m.key"
+                      @click="downloadDocx(m)"
+                    >
+                      下载 Word
+                    </el-button>
+                  </div>
+                  <!-- 自家子集渲染器先转义后替换，无第三方 HTML 注入面 -->
+                  <div class="doc-body" v-html="renderMarkdown(runDoc(m.run)!.markdown)"></div>
+                </div>
                 <pre v-else-if="lastResultText(m.run)" class="answer">{{
                   lastResultText(m.run)
                 }}</pre>
@@ -388,6 +558,89 @@ onUnmounted(() => {
   overflow: auto;
   white-space: pre-wrap;
   word-break: break-all;
+}
+.doc-card {
+  margin: 10px 0 0;
+  border: 1px solid var(--line);
+  border-radius: var(--radius-sm);
+  overflow: hidden;
+  white-space: normal;
+}
+.doc-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  padding: 8px 14px;
+  background: var(--brand-soft);
+  border-bottom: 1px solid var(--line);
+}
+.doc-title {
+  font-weight: 700;
+  font-size: 14px;
+  color: var(--brand);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.doc-body {
+  padding: 12px 16px;
+  background: #fff;
+  font-size: 13px;
+  line-height: 1.75;
+  max-height: 340px;
+  overflow: auto;
+  word-break: break-word;
+}
+.doc-body :deep(h2),
+.doc-body :deep(h3),
+.doc-body :deep(h4) {
+  margin: 12px 0 6px;
+  font-size: 14px;
+  color: var(--fg);
+}
+.doc-body :deep(h2) {
+  font-size: 15px;
+  padding-bottom: 4px;
+  border-bottom: 1px solid var(--line);
+}
+.doc-body :deep(p) {
+  margin: 6px 0;
+}
+.doc-body :deep(ul),
+.doc-body :deep(ol) {
+  margin: 6px 0;
+  padding-left: 22px;
+}
+.doc-body :deep(li) {
+  margin: 2px 0;
+}
+.doc-body :deep(table) {
+  margin: 8px 0;
+  border-collapse: collapse;
+  width: 100%;
+  font-size: 12px;
+}
+.doc-body :deep(th),
+.doc-body :deep(td) {
+  border: 1px solid var(--line);
+  padding: 5px 8px;
+  text-align: left;
+}
+.doc-body :deep(th) {
+  background: var(--brand-soft);
+}
+.doc-body :deep(blockquote) {
+  margin: 8px 0;
+  padding: 4px 10px;
+  border-left: 3px solid var(--brand);
+  background: var(--brand-soft);
+  color: var(--muted);
+}
+.doc-body :deep(hr) {
+  margin: 10px 0;
+  border: none;
+  border-top: 1px dashed var(--line);
 }
 .pending-box {
   margin-top: 10px;

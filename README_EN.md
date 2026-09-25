@@ -213,6 +213,7 @@ HTTP-level smoke: `python tests/smoke_v1_features.py` (17 assertions, re-runnabl
 | Custom templates | `office.template.save` → `office.template.apply` | save weekly-report/leave-note templates and reuse them; unfilled placeholders stay literal and are listed in `unfilled` |
 | Internal terminology | `office.terms.translate` | built-in glossary + `DOCS_DIR/terms.csv`, deterministic longest-first replacement for term consistency; zero hits returned verbatim; full-sentence multilingual translation needs an LLM and is explicitly deferred |
 | Document comparison | `office.doc.compare` | paragraph-level diff + change summary, measured facts only |
+| Word export | `office.docx.render` | title + markdown subset (headings/lists/tables/bold) rendered straight to a .docx returned as base64 **without touching disk** (same envelope as `data.export` excel, read scope, no approval); when the chat run's last-step result is a document artifact (daily report/minutes), the bubble renders a fixed-format document card (raw params hidden) and "Download Word" restores the Blob client-side; format conversion only, text never rewritten; unregistered when python-docx is absent |
 
 HTTP-level smoke: `python tests/smoke_file_ask.py` (7 assertions: real PDF extraction / paragraph Q&A / vector semantic channel / degradation / traversal rejection; re-runnable).
 

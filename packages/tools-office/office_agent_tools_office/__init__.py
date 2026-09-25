@@ -34,6 +34,9 @@
 文档/本人待办日程/审批单据/数据台账五源并合并排序，远端聊天/OA 经联动接入后按
 origin 追加；image.ask 图片 OCR 取文本后段落检索问答，引擎缺失如实降级；见 kb.py /
 kb_unified.py / image_ask.py，全读免审）。
+㉙ office.docx.render：Word 直出（PRD §2.1——标题 + markdown 子集渲染 .docx 二进制
+base64 直出**不写盘**（与 data.export excel 同口径），供对话页「下载 Word」；
+只做格式转换不改写文字；python-docx 缺失不注册；见 docx_render.py，读免审）。
 
 链路：server lifespan → 本包 register_all() → 各模块 specs() → registry 注册 ToolSpec；
 executor 按 spec 执行。
@@ -58,6 +61,7 @@ from . import (
     data_saved,
     desk,
     doc_compare,
+    docx_render,
     file_ask,
     file_read,
     finance,
@@ -95,6 +99,7 @@ __all__ = [
     "data_saved",
     "desk",
     "doc_compare",
+    "docx_render",
     "file_ask",
     "file_read",
     "finance",
@@ -125,6 +130,7 @@ _MODULES = (
     kb,
     ocr,
     doc_compare,
+    docx_render,
     task_planner,
     templates,
     data_analysis,

@@ -222,6 +222,7 @@ HTTP 级冒烟：`python tests/smoke_v1_features.py`（17 项断言，可重复�
 | 自定义模板 | `office.template.save` → `office.template.apply` | 保存周报/请假说明等模板，应用时缺值占位符保持原样并在 `unfilled` 列出 |
 | 内部术语库 | `office.terms.translate` | 内置术语表 + `DOCS_DIR/terms.csv` 叠加，按源词长度降序确定性替换（专业名词统一），零命中原样返回；整句多语种机翻需大模型，明确后置 |
 | 文档对比 | `office.doc.compare` | 段落级 diff + 变更摘要，只报实测差异 |
+| Word 导出 | `office.docx.render` | 标题 + markdown 子集（标题/列表/表格/加粗）直出 .docx 二进制 base64 **不写盘**（与 `data.export` excel 同口径，读免审）；对话页末步结果是日报/纪要等文档产物时渲染为固定格式文档卡（不摊参数），「下载 Word」经本工具还原 Blob 客户端落盘；只做格式转换不改写文字；python-docx 缺失不注册 |
 
 HTTP 级冒烟：`python tests/smoke_file_ask.py`（7 项断言：PDF 真实抽取 / 段落问答 / 向量语义通道 / 降级 / 穿越拒绝，可重复执行）。
 
