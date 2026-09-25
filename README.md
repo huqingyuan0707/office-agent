@@ -243,6 +243,12 @@ HTTP 级冒烟：`python tests/smoke_meeting_flow.py`（5 项断言，可重复�
 
 HTTP 级冒烟：`python tests/smoke_hr_im.py`（§2.7 群摘要 + §2.8 人事行政 9 项断言，可重复执行：摘要→考勤→清单→查询→预订→冲突驳回）。
 
+| 项目台账与任务拆解（PRD §2.9/§6） | `office.project.query` + `office.task.decompose` / `commit` | 台账含里程碑/风险/责任人/进度（内置 + CSV 叠加，按名/责任人/状态/有无风险过滤，附中文简报）；拆解按生命周期出交付物/责任人/工期/优先级/依赖，缺人缺期留空追问不臆造，commit 写恒送审即二次确认；`/projects` 页台账 + 拆解两步式接线（页内可改责任人） |
+| 财务简易辅助（PRD §2.10） | `office.finance.reimburse` / `expense`（+ 既有 `office.budget.query`） | 个人报销进度与在途金额（审批中+已通过未打款）；部门费用总额/笔数/按类目 + 项目命中预算台账联带剩余额度；金额只取原值，转不出整行跳过计数；`/finance` 页三块全接线 |
+| 行政后勤通用工具（PRD §2.11） | `office.desk.ticket` / `tickets` | IT 报修/资产申领/工单三类白名单，ticket 写恒送审落本地台账，tickets 读免审；外部系统同步由 linkage 承担；`/desk` 页新建（清单 + 落单给审批 id）；场景串联与可视化编排见工作流（`/workflows`），细粒度权限=工具 scope + 智能体白名单既有机制，定时任务待 scheduler 基建如实后置 |
+
+HTTP 级冒烟：`python tests/smoke_project_ops.py`（§2.9 台账/拆解 + §2.10 财务 + §2.11 通用工具 9 项断言，可重复执行）。
+
 ## V1.2 办公功能·批次 A（PRD §5.3，工具侧三件）
 
 | 功能 | 工具 | 口径要点 |
@@ -288,6 +294,17 @@ HTTP 级冒烟：`python tests/smoke_v1_2_batch_c.py`（7 项断言，自带起�
 | 跨域串联 | `plugins/office-assistant` | 一句话（不指定智能体）自动路由到这里，一条 run 内串起三域。主路径 `llm: default`（本地 qwen3:8b）现场编排多步并自行组织 `kb.ask` 检索问句；LLM 不可用自动落回 `rules` 兜底链——`office.data.query` 查数 → `office.report.generate` 出报告（指标值用 `{steps[0].result.count}` 从上一步**真实出参**注入，数值一致率 100%）→ `kb.ask` 引制度条文，全链溯源。注意：LLM 一次性提议全部步骤、拿不到上一步输出，统计类入参可能编数，跨步取数以规则链更可靠 |
 
 HTTP 级冒烟：`python tests/smoke_personal_affairs.py`（8 项断言，可重复执行）。
+
+## 企业知识库增强检索（PRD §2.6：制度答疑 / 资料检索 / 权限适配 / 跨源联查 / 图片问答）
+
+| 能力 | 工具 | 口径要点 |
+|---|---|---|
+| 制度答疑 | `kb.ask`（KB_DIR `*.md/*.txt` + 内置演示条目 8 条：考勤/报销/请假/差旅/人事/行政/合规 + 薪酬保密） | 双通道检索不变；新增条目级 `visibility`（`public` 或角色名，KB_DIR 首行 `visibility: hr` 声明受限，` * `/`admin` 可见全部，被滤只计 `permission_filtered` 不外泄标题正文）；命中条目回显 `visibility` |
+| 跨源联合检索 | `office.kb.search_unified` | 一次问句联查知识/网盘文档（DOCS_DIR，`restricted-` 前缀受限）/本人待办日程（身份过滤）/审批单据台账（本人或管理员）/项目数据台账五源，各源双通道检索后按分数合并，全程只摘录原文；聊天记录/OA 远端需经联动白名单接入，本地无源不造假 |
+| 图片/截图问答 | `office.image.ask` | 先 OCR 取真实文本（复用 `ocr.image` 同一引擎探针）再按段落检索摘录作答；引擎缺失/识别为空/零命中如实 `degraded`，图片元数据来自 Pillow 实测 |
+| 示例智能体 | `plugins/office-assistant` | 白名单追加 `office.kb.search_unified` 与 `office.image.ask`，跨域链可直达联查与图片问答 |
+
+HTTP 级冒烟：`python tests/smoke_kb_26.py`（8 项断言，可重复执行；向量通道下报销问句实测命中 0.6452）。
 
 ## 数据库迁移
 

@@ -234,6 +234,12 @@ HTTP-level smoke: `python tests/smoke_meeting_flow.py` (5 assertions, repeatable
 
 HTTP-level smoke: `python tests/smoke_hr_im.py` (§2.7 digest + §2.8 HR, 9 assertions, re-runnable: digest → attendance → checklist → query → book → clash-reject).
 
+| Project ledger & task breakdown (PRD §2.9/§6) | `office.project.query` + `office.task.decompose` / `commit` | ledger carries milestones/risks/owners/progress (builtin + CSV overlay; filter by name/owner/status/risk-presence, with a Chinese brief); breakdown follows the project lifecycle with deliverables/owners/durations/priorities/dependencies, blanks plus ask-back prompts instead of invented people or dates, and commit is an approved write that doubles as re-confirmation; the `/projects` page wires ledger plus the two-step breakdown (owners editable inline) |
+| Lightweight finance (PRD §2.10) | `office.finance.reimburse` / `expense` (plus existing `office.budget.query`) | per-person reimbursement progress with in-transit amounts (pending + approved-unpaid); department totals/counts/by-category plus budget-remaining linkage for matched projects; amounts are quoted verbatim, unparseable rows are skipped with a count; the `/finance` page wires all three blocks |
+| Admin & logistics tickets (PRD §2.11) | `office.desk.ticket` / `tickets` | IT repair / asset claim / work order allowlist; ticket is an approved write landing in the local ledger, tickets is an approval-free read; syncing to external systems stays with linkage; new `/desk` page (list + approval-id hint on filing); scene chaining and visual orchestration live under workflows (`/workflows`); fine-grained per-tool permissions already exist as tool scopes + agent whitelists; scheduled jobs honestly wait on scheduler infra |
+
+HTTP-level smoke: `python tests/smoke_project_ops.py` (§2.9 ledger/breakdown + §2.10 finance + §2.11 tickets, 9 assertions, re-runnable).
+
 ## V1.2 Office Features · Batch A (PRD §5.3; three tool-side items)
 
 | Feature | Tools | Key guarantees |
@@ -279,6 +285,17 @@ HTTP-level smoke: `python tests/smoke_v1_2_batch_c.py` (7 assertions, self-conta
 | Cross-domain chaining | `plugins/office-assistant` | one sentence (agent omitted) auto-routes here and chains three domains inside a single run. Main path is `llm: default` (local qwen3:8b) which orchestrates steps on the fly and phrases the `kb.ask` query itself; when the LLM is unavailable it falls back to the `rules` chain — `office.data.query` → `office.report.generate` (metric values injected from the previous step's **real output** via `{steps[0].result.count}`, 100% numeric consistency) → `kb.ask` policy lookup, fully traceable. Caveat: the LLM proposes all steps in one shot without seeing prior outputs, so stats inputs may be invented — cross-step data passing stays more reliable via rules |
 
 HTTP-level smoke: `python tests/smoke_personal_affairs.py` (8 assertions, re-runnable).
+
+## Knowledge-Base Enhanced Retrieval (PRD §2.6: policy Q&A / doc search / permission scoping / federated search / image Q&A)
+
+| Capability | Tools | Key guarantees |
+|---|---|---|
+| Policy Q&A | `kb.ask` (KB_DIR `*.md/*.txt` + 8 built-in demo entries: attendance/expense/leave/travel/HR/admin/compliance + confidential compensation) | dual-channel retrieval unchanged; new per-entry `visibility` (`public` or a role name; KB_DIR files declare it with a first-line `visibility: hr`; `*`/`admin` see everything; filtered entries are only counted in `permission_filtered`, titles never leak); hits echo their `visibility` |
+| Federated search | `office.kb.search_unified` | one query searches knowledge / drive docs (DOCS_DIR, `restricted-` prefix is restricted) / own todos & schedules (identity-scoped) / approval ledger (own or admin) / project data ledgers; per-source dual-channel retrieval merged by score, verbatim quotes only; remote chat/OA sources join via linkage allow-list tools — no local source, no fabricated data |
+| Image Q&A | `office.image.ask` | OCR the real text first (same engine probe as `ocr.image`), then retrieve paragraph fragments; missing engine / empty text / zero hits degrade honestly; image metadata measured by Pillow |
+| Example agent | `plugins/office-assistant` | allow-list extended with `office.kb.search_unified` and `office.image.ask` so cross-domain chains can reach federated search and image Q&A |
+
+HTTP-level smoke: `python tests/smoke_kb_26.py` (8 assertions, re-runnable; the expense query scored 0.6452 over the vector channel in testing).
 
 ## Database Migrations
 

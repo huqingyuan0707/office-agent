@@ -36,8 +36,18 @@ tools:
   - office.hr.checklist
   - office.resource.query
   - office.resource.book
+  - office.project.query
+  - office.task.decompose
+  - office.task.commit
+  - office.finance.reimburse
+  - office.finance.expense
+  - office.budget.query
+  - office.desk.ticket
+  - office.desk.tickets
   - office.report.generate
   - kb.ask
+  - office.kb.search_unified
+  - office.image.ask
 max_steps: 8
 llm: default
 rules:

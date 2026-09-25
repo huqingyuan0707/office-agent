@@ -25,7 +25,10 @@
 ㉒ office.data.query.save / list / run / delete + office.data.chart_insight：常用查询保存与一句话复用、图表自动解读（PRD §2.4 新增——save/delete 写恒送审落盘 data_queries/、list/run 读免审按租户隔离实时重查；insight 读免审，统计+最高/最低/2σ 异常标注+中文简报+同数据 SVG 条形图；见 data_saved.py / data_insight.py）。
 ㉓ office.im.digest：群消息摘要（PRD §2.7——入参驱动读免审：总数/分人计数+@本人摘录+任务候选+问句/决议/风险摘录+简报；动作词与日期正则复用 mail；定时调度待 §2.11）。
 ㉔ office.hr.attendance / checklist + office.resource.query / book：人事行政（PRD §2.8——考勤加班按人汇总确定性计算，草稿走 approval.draft；入离职清单模板直出缺项留白；资源台账内置+CSV 叠加，query 读免审给已订区间，book 写恒送审冲突 1001；见 hr.py / resources.py）。
-㉕ kb.ask 权限适配 + office.kb.search_unified + office.image.ask：企业知识库增强检索
+㉕ office.project.query：项目台账（PRD §2.9——里程碑/风险/责任人/进度，内置 + projects.csv 叠加，按名/责任人/状态/有无风险过滤，附中文简报；任务拆解见 task_planner）。
+㉖ office.finance.reimburse / expense：财务简易辅助（PRD §2.10——个人报销进度与在途金额、部门费用总额/类目/笔数 + 预算联带；预算剩余额度见 budget）。
+㉗ office.desk.ticket / tickets：行政后勤通用工具（PRD §2.11——IT 报修/资产申领/工单三类，ticket 写恒送审落本地台账，tickets 读免审；外部系统同步由 linkage 承担）。
+㉘ kb.ask 权限适配 + office.kb.search_unified + office.image.ask：企业知识库增强检索
 （PRD §2.6——kb.ask 条目级 visibility（public/角色名，KB_DIR 首行 visibility 指令，
 `*`/admin 可见全部，被滤只计 permission_filtered）；search_unified 一句话联查知识/
 文档/本人待办日程/审批单据/数据台账五源并合并排序，远端聊天/OA 经联动接入后按
@@ -53,9 +56,11 @@ from . import (
     data_analysis,
     data_insight,
     data_saved,
+    desk,
     doc_compare,
     file_ask,
     file_read,
+    finance,
     hr,
     im_digest,
     image_ask,
@@ -66,6 +71,7 @@ from . import (
     meeting_flow,
     ocr,
     pptx_gen,
+    projects,
     resources,
     summarize,
     task_planner,
@@ -87,9 +93,11 @@ __all__ = [
     "data_analysis",
     "data_insight",
     "data_saved",
+    "desk",
     "doc_compare",
     "file_ask",
     "file_read",
+    "finance",
     "hr",
     "im_digest",
     "image_ask",
@@ -100,6 +108,7 @@ __all__ = [
     "meeting_flow",
     "ocr",
     "pptx_gen",
+    "projects",
     "register_all",
     "resources",
     "specs",
@@ -121,6 +130,9 @@ _MODULES = (
     data_analysis,
     data_insight,
     data_saved,
+    projects,
+    finance,
+    desk,
     meeting,
     meeting_flow,
     mail,
