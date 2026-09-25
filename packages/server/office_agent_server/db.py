@@ -40,12 +40,22 @@ _SessionFactory: async_sessionmaker[AsyncSession] | None = None
 
 
 def get_engine():  # type: ignore[no-untyped-def]
-    """惰性单例引擎（双检锁，进程内唯一）。"""
+    """惰性单例引擎（双检锁，进程内唯一）。
+
+    SQLite 并发口径：run 主循环里 LLM 规划/终答合成是长网络 I/O，写事务窗口无法
+    压到零——connect 级 ``timeout``（即 busy_timeout，秒）让后到写者排队等待而非
+    立刻抛 "database is locked"；WAL 见 init_models（读不挡写，轮询友好）。
+    """
     global _engine, _SessionFactory
     if _engine is None:
         with _engine_lock:
             if _engine is None:
-                _engine = create_async_engine(settings.DATABASE_URL, future=True)
+                connect_args = (
+                    {"timeout": 10.0} if settings.DATABASE_URL.startswith("sqlite") else {}
+                )
+                _engine = create_async_engine(
+                    settings.DATABASE_URL, future=True, connect_args=connect_args
+                )
                 _SessionFactory = async_sessionmaker(_engine, expire_on_commit=False)
     assert _SessionFactory is not None
     return _engine
@@ -55,6 +65,9 @@ async def init_models() -> None:
     """建表（幂等）。Alembic 接入后此处仅保留应急建表。"""
     engine = get_engine()
     async with engine.begin() as conn:
+        if settings.DATABASE_URL.startswith("sqlite") and ":memory:" not in settings.DATABASE_URL:
+            # WAL 是库文件级持久设置：一次开启，此后读写互不阻塞（并发 run 轮询友好）
+            await conn.exec_driver_sql("PRAGMA journal_mode=WAL")
         await conn.run_sync(Base.metadata.create_all)
 
 

@@ -351,6 +351,9 @@ class RunLoop:
         """收敛收尾：R2 数值校验（降级不 500）+ 输出概要合成（不抛错，失败也走概要）。"""
         validation_block: dict[str, Any] = {}
         if self.task.status == AgentState.DONE.value:
+            # 先提交步骤写入释放锁再进终答合成：finalize_answer 是 30s 级 LLM I/O，
+            # 事务跨网络等待会把并发写者撞成 "database is locked"（同 start_run 口径）
+            await self.db.commit()
             validation_block = await finalize_answer(
                 spec=self.spec, goal=self.goal, results=self.results
             )

@@ -76,6 +76,10 @@ async def start_run(
     )
     db.add(task)
     await db.flush()  # 先落行拿 id（后续 RunStep.run_id / 异步轮询都要用）
+    # 立刻提交释放写锁：execute_run 里的 LLM 规划是 30~60s 级网络 I/O，
+    # 若让事务持有到 run 结束，SQLite 单写者会把并发写全撞成 "database is locked"。
+    # 轮询方也因此能尽早看到 IDLE 行（expire_on_commit=False，task 属性不失效）。
+    await db.commit()
     return await execute_run(db, task=task, spec=spec, goal=goal, user=user, trace_id=trace_id)
 
 
