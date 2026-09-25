@@ -12,7 +12,9 @@
 5. 装载内置办公工具包（office-agent-tools-office pip 包）；
 6. 装载 plugins/ 下的工具插件（每个插件自行决定「提供方没配就不注册」）；
 7. 装载 MCP 协议桥（office-agent-mcp-bridge 可选包）：认领 transport="mcp" 的提供方并
-   经 tools/list 自动注册其工具（对端不可用只告警，降级不阻断启动）。
+   经 tools/list 自动注册其工具（对端不可用只告警，降级不阻断启动）；
+8. 定时调度环（Settings.SCHEDULER_ENABLED，默认关）：到点执行 /jobs 登记的作业，
+   关停时先停环再释放上游客户端。
 """
 
 from __future__ import annotations
@@ -38,6 +40,7 @@ from office_agent_server.middleware import TraceMiddleware
 from office_agent_server.plugins import load_plugin_tools
 from office_agent_server.responses import fail
 from office_agent_server.seed import seed_on_startup
+from office_agent_server.services.scheduler import start_scheduler, stop_scheduler
 
 try:
     # tools-office 是可选 pip 包；未安装不阻断启动
@@ -110,7 +113,11 @@ async def lifespan(_: FastAPI) -> AsyncIterator[None]:
         "、".join(providers) or "（无）",
         "、".join(loaded) or "（无）",
     )
+    # 8. 定时调度环（SCHEDULER_ENABLED 默认关；起环失败只告警不阻断启动）
+    if settings.SCHEDULER_ENABLED:
+        await start_scheduler()
     yield
+    await stop_scheduler()
     await linkage.aclose_all()
 
 

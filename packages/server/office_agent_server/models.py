@@ -137,3 +137,31 @@ class Workflow(Base):
     created_by: Mapped[str] = mapped_column(String(64), default="")
     created_at: Mapped[datetime] = mapped_column(default=_now)
     updated_at: Mapped[datetime] = mapped_column(default=_now, onupdate=_now)
+
+
+class ScheduledJob(Base):
+    """定时任务定义（PRD §2.11 高阶自动化·定时任务的落库位）。
+
+    调度口径：schedule 存 JSON（``{"kind":"daily","at":"08:30"}`` 业务时区 /
+    ``{"kind":"weekly","day":0-6,"at":"HH:MM"}`` / ``{"kind":"interval","seconds":N}``），
+    next_run_at 存换算后的 naive UTC——调度环只比对一个时间列，不做每轮解析；
+    job_type 白名单（notify_scan 通知扫描链 / workflow_run 编排执行），
+    payload 存执行参数（workflow_run 必带 workflow_id）；
+    执行身份 = created_by（运行时查库取实时角色，Scope 硬拦绕不过）。
+    """
+
+    __tablename__ = "scheduled_jobs"
+
+    id: Mapped[str] = mapped_column(String(32), primary_key=True, default=_uid)
+    tenant: Mapped[str] = mapped_column(String(64), nullable=False, index=True)
+    name: Mapped[str] = mapped_column(String(80), nullable=False)
+    job_type: Mapped[str] = mapped_column(String(32), nullable=False, index=True)
+    schedule: Mapped[str] = mapped_column(Text, default="{}")
+    payload: Mapped[str] = mapped_column(Text, default="{}")
+    enabled: Mapped[int] = mapped_column(Integer, default=1)
+    next_run_at: Mapped[datetime | None] = mapped_column(default=None, index=True)
+    last_run_at: Mapped[datetime | None] = mapped_column(default=None)
+    last_result: Mapped[str] = mapped_column(Text, default="")
+    created_by: Mapped[str] = mapped_column(String(64), default="")
+    created_at: Mapped[datetime] = mapped_column(default=_now)
+    updated_at: Mapped[datetime] = mapped_column(default=_now, onupdate=_now)

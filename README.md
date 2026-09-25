@@ -237,7 +237,7 @@ HTTP 级冒烟：`python tests/smoke_file_ask.py`（7 项断言：PDF 真实抽�
 | 审批智能辅助 | `office.approval.draft` / `check` / `opinion` / `submit`、`office.invoice.extract` | 五类单草稿必填校验追问；金额分级（>1000 部门负责人 / >5000 分管副总）+ 高危二次确认 need_confirm；发票四要素只摘录不推断，无命中 degraded；审批说明/意见确定性成稿（驳回必须附理由）；一键提交写口径恒送审 + idem_key，批准后落本地台账，同键重放绝不双单 |
 | 审批一键催办 | `POST /approvals/{id}/urge` | 本人或管理员对 pending 单发一次 IM 提醒（旁路：不改审批状态、不落库；IM 未配置如实 not_configured，已决单拒催 4004）；超时预警由通知扫描链承担 |
 | 会议全流程补充（PRD §2.5） | `office.meeting.materials` / `digest` / `followup` | 会前资料包逐文件真实抽取汇编（单文件失败如实标注不炸整包）；会中速记按关键词归类决议/行动/风险三类原句摘录（实时语音转录需音频基建如实后置）；会后行动项×待办台账五态对账（逾期按业务时区当天判定，查无即未建单不臆造）；全读口径免审 |
-| 邮件&消息智能处理（PRD §2.7） | `office.mail.classify` / `reply_draft` / `action_items` / `precheck` + `office.im.digest` | 邮件四工具入参驱动全读免审（不接真实邮箱杜绝假数据源）：四类关键词归类 / 草稿缺项留占位不代编 / 行动项三字段提不出置 null（转待办走 todo.create）/ 预审复用合规规则+语气词表命中即二次确认；群摘要按需入参（总数/分人+@本人任务候选+问句/决议/风险摘录+简报，定时调度待 §2.11）；自动发信属对外写通道如实后置；`/mail` 页三块全接线 |
+| 邮件&消息智能处理（PRD §2.7） | `office.mail.classify` / `reply_draft` / `action_items` / `precheck` + `office.im.digest` | 邮件四工具入参驱动全读免审（不接真实邮箱杜绝假数据源）：四类关键词归类 / 草稿缺项留占位不代编 / 行动项三字段提不出置 null（转待办走 todo.create）/ 预审复用合规规则+语气词表命中即二次确认；群摘要按需入参（总数/分人+@本人任务候选+问句/决议/风险摘录+简报，定时调度基建已就位见 §2.11 /jobs，消息源待联动接入）；自动发信属对外写通道如实后置；`/mail` 页三块全接线 |
 | 人事行政资源管理（PRD §2.8） | `office.hr.attendance` / `checklist` + `office.resource.query` / `book` | 考勤加班按人汇总（出勤/迟到/请假天数+总工时，加班=Σmax(0,日工时-8)，草稿走 approval.draft）；入离职清单模板直出缺项留白（交接事项原文提醒）；资源台账内置+CSV 叠加，query 读免审给已订区间，book 写恒送审冲突 1001；`/hr` 页三块全接线 |
 
 HTTP 级冒烟：`python tests/smoke_meeting_flow.py`（5 项断言，可重复执行）。
@@ -246,9 +246,12 @@ HTTP 级冒烟：`python tests/smoke_hr_im.py`（§2.7 群摘要 + §2.8 人事�
 
 | 项目台账与任务拆解（PRD §2.9/§6） | `office.project.query` + `office.task.decompose` / `commit` | 台账含里程碑/风险/责任人/进度（内置 + CSV 叠加，按名/责任人/状态/有无风险过滤，附中文简报）；拆解按生命周期出交付物/责任人/工期/优先级/依赖，缺人缺期留空追问不臆造，commit 写恒送审即二次确认；`/projects` 页台账 + 拆解两步式接线（页内可改责任人） |
 | 财务简易辅助（PRD §2.10） | `office.finance.reimburse` / `expense`（+ 既有 `office.budget.query`） | 个人报销进度与在途金额（审批中+已通过未打款）；部门费用总额/笔数/按类目 + 项目命中预算台账联带剩余额度；金额只取原值，转不出整行跳过计数；`/finance` 页三块全接线 |
-| 行政后勤通用工具（PRD §2.11） | `office.desk.ticket` / `tickets` | IT 报修/资产申领/工单三类白名单，ticket 写恒送审落本地台账，tickets 读免审；外部系统同步由 linkage 承担；`/desk` 页新建（清单 + 落单给审批 id）；场景串联与可视化编排见工作流（`/workflows`），细粒度权限=工具 scope + 智能体白名单既有机制，定时任务待 scheduler 基建如实后置 |
+| 行政后勤通用工具（PRD §2.11） | `office.desk.ticket` / `tickets` | IT 报修/资产申领/工单三类白名单，ticket 写恒送审落本地台账，tickets 读免审；外部系统同步由 linkage 承担；`/desk` 页新建（清单 + 落单给审批 id）；场景串联与可视化编排见工作流（`/workflows`），细粒度权限=工具 scope + 智能体白名单既有机制 |
+| 定时任务调度（PRD §2.11） | `GET/POST/PUT/DELETE /jobs` + `/jobs/{id}/run` + `/jobs/tick` | 内置 asyncio 调度环（`SCHEDULER_ENABLED` 默认关、`SCHEDULER_TICK_SECONDS` 可配）；作业白名单 notify_scan（通知扫描链幂等去重绝不刷屏）/ workflow_run（按编排顺序执行，写步骤仍落单即停）；daily/weekly 按业务时区换算、interval 最小 30 秒；执行身份=创建人实时角色（查无/冻结如实 failed）；run-now 手动触发不推进定时节奏；未开环时可由外部 cron 调 `/jobs/tick`；`/jobs` 页全接线（列表/新建/启停/立即执行/手动扫描） |
 
 HTTP 级冒烟：`python tests/smoke_project_ops.py`（§2.9 台账/拆解 + §2.10 财务 + §2.11 通用工具 9 项断言，可重复执行）。
+
+HTTP 级冒烟：`python tests/smoke_jobs.py`（§2.11 定时任务 9 项断言，自带服务真调度环到点自动执行，可重复执行）。
 
 ## V1.2 办公功能·批次 A（PRD §5.3，工具侧三件）
 

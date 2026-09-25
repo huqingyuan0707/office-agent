@@ -125,6 +125,12 @@ class Settings(BaseSettings):
     MEETING_UPCOMING_HOURS: float = 24.0
     MILESTONE_LOOKAHEAD_DAYS: int = 3
 
+    # ---- 定时任务调度环（PRD §2.11）----
+    # 默认关：测试与按需部署不起环；单实例部署开 True 即可（多实例需外部去重，本仓库形态为单实例）
+    SCHEDULER_ENABLED: bool = False
+    # 扫描周期（秒）：到点判定精度即此值，interval 作业的最小间隔也受它约束
+    SCHEDULER_TICK_SECONDS: int = 30
+
     # ---- IM 审批通知出站（群机器人 webhook；未配置 URL 即整体关闭）----
     # IM_WEBHOOK_TYPE 决定消息体形状：generic（本仓库自定义）/ feishu / dingtalk / wecom
     IM_WEBHOOK_URL: str = ""

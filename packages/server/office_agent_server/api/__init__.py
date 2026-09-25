@@ -10,6 +10,7 @@ from office_agent_server.api import (
     approvals,
     auth,
     governance,
+    jobs,
     notifications,
     tasks,
     tools,
@@ -25,3 +26,4 @@ api_router.include_router(notifications.router)
 api_router.include_router(governance.router)
 api_router.include_router(admin.router)
 api_router.include_router(workflows.router)
+api_router.include_router(jobs.router)

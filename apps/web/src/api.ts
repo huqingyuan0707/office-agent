@@ -328,3 +328,68 @@ export const deleteWorkflow = (id: string) =>
 
 export const runWorkflow = (id: string) =>
   request<WorkflowRun>(`/workflows/${encodeURIComponent(id)}/run`, { method: 'POST' })
+
+// 定时任务（PRD §2.11：作业 CRUD + 立即执行；到点由内置调度环或 /jobs/tick 手动扫描触发，
+// 执行身份=创建人实时角色，workflow_run 的审批闸门在执行链里绕不过）
+export interface JobSchedule {
+  kind: 'daily' | 'weekly' | 'interval'
+  at?: string
+  day?: number
+  seconds?: number
+}
+export interface JobItem {
+  id: string
+  name: string
+  job_type: string
+  schedule: JobSchedule
+  payload: Record<string, unknown>
+  enabled: boolean
+  next_run_at: string
+  last_run_at: string
+  last_result: string
+  created_by: string
+}
+export interface JobRunResult {
+  job_id: string
+  name: string
+  status: string
+  created?: number
+  steps_done?: number
+  error?: string
+  [key: string]: unknown
+}
+
+export const listJobs = () => request<JobItem[]>('/jobs')
+
+export const createJob = (
+  name: string,
+  jobType: string,
+  schedule: JobSchedule,
+  payload: Record<string, unknown>
+) =>
+  request<JobItem>('/jobs', {
+    method: 'POST',
+    body: JSON.stringify({ name, job_type: jobType, schedule, payload }),
+  })
+
+export const updateJob = (
+  id: string,
+  patch: { name?: string; schedule?: JobSchedule; payload?: object; enabled?: boolean }
+) =>
+  request<JobItem>(`/jobs/${encodeURIComponent(id)}`, {
+    method: 'PUT',
+    body: JSON.stringify(patch),
+  })
+
+export const deleteJob = (id: string) =>
+  request<{ deleted: string }>(`/jobs/${encodeURIComponent(id)}`, { method: 'DELETE' })
+
+export const runJob = (id: string) =>
+  request<JobRunResult>(`/jobs/${encodeURIComponent(id)}/run`, { method: 'POST' })
+
+export interface JobTickResult {
+  executed: number
+  jobs: { job_id: string; name: string; status: string }[]
+}
+
+export const tickJobs = () => request<JobTickResult>('/jobs/tick', { method: 'POST' })
