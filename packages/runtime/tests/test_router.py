@@ -48,6 +48,23 @@ def _llm_bot() -> object:
     )
 
 
+def _hybrid_bot() -> object:
+    """双配智能体：llm 主路径 + rules 降级保底（兜底优先级应高于纯 LLM 智能体）。"""
+    return parse_agent_spec(
+        {
+            "name": "hybrid-bot",
+            "description": "双配智能体：LLM 编排、规则保底",
+            "system_prompt": "你是测试助手。",
+            "tools": ["demo.echo"],
+            "max_steps": 2,
+            "llm": "default",
+            "rules": [
+                {"match": ["保底词"], "steps": [{"tool": "demo.echo", "args": {"text": "hi"}}]}
+            ],
+        }
+    )
+
+
 def _patch_specs(monkeypatch, specs: list) -> None:
     """替换路由模块的智能体清单来源（router 直接绑定了 load_agent_specs 名字）。"""
     monkeypatch.setattr(router_mod, "load_agent_specs", lambda: specs)
@@ -75,6 +92,14 @@ def test_route_llm_fallback_when_no_rule_hits(monkeypatch):
     _patch_specs(monkeypatch, [_rule_bot(), _llm_bot()])
     _set_llm_profile(monkeypatch)
     assert route_agent_spec("帮我查个完全没规则覆盖的东西").name == "llm-bot"
+
+
+def test_route_llm_fallback_prefers_hybrid_over_pure_llm(monkeypatch):
+    """兜底优先级：rules+llm 双配的即使声明在后，也不让目录序靠前的纯 LLM 智能体抢单
+    （防「报销」等办公目标被电商示例接走，回一句要订单编号的无效追问）。"""
+    _patch_specs(monkeypatch, [_llm_bot(), _hybrid_bot()])
+    _set_llm_profile(monkeypatch)
+    assert route_agent_spec("帮我办一件两边规则都不沾的事").name == "hybrid-bot"
 
 
 def test_route_llm_not_configured_means_no_fallback(monkeypatch):

@@ -9,6 +9,9 @@
      与执行期规划同一匹配口径，路由选中的智能体执行期规划必然成功，不出现「路由说行、执行说不行」）；
   2) LLM 智能体（llm profile 非空）：规则全不中时兜底——由 LLM 决定工具调用，
      LLM 不可用时执行期降级链自行收敛（规划失败在时间线里如实呈现，路由不预判）。
+     兜底内部再分优先级：**rules+llm 双配的优先于纯 LLM 智能体**（前者 LLM 失败还有
+     规则降级链保底，后者失败即 run FAILED）——否则目录序靠前的纯 LLM 智能体（如电商
+     示例）会抢走一切规则未覆盖的办公目标，模型只能回「请提供订单编号」式的无效追问。
 全不中：1001 中文可操作报错，列出已装载智能体及其能力描述，绝不瞎猜一个。
 
 红线：路由只「挑智能体」不执行任何工具；纯函数零 IO（specs 由调用方所在模块注入），
@@ -112,6 +115,9 @@ def route_agent_spec(goal: str) -> AgentSpec:
         )
     for spec in specs:
         if spec.rules and RulePlanner(spec).plan(goal):
+            return spec
+    for spec in specs:
+        if spec.rules and spec.llm and profile_configured(spec.llm):
             return spec
     for spec in specs:
         if spec.llm and profile_configured(spec.llm):

@@ -47,10 +47,15 @@ async def start_scheduler() -> None:
 
 
 async def stop_scheduler() -> None:
-    """停止调度环（lifespan 关停用；环不存在时静默）。"""
+    """停止调度环（lifespan 关停用；环不存在时静默）。
+
+    RuntimeError 一并 suppress：五包混跑同进程时，模块级 _task 可能挂在已关闭的
+    前序测试事件循环上（anyio 循环销毁时任务已被隐式 cancel），跨循环 await 必抛
+    RuntimeError——此时任务已终结，摘引即净，不必也不能再等。
+    """
     global _task
-    if _task is not None and not _task.done():
-        _task.cancel()
-        with contextlib.suppress(asyncio.CancelledError):
-            await _task
-    _task = None
+    task, _task = _task, None
+    if task is not None and not task.done():
+        task.cancel()
+        with contextlib.suppress(asyncio.CancelledError, RuntimeError):
+            await task

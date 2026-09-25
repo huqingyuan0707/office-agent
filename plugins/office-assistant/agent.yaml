@@ -41,6 +41,7 @@ tools:
   - office.task.commit
   - office.finance.reimburse
   - office.finance.expense
+  - office.approval.draft
   - office.budget.query
   - office.desk.ticket
   - office.desk.tickets
@@ -51,6 +52,20 @@ tools:
 max_steps: 8
 llm: default
 rules:
+  # 规则〇A：报销进度 → 按人列单与在途金额（规则参数从一句话里抽不出人名，固定用演示
+  #          台账身份并如实回显 person；点名某人/某单时由 LLM 主路径现场带参）
+  - match: ["报销进度", "查报销", "报销到哪", "报销状态"]
+    steps:
+      - tool: office.finance.reimburse
+        args:
+          person: 张三
+  # 规则〇B：裸「报销」→ 出报销单草稿并追问必填缺项（missing_fields/next_hint 原样呈现）
+  - match: ["报销", "报销单"]
+    steps:
+      - tool: office.approval.draft
+        args:
+          kind: expense
+          fields: {}
   # 规则一：经营数据复盘 → 查业绩台账 → 出周报（记录数取自步骤 0 真实出参）→ 引披露口径
   - match: ["经营复盘", "经营分析", "数据分析", "数据报告"]
     steps:
