@@ -4,6 +4,7 @@
 - fire()：通用出站——按 Settings.IM_WEBHOOK_TYPE 组装消息体（generic/feishu/dingtalk/wecom），
   带签名（飞书/钉钉）出站，**失败降级绝不抛错**；
 - notify_approval_created()：审批单落单时提醒群（有新单待处理）；
+- notify_approval_urge()：申请人一键催办时提醒群（单条，PRD §2.3）；
 - notify_approval_stale()：审批超时扫描命中时提醒群（聚合一条，绝不逐单刷屏）。
 
 链路：api/tools.invoke → services.approval_flow.create_approval → 本模块（旁路，不参与审批状态流转）；
@@ -37,6 +38,7 @@ logger = logging.getLogger(__name__)
 
 KIND_APPROVAL_CREATED = "approval_created"
 KIND_APPROVAL_STALE = "approval_stale"
+KIND_APPROVAL_URGE = "approval_urge"
 
 #: 支持的厂商消息体（其余取值按 generic 处理并告警，不静默丢消息）
 VENDOR_GENERIC = "generic"
@@ -221,6 +223,26 @@ async def notify_approval_created(
         content=(
             f"工具：{tool_name}\n申请单号：{approval_id}\n申请人：{applicant}\n事项：{target}\n"
             "请到审批中心复核（写动作经批准后才生效）"
+        ),
+        ref_id=approval_id,
+        tenant=tenant,
+        username=applicant,
+    )
+
+
+async def notify_approval_urge(
+    *, tenant: str, applicant: str, tool_name: str, target: str, approval_id: str
+) -> dict[str, Any]:
+    """一键催办（PRD §2.3）：申请人主动提醒复核人处理某一 pending 单（单条，非聚合）。
+
+    旁路口径与落单/超时提醒一致：不改审批状态、不进 linkage、失败只降级不抛错。
+    """
+    return await fire(
+        kind=KIND_APPROVAL_URGE,
+        title="【催办】申请人提醒处理审批单",
+        content=(
+            f"工具：{tool_name}\n申请单号：{approval_id}\n申请人：{applicant}\n事项：{target}\n"
+            "申请人已催办，请尽快到审批中心复核"
         ),
         ref_id=approval_id,
         tenant=tenant,

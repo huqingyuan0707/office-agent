@@ -11,6 +11,8 @@
   （文本来源为 ocr.image，PRD §2.3 新增：发票识别）。
 
 链路：__init__.register_all() → registry.register(spec) → executor.call 执行 handler。
+公开原语（KIND_SPECS / kind_or_raise / missing_fields / to_amount）供同包
+approval_submit.py（一键提交落台账）与 approval_opinion.py（说明/意见撰写）复用，模板口径唯一出处。
 红线：三工具全是读口径（免审批，只出草稿与意见，不直接发起审批）；纯本地实现，
       不触及 ORM / FastAPI；合规阈值与知识库口径一致，不另造标准。
 对齐：AGENTS.md §3（分层/数值不可编造类推金额不编造）；智能办公Agent 产品需求文档.md
@@ -30,7 +32,7 @@ from office_agent_core.registry import register
 SCOPE_READ = "office:read"
 
 #: 五类常用审批单模板：必填项（required）+ 选填项（optional）+ 中文标签
-_KIND_SPECS: dict[str, dict[str, Any]] = {
+KIND_SPECS: dict[str, dict[str, Any]] = {
     "leave": {
         "label": "请假申请",
         "required": ("leave_type", "start_date", "end_date", "reason"),
@@ -92,9 +94,9 @@ _KIND_SPECS: dict[str, dict[str, Any]] = {
     },
 }
 
-#: 高危二次确认线（金额：误提交大额申请的拦截口）
-_HIGH_RISK_AMOUNT = 5000.0
-_DEPT_HEAD_AMOUNT = 1000.0
+#: 高危二次确认线（金额：误提交大额申请的拦截口）；公开供 approval_opinion 复用同一分级口径
+HIGH_RISK_AMOUNT = 5000.0
+DEPT_HEAD_AMOUNT = 1000.0
 
 #: 发票文本提取正则（只摘录原文命中，不推断）
 _AMOUNT_RES = (
@@ -112,18 +114,18 @@ _DATE_RES = (
 _SELLER_RE = re.compile(r"(?:销售方|销货方|收款方)[：:]\s?([^\n，,]{2,30})")
 
 
-def _kind_or_raise(kind: str) -> str:
+def kind_or_raise(kind: str) -> str:
     """单据类型口径：只认五类常用单（未知名中文可操作报错）。"""
     name = str(kind or "").strip()
-    if name not in _KIND_SPECS:
-        valid = "、".join(sorted(_KIND_SPECS))
+    if name not in KIND_SPECS:
+        valid = "、".join(sorted(KIND_SPECS))
         raise BusinessError(ErrorCode.PARAM_INVALID, f"参数 kind 只能是 {valid}（当前：{kind}）")
     return name
 
 
-def _missing_fields(kind: str, fields: dict[str, Any]) -> list[str]:
+def missing_fields(kind: str, fields: dict[str, Any]) -> list[str]:
     """必填缺项追问：返回缺失字段的中文标签（全齐返回空列表）。"""
-    spec = _KIND_SPECS[kind]
+    spec = KIND_SPECS[kind]
     labels = spec["field_labels"]
     return [
         str(labels[key]) for key in spec["required"] if str(fields.get(key) or "").strip() == ""
@@ -132,13 +134,13 @@ def _missing_fields(kind: str, fields: dict[str, Any]) -> list[str]:
 
 async def _approval_draft(ctx: ToolContext, args: dict[str, Any]) -> dict[str, Any]:
     """office.approval.draft：生成审批单草稿 + 缺项追问（只出草稿，不发起审批）。"""
-    kind = _kind_or_raise(args.get("kind"))
+    kind = kind_or_raise(args.get("kind"))
     fields = args.get("fields") or {}
     if not isinstance(fields, dict):
         raise BusinessError(ErrorCode.PARAM_INVALID, "参数 fields 必须是键值对对象")
-    spec = _KIND_SPECS[kind]
+    spec = KIND_SPECS[kind]
     filled = {key: str(value).strip() for key, value in fields.items() if str(value).strip()}
-    missing = _missing_fields(kind, filled)
+    missing = missing_fields(kind, filled)
     summary = f"{spec['label']}草稿（申请人：{ctx.username}）：" + "、".join(
         f"{spec['field_labels'][k]}={filled.get(k, '待补充')}" for k in spec["required"]
     )
@@ -154,7 +156,7 @@ async def _approval_draft(ctx: ToolContext, args: dict[str, Any]) -> dict[str, A
     }
 
 
-def _to_amount(value: Any) -> float | None:
+def to_amount(value: Any) -> float | None:
     """金额取值：数字原值直取（bool 拒绝）；非数字给 None 由调用方判缺项。"""
     if isinstance(value, bool):
         return None
@@ -166,29 +168,29 @@ def _to_amount(value: Any) -> float | None:
 async def _approval_check(ctx: ToolContext, args: dict[str, Any]) -> dict[str, Any]:
     """office.approval.check：必填复核 + 金额分级审批提示 + 高危二次确认标记。"""
     _ = ctx
-    kind = _kind_or_raise(args.get("kind"))
+    kind = kind_or_raise(args.get("kind"))
     fields = args.get("fields") or {}
     if not isinstance(fields, dict):
         raise BusinessError(ErrorCode.PARAM_INVALID, "参数 fields 必须是键值对对象")
     issues: list[str] = []
     hints: list[str] = []
     need_confirm = False
-    missing = _missing_fields(kind, fields)
+    missing = missing_fields(kind, fields)
     if missing:
         issues.append(f"必填项缺失：{'、'.join(missing)}")
     if kind == "expense":
-        amount = _to_amount(fields.get("amount"))
+        amount = to_amount(fields.get("amount"))
         if amount is None and "报销金额" not in missing:
             issues.append("报销金额必须是数字（不含 ¥ 符号与逗号以外的字符请先清洗）")
         elif amount is not None:
-            if amount > _HIGH_RISK_AMOUNT:
+            if amount > HIGH_RISK_AMOUNT:
                 need_confirm = True
                 hints.append(
-                    f"金额 {amount} 超过 {_HIGH_RISK_AMOUNT}：需分管副总审批，"
+                    f"金额 {amount} 超过 {HIGH_RISK_AMOUNT}：需分管副总审批，"
                     "且提交前必须二次确认（高危操作防误提交）"
                 )
-            elif amount > _DEPT_HEAD_AMOUNT:
-                hints.append(f"金额 {amount} 超过 {_DEPT_HEAD_AMOUNT}：需部门负责人审批")
+            elif amount > DEPT_HEAD_AMOUNT:
+                hints.append(f"金额 {amount} 超过 {DEPT_HEAD_AMOUNT}：需部门负责人审批")
             if not str(fields.get("invoice_no") or "").strip():
                 hints.append("未附发票号码：建议先用 office.invoice.extract 提取后补入")
     if kind == "leave":

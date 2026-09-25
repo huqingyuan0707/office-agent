@@ -12,7 +12,7 @@
 ⑨ office.template.save / office.template.apply：自定义模板（写送审落盘 / 读填充复用）；
 ⑩ office.data.query / analyze / export：数据自助分析（读，演示台账 + CSV 叠加 / 统计 + 趋势 + 异常 / 文本导出不写盘）；
 ⑪ office.meeting.agenda / book / risks：会议协作（读议程模板直出 / 写预约恒送审 / 读风险关键词预警，无命中不编造）；
-⑫ office.approval.draft / check / invoice.extract：审批智能辅助（读草稿必填校验 / 读合规自查与高危二次确认 / 读发票要素提取）；
+⑫ office.approval.draft / check / invoice.extract / opinion / submit：审批智能辅助（读草稿必填校验 / 读合规自查与高危二次确认 / 读发票要素提取 / 读审批说明与意见确定性成稿 / 写一键提交恒送审+幂等键批准后落台账）；
 ⑬ office.pptx.generate：PPT 生成（写，大纲直出 .pptx，恒送审+幂等键，python-pptx 缺失不注册）；
 ⑭ office.compliance.scan：合规风险检测（读，隐私/违规用语/泄密凭据三类规则，只摘录不推断）；
 ⑮ office.budget.query：预算查询（读，演示台账 + CSV 叠加，剩余额度确定性计算带溯源）；
@@ -34,6 +34,8 @@ from . import (
     affairs,
     affairs_schedule,
     approval,
+    approval_opinion,
+    approval_submit,
     budget,
     compliance,
     compose,
@@ -57,6 +59,8 @@ __all__ = [
     "affairs",
     "affairs_schedule",
     "approval",
+    "approval_opinion",
+    "approval_submit",
     "budget",
     "compliance",
     "compose",
@@ -88,6 +92,8 @@ _MODULES = (
     data_analysis,
     meeting,
     approval,
+    approval_submit,
+    approval_opinion,
     pptx_gen,
     compliance,
     budget,

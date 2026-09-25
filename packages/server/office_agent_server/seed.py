@@ -27,8 +27,9 @@ logger = logging.getLogger(__name__)
 #: 复核员默认凭据（可经环境变量覆盖）
 _DEFAULT_REVIEWER_USERNAME = "reviewer"
 _DEFAULT_REVIEWER_PASSWORD = "reviewer123"
-#: 复核员角色：approver + viewer（能审批 + 能看审批列表，不能调敏感写工具）
-_REVIEWER_ROLES = ("admin", "approver")
+#: 复核员角色：admin + approver + office:read（催办代管按「本人或管理员」放行；
+#: office:read 让复核员用得动 draft/check/opinion 等审批辅助只读工具，写口径仍不给）
+_REVIEWER_ROLES = ("admin", "approver", "office:read")
 
 
 def _merge_roles(existing: str, wanted: list[str]) -> str:

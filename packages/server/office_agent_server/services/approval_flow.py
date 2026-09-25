@@ -3,7 +3,9 @@
 职责：
 - create_approval()：需审批工具 invoke 时建审批单（pending），只落单不执行；
 - decide_approval()：批准后以**提交人身份**执行原工具；驳回则置 rejected；
-  红线：审批人 == 提交人直接抛 1001（同人自审自批口子）。
+  红线：审批人 == 提交人直接抛 1001（同人自审自批口子）；
+- urge_approval()：一键催办（PRD §2.3）——只有本人（或管理员）可催 pending 单，
+  旁路发 IM 提醒，不改审批状态、不落库（IM 未配置如实 not_configured，绝不 500）。
 
 链路：api/tools.invoke → spec.requires_approval → create_approval() → 返回 pending_approval；
       api/approvals.approve → decide_approval() → 状态流转 + 同人红线 + executor.call 以提交人身份。
@@ -97,6 +99,61 @@ async def _get_pending(db: AsyncSession, tenant: str, approval_id: str) -> Appro
             f"该审批已是「{label}」，不能重复处理",
         )
     return row
+
+
+async def urge_approval(
+    db: AsyncSession,
+    *,
+    tenant: str,
+    approval_id: str,
+    username: str,
+    roles: list[str],
+) -> dict[str, Any]:
+    """一键催办（PRD §2.3）：本人或管理员对 pending 单发一次 IM 提醒。
+
+    口径：不改审批状态、不落库（催办是通知不是决策）；已决单拒催（1001 可操作提示）；
+    IM 未配置/出站失败由 im_notifier 旁路降级，本函数如实透出 sent/reason，绝不 500。
+    """
+    row = (
+        await db.execute(
+            select(Approval).where(Approval.tenant == tenant, Approval.id == approval_id)
+        )
+    ).scalar_one_or_none()
+    if row is None:
+        raise BusinessError(ErrorCode.NOT_FOUND, "审批单不存在或无权访问", 404)
+    if row.applicant != username and "admin" not in roles and "*" not in roles:
+        raise BusinessError(
+            ErrorCode.PARAM_INVALID,
+            f"只能催办本人提交的审批单（当前催办人：{username}）",
+        )
+    if row.status != "pending":
+        label_map = {"approved": "已通过", "rejected": "已驳回"}
+        label = label_map.get(row.status, row.status)
+        raise BusinessError(
+            ErrorCode.APPROVAL_DENIED,
+            f"该审批已是「{label}」，无需催办",
+        )
+    im = await im_notifier.notify_approval_urge(
+        tenant=tenant,
+        applicant=row.applicant,
+        tool_name=row.action,
+        target=row.target,
+        approval_id=row.id,
+    )
+    logger.info("approval urged: id=%s by=%s im_sent=%s", row.id, username, im.get("sent", False))
+    return {
+        "approval_id": row.id,
+        "status": row.status,
+        "applicant": row.applicant,
+        "tool": row.action,
+        "target": row.target,
+        "im": im,
+        "note": (
+            "已提醒复核人处理"
+            if im.get("sent")
+            else f"催办提醒未送达（{im.get('reason') or 'IM 出站失败'}）：审批单状态不变，可联系复核人"
+        ),
+    }
 
 
 async def decide_approval(

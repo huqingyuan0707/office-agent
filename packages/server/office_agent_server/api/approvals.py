@@ -23,9 +23,9 @@ from office_agent_core.errors import BusinessError, ErrorCode
 from office_agent_server.db import get_db
 from office_agent_server.middleware import current_trace_id
 from office_agent_server.models import Approval
-from office_agent_server.rbac import CurrentUser, require_any_perm
+from office_agent_server.rbac import CurrentUser, get_current_user, require_any_perm
 from office_agent_server.responses import ok
-from office_agent_server.services.approval_flow import decide_approval
+from office_agent_server.services.approval_flow import decide_approval, urge_approval
 
 router = APIRouter(prefix="/approvals", tags=["approvals"])
 
@@ -123,6 +123,23 @@ async def approval_detail(
     """审批详情（跨租户 404）。"""
     row = await _get_or_raise(db, user.tenant, approval_id)
     return ok(_to_dict(row), "获取成功")
+
+
+@router.post("/{approval_id}/urge")
+async def urge(
+    approval_id: str,
+    db: AsyncSession = Depends(get_db),
+    user: CurrentUser = Depends(get_current_user),
+) -> dict[str, Any]:
+    """一键催办（PRD §2.3）：本人/管理员催 pending 单，旁路 IM 提醒不改状态。
+
+    薄封装：解析 → services.approval_flow.urge_approval → ok()；
+    越权催办、已决单拒催等业务约束全在 service 层统一拦。
+    """
+    result = await urge_approval(
+        db, tenant=user.tenant, approval_id=approval_id, username=user.username, roles=user.roles
+    )
+    return ok(result, "已发起催办")
 
 
 @router.post("/{approval_id}/approve")

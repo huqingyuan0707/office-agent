@@ -217,6 +217,92 @@ def test_direct_approval_executes_with_applicant_roles(client):
     assert execution["result"]["owner"] == "admin"  # 以提交人身份生效
 
 
+def _create_pending_todo_ticket(client, headers) -> str:
+    """经写工具落一张 pending 审批单（催办用例前置）。"""
+    resp = client.post(
+        "/api/v1/agent/tools/office.todo.create/invoke",
+        json={"args": {"title": "催办回归单", "priority": "low"}},
+        headers=headers,
+    ).json()
+    assert resp["code"] == 0
+    return str(resp["data"]["approval_id"])
+
+
+def test_urge_pending_ticket_reports_im_status_honestly(client):
+    """一键催办（PRD §2.3）：本人催 pending 单 200；IM 未配置如实 not_configured，不改状态。"""
+    admin = _auth(_login(client))
+    approval_id = _create_pending_todo_ticket(client, admin)
+    resp = client.post(f"/api/v1/approvals/{approval_id}/urge", headers=admin).json()
+    assert resp["code"] == 0
+    data = resp["data"]
+    assert data["status"] == "pending"
+    assert data["im"]["sent"] is False
+    assert data["im"]["reason"] == "not_configured"
+    assert "未送达" in data["note"]
+    # 收尾批准：共享会话库里不留 pending 单，否则超时扫描计数被连坐
+    reviewer = _auth(_login(client, "reviewer", "reviewer123"))
+    assert (
+        client.post(
+            f"/api/v1/approvals/{approval_id}/approve", json={"reason": "清理"}, headers=reviewer
+        ).json()["code"]
+        == 0
+    )
+
+
+def _seed_plain_user(client, username: str = "pleb", password: str = "pleb123") -> dict:
+    """种一个无 admin 角色的普通用户并登录（催办越权场景唯一入口——
+    reviewer 种子角色是 admin+approver，能代催他人单，测不出越权）。"""
+    import asyncio
+
+    from office_agent_server.db import session_factory
+    from office_agent_server.models import User
+    from office_agent_server.security import hash_password
+
+    async def _insert() -> None:
+        async with session_factory()() as session:
+            session.add(
+                User(
+                    tenant="demo-tenant",
+                    username=username,
+                    pwd_hash=hash_password(password),
+                    roles="viewer",
+                )
+            )
+            await session.commit()
+
+    asyncio.run(_insert())
+    return _auth(_login(client, username, password))
+
+
+def test_urge_rejected_for_decided_or_others_ticket(client):
+    """已决单拒催（4004）；非本人且非管理员催办被 1001 拦、管理员可代催；不存在 404。"""
+    admin = _auth(_login(client))
+    reviewer = _auth(_login(client, "reviewer", "reviewer123"))
+    approval_id = _create_pending_todo_ticket(client, admin)
+    decided = client.post(
+        f"/api/v1/approvals/{approval_id}/approve", json={"reason": "批准"}, headers=reviewer
+    ).json()
+    assert decided["code"] == 0
+    urged = client.post(f"/api/v1/approvals/{approval_id}/urge", headers=admin).json()
+    assert urged["code"] == 4004
+
+    other_ticket = _create_pending_todo_ticket(client, admin)
+    pleb = _seed_plain_user(client)
+    crossed = client.post(f"/api/v1/approvals/{other_ticket}/urge", headers=pleb).json()
+    assert crossed["code"] == 1001
+    proxy = client.post(f"/api/v1/approvals/{other_ticket}/urge", headers=reviewer).json()
+    assert proxy["code"] == 0  # reviewer 带 admin：管理员代催是既定口径
+    assert (
+        client.post(
+            f"/api/v1/approvals/{other_ticket}/approve", json={"reason": "清理"}, headers=reviewer
+        ).json()["code"]
+        == 0
+    )  # 收尾批准：共享会话库里不留 pending 单
+
+    missing = client.post("/api/v1/approvals/nope/urge", headers=admin).json()
+    assert missing["code"] == 1004
+
+
 def test_governance_status_surfaces_linkage_health(client):
     """治理状态：工具数、已配/未配提供方、待办审批、指标一屏可见。"""
     token = _login(client)
