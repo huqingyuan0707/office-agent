@@ -233,6 +233,9 @@ HTTP 级冒烟：`python tests/smoke_file_ask.py`（7 项断言：PDF 真实抽�
 | 会议协作 | `office.meeting.agenda` / `book` / `risks` | 议程模板直出；预约写口径恒送审；风险关键词预警无命中不编造 |
 | 审批智能辅助 | `office.approval.draft` / `check` / `opinion` / `submit`、`office.invoice.extract` | 五类单草稿必填校验追问；金额分级（>1000 部门负责人 / >5000 分管副总）+ 高危二次确认 need_confirm；发票四要素只摘录不推断，无命中 degraded；审批说明/意见确定性成稿（驳回必须附理由）；一键提交写口径恒送审 + idem_key，批准后落本地台账，同键重放绝不双单 |
 | 审批一键催办 | `POST /approvals/{id}/urge` | 本人或管理员对 pending 单发一次 IM 提醒（旁路：不改审批状态、不落库；IM 未配置如实 not_configured，已决单拒催 4004）；超时预警由通知扫描链承担 |
+| 会议全流程补充（PRD §2.5） | `office.meeting.materials` / `digest` / `followup` | 会前资料包逐文件真实抽取汇编（单文件失败如实标注不炸整包）；会中速记按关键词归类决议/行动/风险三类原句摘录（实时语音转录需音频基建如实后置）；会后行动项×待办台账五态对账（逾期按业务时区当天判定，查无即未建单不臆造）；全读口径免审 |
+
+HTTP 级冒烟：`python tests/smoke_meeting_flow.py`（5 项断言，可重复执行）。
 
 ## V1.2 办公功能·批次 A（PRD §5.3，工具侧三件）
 

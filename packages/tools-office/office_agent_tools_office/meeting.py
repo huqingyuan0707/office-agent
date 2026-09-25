@@ -29,8 +29,8 @@ from office_agent_core.registry import register
 SCOPE_READ = "office:read"
 SCOPE_WRITE = "office:write"
 
-#: 风险关键词 → 预警级别（只做摘录分级，不做因果推断）
-_RISK_KEYWORDS: tuple[tuple[str, str], ...] = (
+#: 风险关键词 → 预警级别（只做摘录分级，不做因果推断；meeting_flow.digest 共用同一词表）
+RISK_KEYWORDS: tuple[tuple[str, str], ...] = (
     ("阻塞", "高"),
     ("故障", "高"),
     ("安全", "高"),
@@ -155,7 +155,7 @@ async def _meeting_risks(ctx: ToolContext, args: dict[str, Any]) -> dict[str, An
         raise BusinessError(ErrorCode.PARAM_INVALID, "参数 minutes 不能为空：请传入会议纪要文本")
     hits: list[dict[str, str]] = []
     seen: set[str] = set()
-    for keyword, level in _RISK_KEYWORDS:
+    for keyword, level in RISK_KEYWORDS:
         if keyword in minutes and keyword not in seen:
             seen.add(keyword)
             hits.append(
@@ -175,7 +175,7 @@ async def _meeting_risks(ctx: ToolContext, args: dict[str, Any]) -> dict[str, An
         "degraded_reason": (
             "纪要中未命中风险关键词：暂无可预警事项，不编造风险" if not hits else ""
         ),
-        "keyword_count": len(_RISK_KEYWORDS),
+        "keyword_count": len(RISK_KEYWORDS),
         "source": "input.minutes",
     }
 

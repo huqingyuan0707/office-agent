@@ -224,6 +224,9 @@ HTTP-level smoke: `python tests/smoke_file_ask.py` (7 assertions: real PDF extra
 | Meeting collaboration | `office.meeting.agenda` / `book` / `risks` | agenda from templates; booking is an approved write; risk keyword alerts stay blank on no match |
 | Approval assistant | `office.approval.draft` / `check` / `opinion` / `submit`, `office.invoice.extract` | five form kinds with required-field validation and ask-back prompts; tiered amounts (>1000 dept head / >5000 VP) + high-risk `need_confirm`; invoice fields are quoted verbatim, `degraded` on no match; deterministic drafting of application notes and review opinions (rejection requires a reason); one-click submit is an approved write with idem_key — the ticket lands in the local ledger only after review approval, same-key replay never double-books |
 | Approval urging | `POST /approvals/{id}/urge` | applicant or admin sends one IM reminder for a pending ticket (side-channel: never changes approval state, never persists; honestly reports not_configured; decided tickets rejected with 4004); stale-ticket alerts stay on the notification scanner |
+| Meeting full-flow supplement (PRD §2.5) | `office.meeting.materials` / `digest` / `followup` | pre-meeting pack extracts each file verbatim (a failed file is honestly flagged, the pack never breaks); in-meeting notes are classified into decisions/actions/risks by keyword rules with verbatim quotes (live audio transcription honestly deferred, needs audio infra); post-meeting action items are reconciled against the todo ledger into five states (overdue judged on the business-timezone today; no match = "not tracked", never fabricated); all read-scoped, no approval |
+
+HTTP-level smoke: `python tests/smoke_meeting_flow.py` (5 assertions, repeatable).
 
 ## V1.2 Office Features · Batch A (PRD §5.3; three tool-side items)
 
