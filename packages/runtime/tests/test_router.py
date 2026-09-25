@@ -97,7 +97,27 @@ def test_route_no_match_raises_actionable(monkeypatch):
     assert "rule-bot" in excinfo.value.msg
 
 
-# ---------------- ② POST /runs 省略 agent 的 HTTP 全链路 ----------------
+# ---------------- ② 纯寒暄秒回引导（不进规则、不进 LLM） ----------------
+
+
+def test_route_greeting_only_instant_actionable(monkeypatch):
+    """纯寒暄（你好/hello/在吗）：即使 LLM 已配置也不兜底，秒抛 1001 附可用说法。"""
+    _patch_specs(monkeypatch, [_rule_bot(), _llm_bot()])
+    _set_llm_profile(monkeypatch)
+    for goal in ["你好", "你好！", "你好呀", "hello", "Hi", "在吗", "谢谢"]:
+        with pytest.raises(BusinessError) as excinfo:
+            route_agent_spec(goal)
+        assert "一句话" in excinfo.value.msg
+        assert "rule-bot" in excinfo.value.msg
+
+
+def test_route_greeting_prefix_with_task_still_routes(monkeypatch):
+    """问候 + 真事（你好，帮我出日报）：剥除问候后余下业务词，照常走规则路由。"""
+    _patch_specs(monkeypatch, [_rule_bot(), _llm_bot()])
+    assert route_agent_spec("你好，帮我出今天的日报").name == "rule-bot"
+
+
+# ---------------- ③ POST /runs 省略 agent 的 HTTP 全链路 ----------------
 
 
 def test_create_run_auto_routes_and_records_agent(client, monkeypatch):
@@ -133,3 +153,19 @@ def test_create_run_auto_route_no_match_1001(client, monkeypatch):
     body = resp.json()
     assert body["code"] == 1001
     assert "rule-bot" in body["msg"]
+
+
+def test_create_run_auto_greeting_1001(client, monkeypatch):
+    """POST /runs 不带 agent 且目标纯寒暄：即使有 LLM 兜底者也不接，信封 1001 秒回。"""
+    _patch_specs(monkeypatch, [_rule_bot(), _llm_bot()])
+    _set_llm_profile(monkeypatch)
+    token = _login(client)
+    resp = client.post(
+        "/api/v1/runs",
+        json={"goal": "你好"},
+        headers=_auth(token),
+    )
+    assert resp.status_code == 400
+    body = resp.json()
+    assert body["code"] == 1001
+    assert "一句话" in body["msg"]
