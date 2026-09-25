@@ -80,8 +80,8 @@ const pollRun = (msg: ChatMsg) => {
   timers.add(timer)
 }
 
-const send = async () => {
-  const goal = input.value.trim()
+const send = async (rawGoal?: string) => {
+  const goal = (typeof rawGoal === 'string' ? rawGoal : input.value).trim()
   if (!goal || sending.value) return
   input.value = ''
   sending.value = true
@@ -119,6 +119,27 @@ const stepType = (status: string) => {
 const argsBrief = (args: unknown) => {
   const text = JSON.stringify(args ?? {})
   return text.length > 70 ? `${text.slice(0, 70)}…` : text
+}
+
+// 示例句点击即执行：终答里「…」引住的短语（2-24 字、不含换行）拆成独立标签渲染
+const EXAMPLE_RE = /「[^「」\n]{2,24}」/g
+
+const answerSegments = (text: string) => {
+  const segs: { text: string; example: boolean }[] = []
+  let last = 0
+  for (const match of text.matchAll(EXAMPLE_RE)) {
+    const at = match.index ?? 0
+    if (at > last) segs.push({ text: text.slice(last, at), example: false })
+    segs.push({ text: match[0].slice(1, -1), example: true })
+    last = at + match[0].length
+  }
+  if (last < text.length) segs.push({ text: text.slice(last), example: false })
+  return segs
+}
+
+const quickSend = (goal: string) => {
+  if (sending.value || !goal.trim()) return
+  void send(goal)
 }
 
 // 末步结果：规则智能体常无 LLM 终答，末步真实出参即「办的结果」（如实渲染，无则不显）
@@ -203,7 +224,17 @@ onUnmounted(() => {
                   </el-timeline-item>
                 </el-timeline>
 
-                <pre v-if="m.run.answer" class="answer">{{ m.run.answer }}</pre>
+                <pre v-if="m.run.answer" class="answer"><!-- 终答里的「…」示例短语渲染为可点击标签，一键发起 -->
+<template v-for="(seg, si) in answerSegments(m.run.answer)" :key="si"><el-tag
+                    v-if="seg.example"
+                    class="example-tag"
+                    size="small"
+                    type="primary"
+                    effect="light"
+                    round
+                    @click="quickSend(seg.text)"
+                  >{{ seg.text }}</el-tag><span v-else>{{ seg.text }}</span></template
+                ></pre>
                 <pre v-else-if="lastResultText(m.run)" class="answer">{{
                   lastResultText(m.run)
                 }}</pre>
@@ -250,7 +281,7 @@ onUnmounted(() => {
           :icon="Promotion"
           :loading="sending"
           :disabled="!input.trim()"
-          @click="send"
+          @click="send()"
         >
           发送
         </el-button>
@@ -360,6 +391,16 @@ onUnmounted(() => {
 }
 .pending-box {
   margin-top: 10px;
+}
+.example-tag {
+  cursor: pointer;
+  margin: 0 3px;
+  vertical-align: baseline;
+}
+.example-tag:hover {
+  background: var(--brand-soft);
+  border-color: var(--brand);
+  color: var(--brand);
 }
 .alert-link {
   color: var(--warn);

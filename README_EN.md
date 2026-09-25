@@ -263,7 +263,7 @@ HTTP-level smoke: `python tests/smoke_2_4_data.py` (11 assertions, re-runnable: 
 
 | Capability | Entry | Key guarantees |
 |---|---|---|
-| Chat assistant | `/chat` (default home) | One sentence → `POST /runs` without `agent` triggers auto-routing (`runtime/router.py`: rule hits first; LLM agents only used as fallback when their profile is configured in `LLM_PROVIDERS`; when nobody can take it, 1001 with an actionable Chinese message listing loaded agents) → 2s polling renders the routed agent, step timeline, final answer / last-step result, and a pending-approval card linking to the approvals page; routing failures surface verbatim in the bubble, zero mock. The tools page becomes an admin debug console |
+| Chat assistant | `/chat` (default home) | One sentence → `POST /runs` without `agent` triggers auto-routing (`runtime/router.py`: rule hits first; LLM agents only used as fallback when their profile is configured in `LLM_PROVIDERS`; when nobody can take it, 1001 with an actionable Chinese message listing loaded agents) → 2s polling renders the routed agent, step timeline, final answer / last-step result, and a pending-approval card linking to the approvals page; routing failures surface verbatim in the bubble, zero mock; example phrases quoted with 「…」 in the final answer render as standalone clickable tags — one click launches the task. The tools page becomes an admin debug console |
 
 ## V1.2 Office Features · Batch C (PRD §5.3; multi-scenario chaining / visual orchestration / RPA)
 
