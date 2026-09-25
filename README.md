@@ -281,6 +281,19 @@ HTTP 级冒烟：`python tests/smoke_v1_2_batch_c.py`（7 项断言，自带起�
 
 HTTP 级冒烟：`python tests/smoke_personal_affairs.py`（8 项断言，可重复执行）。
 
+## 邮件智能处理（PRD §2.7：归类 / 回复草稿 / 行动项 / 外发预审）
+
+| 能力 | 工具 | 口径要点 |
+|---|---|---|
+| 邮件归类 | `office.mail.classify` | 四类关键词规则（垃圾/需行动/需回复/仅知会，spam>action>reply>info 优先级）；未命中归 informational 不推断 |
+| 回复草稿 | `office.mail.reply_draft` | formal/friendly 两档模板直出；缺项（称呼/正文要点/署名）留 `placeholders` 占位不代编；要点原样编号进正文 |
+| 行动项提取 | `office.mail.action_items` | 动作句 + 责任人（@X/由X/X负责）+ 期限（ISO 日期/中文时间）三字段正则摘录，提不出置 null 不臆造；转待办交 `office.todo.create`（写恒送审）落库 |
+| 外发预审 | `office.mail.precheck` | 复用 `office.compliance.scan` 三类规则（隐私/绝对化用语/泄密凭据，凭据值脱敏）+ 语气风险词表（必须/立刻/怎么还没…），命中即 `need_confirm=True` 二次确认 |
+
+四工具全读口径免审、**入参驱动**（不接真实邮箱，杜绝假数据源）；群消息定时摘要（需 IM 消息源经 linkage 接入）与自动发信（对外写通道需邮箱对接）如实后置。`plugins/office-assistant` 白名单已挂四工具。
+
+HTTP 级冒烟：`python tests/smoke_mail.py`（6 项断言，可重复执行）。
+
 ## 数据库迁移
 
 `alembic` 是持久库 schema 演进唯一入口：async 引擎 `env.py`，URL 唯一出处 `Settings.DATABASE_URL`。

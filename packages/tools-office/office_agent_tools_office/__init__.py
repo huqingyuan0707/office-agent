@@ -21,6 +21,7 @@
 ⑱ office.file.read / docs.rename / file.ask：文件解析、批量重命名与文件内容问答（读 docx 表格文本图片清单/xlsx 行列与前 N 行/纯文本直读/PDF pypdf 逐页文本；ask 按段落检索摘录原文作答，向量优先失败回退字符检索；写重命名恒送审禁覆盖）；
 ⑲ office.todo.list / update / delete、office.schedule.create / freebusy、office.worklog.generate：个人事务管理（PRD §2.2——本地事务存储，读免审；写恒送审审批通过才落盘；到期/会前/节点预警由 server 通知扫描链共用同一存储生成；实现拆两文件：affairs.py 待办域+存储原语，affairs_schedule.py 日程域）。
 ⑳ office.meeting.materials / digest / followup：会议全流程补充三件（PRD §2.5 缺口——会前资料包逐文件真实抽取汇编、会中速记按关键词归类决议/行动/风险要点原句摘录、会后行动项×待办台账五态对账跟进；实时语音转录需音频基建如实后置；meeting_flow.py，全读免审）。
+㉑ office.mail.classify / reply_draft / action_items / precheck：邮件智能处理（PRD §2.7——入参驱动全读免审，不接真实邮箱杜绝假数据源；归类四类关键词口径 / 回复草稿缺项留占位不代编 / 行动项三字段正则提不出置 null / 预审复用 compliance 规则+语气词表命中即二次确认；群消息摘要与自动发信如实后置，见 mail.py docstring）。
 
 链路：server lifespan → 本包 register_all() → 各模块 specs() → registry 注册 ToolSpec；
 executor 按 spec 执行。
@@ -45,6 +46,7 @@ from . import (
     file_ask,
     file_read,
     kb,
+    mail,
     meeting,
     meeting_flow,
     ocr,
@@ -71,6 +73,7 @@ __all__ = [
     "file_ask",
     "file_read",
     "kb",
+    "mail",
     "meeting",
     "meeting_flow",
     "ocr",
@@ -95,6 +98,7 @@ _MODULES = (
     data_analysis,
     meeting,
     meeting_flow,
+    mail,
     approval,
     approval_submit,
     approval_opinion,

@@ -24,6 +24,10 @@ tools:
   - office.data.analyze
   - office.report.generate
   - kb.ask
+  - office.mail.classify
+  - office.mail.reply_draft
+  - office.mail.action_items
+  - office.mail.precheck
 max_steps: 8
 llm: default
 rules:

@@ -272,6 +272,19 @@ HTTP-level smoke: `python tests/smoke_v1_2_batch_c.py` (7 assertions, self-conta
 
 HTTP-level smoke: `python tests/smoke_personal_affairs.py` (8 assertions, re-runnable).
 
+## Email Intelligence (PRD §2.7: classify / reply drafts / action items / pre-send check)
+
+| Capability | Tool | Notes |
+|---|---|---|
+| Mail triage | `office.mail.classify` | Four keyword-based categories (spam / action / reply / informational, priority spam>action>reply>info); no match stays informational, never inferred |
+| Reply drafts | `office.mail.reply_draft` | Formal/friendly template output; missing parts (salutation/body points/signature) surface as `placeholders` instead of being invented; bullet points are carried into the body verbatim |
+| Action items | `office.mail.action_items` | Regex extraction of action sentence + owner (@X / 由X / X负责) + due date (ISO or Chinese wording); undeterminable fields are null, never fabricated; converting to todos is left to `office.todo.create` (approved write) |
+| Pre-send check | `office.mail.precheck` | Reuses the three `office.compliance.scan` rule families (privacy / absolute claims / leaked credentials, credential values masked) plus a tone-risk word list (必须/立刻/怎么还没…), any hit sets `need_confirm=True` |
+
+All four tools are read-scoped (no approval) and **input-driven** — no real mailbox is wired in, so there is no fake data source. Scheduled group-chat digests (needs an IM message source via linkage) and auto-sending (an outbound write channel, needs mailbox integration) are honestly deferred. The `plugins/office-assistant` whitelist now carries all four tools.
+
+HTTP-level smoke: `python tests/smoke_mail.py` (6 assertions, re-runnable).
+
 ## Database Migrations
 
 `alembic` is the single entry point for schema evolution: async `env.py`, URL sourced only from `Settings.DATABASE_URL`. Model column changes must ship as `autogenerate` migrations (`create_all` never ALTERs); CI runs `alembic check` for drift.
