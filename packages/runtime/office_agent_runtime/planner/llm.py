@@ -314,8 +314,11 @@ class LlmFunctionCallPlanner:
                 f"LLM profile「{self._profile_name}」返回 HTTP {resp.status_code}（上游故障）"
             )
         if resp.status_code >= 400:
+            # 带上响应体片段：Ollama 400 里藏着真实原因（如上下文超窗），只报状态码等于没诊断信息
+            detail = resp.text[:200].strip()
             raise LlmPlanError(
-                f"LLM profile「{self._profile_name}」返回 HTTP {resp.status_code}（请求非法）"
+                f"LLM profile「{self._profile_name}」返回 HTTP {resp.status_code}"
+                f"（请求非法）：{detail}"
             )
 
         try:
