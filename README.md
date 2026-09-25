@@ -236,8 +236,12 @@ HTTP 级冒烟：`python tests/smoke_file_ask.py`（7 项断言：PDF 真实抽�
 | 审批智能辅助 | `office.approval.draft` / `check` / `opinion` / `submit`、`office.invoice.extract` | 五类单草稿必填校验追问；金额分级（>1000 部门负责人 / >5000 分管副总）+ 高危二次确认 need_confirm；发票四要素只摘录不推断，无命中 degraded；审批说明/意见确定性成稿（驳回必须附理由）；一键提交写口径恒送审 + idem_key，批准后落本地台账，同键重放绝不双单 |
 | 审批一键催办 | `POST /approvals/{id}/urge` | 本人或管理员对 pending 单发一次 IM 提醒（旁路：不改审批状态、不落库；IM 未配置如实 not_configured，已决单拒催 4004）；超时预警由通知扫描链承担 |
 | 会议全流程补充（PRD §2.5） | `office.meeting.materials` / `digest` / `followup` | 会前资料包逐文件真实抽取汇编（单文件失败如实标注不炸整包）；会中速记按关键词归类决议/行动/风险三类原句摘录（实时语音转录需音频基建如实后置）；会后行动项×待办台账五态对账（逾期按业务时区当天判定，查无即未建单不臆造）；全读口径免审 |
+| 邮件&消息智能处理（PRD §2.7） | `office.mail.classify` / `reply_draft` / `action_items` / `precheck` + `office.im.digest` | 邮件四工具入参驱动全读免审（不接真实邮箱杜绝假数据源）：四类关键词归类 / 草稿缺项留占位不代编 / 行动项三字段提不出置 null（转待办走 todo.create）/ 预审复用合规规则+语气词表命中即二次确认；群摘要按需入参（总数/分人+@本人任务候选+问句/决议/风险摘录+简报，定时调度待 §2.11）；自动发信属对外写通道如实后置；`/mail` 页三块全接线 |
+| 人事行政资源管理（PRD §2.8） | `office.hr.attendance` / `checklist` + `office.resource.query` / `book` | 考勤加班按人汇总（出勤/迟到/请假天数+总工时，加班=Σmax(0,日工时-8)，草稿走 approval.draft）；入离职清单模板直出缺项留白（交接事项原文提醒）；资源台账内置+CSV 叠加，query 读免审给已订区间，book 写恒送审冲突 1001；`/hr` 页三块全接线 |
 
 HTTP 级冒烟：`python tests/smoke_meeting_flow.py`（5 项断言，可重复执行）。
+
+HTTP 级冒烟：`python tests/smoke_hr_im.py`（§2.7 群摘要 + §2.8 人事行政 9 项断言，可重复执行：摘要→考勤→清单→查询→预订→冲突驳回）。
 
 ## V1.2 办公功能·批次 A（PRD §5.3，工具侧三件）
 

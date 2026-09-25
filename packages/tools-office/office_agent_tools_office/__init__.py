@@ -23,12 +23,20 @@
 ⑳ office.meeting.materials / digest / followup：会议全流程补充三件（PRD §2.5 缺口——会前资料包逐文件真实抽取汇编、会中速记按关键词归类决议/行动/风险要点原句摘录、会后行动项×待办台账五态对账跟进；实时语音转录需音频基建如实后置；meeting_flow.py，全读免审）。
 ㉑ office.mail.classify / reply_draft / action_items / precheck：邮件智能处理（PRD §2.7——入参驱动全读免审，不接真实邮箱杜绝假数据源；归类四类关键词口径 / 回复草稿缺项留占位不代编 / 行动项三字段正则提不出置 null / 预审复用 compliance 规则+语气词表命中即二次确认；群消息摘要与自动发信如实后置，见 mail.py docstring）。
 ㉒ office.data.query.save / list / run / delete + office.data.chart_insight：常用查询保存与一句话复用、图表自动解读（PRD §2.4 新增——save/delete 写恒送审落盘 data_queries/、list/run 读免审按租户隔离实时重查；insight 读免审，统计+最高/最低/2σ 异常标注+中文简报+同数据 SVG 条形图；见 data_saved.py / data_insight.py）。
+㉓ office.im.digest：群消息摘要（PRD §2.7——入参驱动读免审：总数/分人计数+@本人摘录+任务候选+问句/决议/风险摘录+简报；动作词与日期正则复用 mail；定时调度待 §2.11）。
+㉔ office.hr.attendance / checklist + office.resource.query / book：人事行政（PRD §2.8——考勤加班按人汇总确定性计算，草稿走 approval.draft；入离职清单模板直出缺项留白；资源台账内置+CSV 叠加，query 读免审给已订区间，book 写恒送审冲突 1001；见 hr.py / resources.py）。
+㉕ kb.ask 权限适配 + office.kb.search_unified + office.image.ask：企业知识库增强检索
+（PRD §2.6——kb.ask 条目级 visibility（public/角色名，KB_DIR 首行 visibility 指令，
+`*`/admin 可见全部，被滤只计 permission_filtered）；search_unified 一句话联查知识/
+文档/本人待办日程/审批单据/数据台账五源并合并排序，远端聊天/OA 经联动接入后按
+origin 追加；image.ask 图片 OCR 取文本后段落检索问答，引擎缺失如实降级；见 kb.py /
+kb_unified.py / image_ask.py，全读免审）。
 
 链路：server lifespan → 本包 register_all() → 各模块 specs() → registry 注册 ToolSpec；
 executor 按 spec 执行。
 对齐：AGENTS.md §3（分层红线：工具实现纯函数）；
       智能办公Agent 产品需求文档.md §5.1（V1.0 必上线清单）、§5.2（V1.1 数据分析/会议协作/审批辅助）、
-      §5.3（V1.2 PPT 生成/合规风险检测/预算查询）。
+      §5.3（V1.2 PPT 生成/合规风险检测/预算查询）、§2.6（知识库增强检索）。
 """
 
 from office_agent_core.registry import register as _core_register
@@ -48,12 +56,17 @@ from . import (
     doc_compare,
     file_ask,
     file_read,
+    hr,
+    im_digest,
+    image_ask,
     kb,
+    kb_unified,
     mail,
     meeting,
     meeting_flow,
     ocr,
     pptx_gen,
+    resources,
     summarize,
     task_planner,
     templates,
@@ -77,13 +90,18 @@ __all__ = [
     "doc_compare",
     "file_ask",
     "file_read",
+    "hr",
+    "im_digest",
+    "image_ask",
     "kb",
+    "kb_unified",
     "mail",
     "meeting",
     "meeting_flow",
     "ocr",
     "pptx_gen",
     "register_all",
+    "resources",
     "specs",
     "summarize",
     "task_planner",
@@ -116,7 +134,12 @@ _MODULES = (
     summarize,
     file_read,
     file_ask,
+    image_ask,
+    kb_unified,
     terms,
+    im_digest,
+    hr,
+    resources,
     affairs,
     affairs_schedule,
 )

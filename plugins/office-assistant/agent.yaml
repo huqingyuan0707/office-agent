@@ -31,6 +31,11 @@ tools:
   - office.mail.reply_draft
   - office.mail.action_items
   - office.mail.precheck
+  - office.im.digest
+  - office.hr.attendance
+  - office.hr.checklist
+  - office.resource.query
+  - office.resource.book
   - office.report.generate
   - kb.ask
 max_steps: 8
