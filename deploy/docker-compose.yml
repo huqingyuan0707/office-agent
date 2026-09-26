@@ -1,8 +1,11 @@
-# Milvus 单机版（ADR-0005 阶段二）：milvus standalone + etcd（元数据）+ minio（对象存储）。
+# 可选外部服务（ADR-0005）：Milvus 单机版（阶段二）+ Redis（阶段三）。
 # 起法：docker compose -f deploy/docker-compose.yml up -d
 # 停法：docker compose -f deploy/docker-compose.yml down
-# 起后把 MILVUS_URI=http://127.0.0.1:19530 写进 .env 并重启后端即为「增量灌库 + 过滤检索」；
-# 未配置或服务停掉时检索自动三级降级（milvus → embedding 全量重算 → 字符 bigram），绝不 500。
+# 起后把 MILVUS_URI=http://127.0.0.1:19530 / REDIS_URL=redis://127.0.0.1:6379/0 写进 .env
+# 并重启后端即为「增量灌库 + 过滤检索」与「跨进程向量缓存 + 调度环多实例租约锁」；
+# 未配置或服务停掉时一律降级（检索 milvus → embedding 全量重算 → 字符 bigram；
+# 缓存退进程内 LRU、调度环按无锁单实例语义），绝不 500。
+# 两者互相独立：只用 Redis 也可只起 redis 一个服务（docker compose up -d redis）。
 name: office-agent
 
 services:
@@ -58,6 +61,19 @@ services:
     depends_on:
       - etcd
       - minio
+
+  # 缓存与租约锁专用：刻意**不开持久化**——重启即空是正确的（缓存不是真相源，
+  # 作业与任务状态在 SQLite；丢了只是首批 embedding 重算一次）。
+  redis:
+    image: redis:8-alpine
+    command: redis-server --save "" --appendonly no
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+    ports:
+      - "6379:6379"
 
 volumes:
   etcd-data:

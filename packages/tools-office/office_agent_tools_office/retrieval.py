@@ -21,6 +21,7 @@ import re
 
 import httpx
 
+from office_agent_core import kv
 from office_agent_core.settings import settings
 from office_agent_tools_office import vector_store
 
@@ -128,7 +129,29 @@ def embedding_ready() -> bool:
 
 
 async def embed_texts(texts: list[str]) -> list[list[float]]:
-    """调本地 OpenAI 兼容 /embeddings 取向量（分批串行；任何异常上抛给调用方降级）。
+    """对全部文本取向量：命中缓存零网络直取，未命中的请求后回填（ADR-0005 阶段三）。
+
+    缓存键 ``{prefix}:emb:{model}:{sha256(model+text)}``，TTL 7 天；后端未配置/不可用
+    自动退化为进程内 LRU（同进程内同文本复用），**绝不因缓存故障 500**——缓存是加速器
+    不是依赖。本函数仍是唯一 embedding 出口（测试 patch 目标不变），真实网络调用在
+    `_embed_remote`，缓存读写只管命中与回填，不改任何检索口径。
+    """
+    keys = [kv.vector_key(settings.EMBEDDING_MODEL, text) for text in texts]
+    cached = [await kv.get_vector(key) for key in keys]
+    missing = [index for index, vector in enumerate(cached) if vector is None]
+    if missing:
+        vectors = await _embed_remote([texts[index] for index in missing])
+        for index, vector in zip(missing, vectors, strict=True):
+            cached[index] = vector
+            await kv.set_vector(keys[index], vector)
+    result = [vector for vector in cached if vector is not None]
+    if len(result) != len(texts):  # 理论上不可达：misses 已全部回填（静默错位比报错更危险）
+        raise ValueError(f"embedding 缓存回填缺口：期望 {len(texts)} 条，实际 {len(result)} 条")
+    return result
+
+
+async def _embed_remote(texts: list[str]) -> list[list[float]]:
+    """真实 /embeddings 调用（分批串行；任何异常上抛给调用方降级，无缓存）。
 
     契约：base_url 以 /v1 结尾（与 LLM_PROVIDERS 同口径）；响应取 data[i].embedding，
     校验条数与维度一致——静默错位比报错更危险（会拿错向量排错序）。

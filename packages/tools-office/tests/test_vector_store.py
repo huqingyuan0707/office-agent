@@ -9,6 +9,7 @@ from __future__ import annotations
 
 import pytest
 
+from office_agent_core import kv
 from office_agent_core.settings import settings
 from office_agent_tools_office import retrieval, vector_store
 from office_agent_tools_office.retrieval import retrieve, retrieve_by_store
@@ -71,9 +72,12 @@ def _offline(monkeypatch):
     monkeypatch.setattr(settings, "MILVUS_URI", "")
     monkeypatch.setattr(settings, "EMBEDDING_BASE_URL", "")
     monkeypatch.setattr(settings, "EMBEDDING_MODEL", "")
+    monkeypatch.setattr(settings, "REDIS_URL", "")
     vector_store.reset_store()
+    kv.reset()
     yield
     vector_store.reset_store()
+    kv.reset()
 
 
 def _chunks() -> list[dict[str, str]]:

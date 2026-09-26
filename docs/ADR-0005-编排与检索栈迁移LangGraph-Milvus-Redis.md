@@ -2,7 +2,8 @@
 
 - 日期：2026-09-26
 - 状态：接受（阶段一 LangGraph 已落地（2026-09-26，实测见 §5 清单）→ 阶段二 Milvus 已落地
-  （2026-09-26，Docker 集成一轮因本机 registry 不可达顺延，见 §5）→ 阶段三 Redis 待实施）
+  （2026-09-26，Docker 集成一轮因本机 registry 不可达顺延，见 §5）→ 阶段三 Redis 已落地
+  （2026-09-26，Docker 集成一轮同上顺延，见 §5）；三阶段全部完成）
 - 决策人：项目所有者（会话指令「项目改为 LangGraph/Milvus/Redis」，三项节奏决策已确认）
 - 关联文档：`AGENTS.md` §3（后端红线）/ `CLAUDE.md` §一.2（依赖报批）§八（Agent 专属规则）/
   `.trae/documents/LangGraph-Milvus-Redis三阶段迁移方案.md`（实施计划 SSOT）
@@ -102,8 +103,23 @@ metric=COSINE 与现余弦同构，`EMBEDDING_MIN_SCORE=0.35` 直接复用；块
       connection attempt failed`），镜像拉不下来 → 「起 Docker 后集成一轮」未完成，降级路径改由
       11 例零网络 FakeVectorStore 单测 + 上条死端口实测覆盖；`test_milvus_integration_roundtrip`
       标 `@pytest.mark.milvus`，`MILVUS_URI` 未配置即 skip，待环境可达后跑一次即补齐
-- [ ] 阶段三：`core/kv.py` + embedding 缓存（embed_texts 前置透明）+ 调度环 SET NX 锁 +
+- [x] 阶段三：`core/kv.py` + embedding 缓存（embed_texts 前置透明）+ 调度环 SET NX 锁 +
       REDIS_* 配置键 + compose 追加 redis + 用例
-- [ ] 文档同步：README 中英技术栈与功能表、AGENTS.md §5 验证命令/§6 登记、CLAUDE.md 技术栈行改真实
+      （实测：`kv.py` 182 行三条窄接口（`get_vector`/`set_vector`/`try_lock`）+ 进程内 LRU(2048)/
+      无锁单实例语义降级 + 未配置 INFO 一次、失败 WARNING 一次；`embed_texts` 改为缓存编排层
+      （TTL 7 天、键含模型名、真实网络调用抽到 `_embed_remote`，仍是唯一 embedding 出口）；
+      `scheduler._tick_once` 前置 `SET NX EX <2×tick>` 租约锁，抢不到跳过、后端缺失照常扫；
+      `deploy/docker-compose.yml` 追加 `redis:8-alpine`（刻意不持久化）；
+      五包 **379 collected / 378 passed / 1 skipped / 0 failed（EXIT=0）**（基线 367 → +12：
+      core `test_kv.py` 8 例 + tools-office `test_kb_ask.py` 3 例 + server `test_jobs.py` 1 例）；
+      ruff 全绿、naming 0 违规、arch 仅 1 处并发在途 `kb_admin.py` file-too-long、`alembic check`
+      零漂移；`smoke_redis.py` **5/5 PASS**（默认死端口验证降级：kb.ask code 0 通道 embedding、
+      两次命中分数稳定、真调度环到点执行、run-now 不推进 next_run_at））
+- [x] 阶段三如实标注（顺延项）：`docker compose -f deploy/docker-compose.yml up -d redis` 本机实测
+      失败——`docker.io` registry 仍不可达（`images/create?fromImage=docker.io%2Flibrary%2Fredis` 返回
+      500 `Internal Server Error`），镜像拉不下来 → 「起 Docker 后集成一轮」未完成，降级路径改由
+      8 例零网络 `FakeRedis` 单测 + 死端口端到端冒烟覆盖；待环境可达后跑
+      `python tests/smoke_redis.py redis://127.0.0.1:6379/0` 即补齐
+- [x] 文档同步：README 中英技术栈与功能表、AGENTS.md §5 验证命令/§6 登记、CLAUDE.md 技术栈行改真实
 - [ ] 升级路径预留：若未来走路 a（图内持久化），LangGraph checkpoint 定位为**只写不读的调试镜像**，
       `Task.checkpoint` 仍是业务 SSOT；届时需配 `LANGGRAPH_STRICT_MSGPACK`

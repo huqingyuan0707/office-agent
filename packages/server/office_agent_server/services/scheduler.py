@@ -5,8 +5,10 @@
 口径：Settings.SCHEDULER_ENABLED 默认 False（测试与按需部署不起环，.env.example
       文档化开法）；每轮异常一律 catch 记告警后继续——调度环绝不因单轮故障而死，
       降级只体现在日志与作业 last_result，绝不 500 影响主服务。
+多实例护栏（ADR-0005 阶段三）：每 tick 抢 SET NX 租约锁（TTL = 2×tick），抢不到的实例
+      本轮跳过——Redis 未配置/不可用时 kv.try_lock 恒 True（无锁单实例语义），调度不受拖累。
 链路：app.py lifespan（enabled 才 start，yield 后 stop）→ 本模块 → jobs.tick_due_jobs。
-对齐：AGENTS.md §3（降级不阻断）；智能办公Agent 产品需求文档.md §2.11。
+对齐：AGENTS.md §3（降级不阻断）；智能办公Agent 产品需求文档.md §2.11；docs/ADR-0005 §3。
 """
 
 from __future__ import annotations
@@ -15,6 +17,7 @@ import asyncio
 import contextlib
 import logging
 
+from office_agent_core import kv
 from office_agent_core.settings import settings
 from office_agent_server.db import session_factory
 from office_agent_server.services.jobs import tick_due_jobs
@@ -24,6 +27,16 @@ logger = logging.getLogger(__name__)
 _task: asyncio.Task | None = None
 
 
+async def _tick_once() -> None:
+    """执行一轮扫描（多实例护栏：抢不到租约锁说明他实例正在扫，本轮跳过）。"""
+    tick = max(5, int(settings.SCHEDULER_TICK_SECONDS))
+    if not await kv.try_lock(kv.lock_key("scheduler:tick"), tick * 2):
+        logger.debug("scheduler tick skipped：其他实例持有租约锁")
+        return
+    async with session_factory()() as db:
+        await tick_due_jobs(db)
+
+
 async def _loop() -> None:
     """调度主循环（睡一个 tick → 独立会话扫到点作业 → 无限继续）。"""
     tick = max(5, int(settings.SCHEDULER_TICK_SECONDS))
@@ -31,8 +44,7 @@ async def _loop() -> None:
     while True:
         await asyncio.sleep(tick)
         try:
-            async with session_factory()() as db:
-                await tick_due_jobs(db)
+            await _tick_once()
         except asyncio.CancelledError:
             raise
         except Exception:

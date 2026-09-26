@@ -12,6 +12,7 @@ from pathlib import Path
 
 import pytest
 
+from office_agent_core import kv
 from office_agent_core.contracts import ToolContext
 from office_agent_core.errors import BusinessError
 from office_agent_core.settings import settings
@@ -27,10 +28,13 @@ def _kb_bigram_by_default(monkeypatch: pytest.MonkeyPatch) -> None:
     否则本机 `.env` 一旦登记 EMBEDDING_*，整个用例集都会去打真实 /embeddings。
     要测向量通道的用例在自身内再 monkeypatch 覆盖。
     Milvus 同理钉空（MILVUS_URI 一登记，检索会先试向量库，同样会打网络）。
+    Redis 同理：向量缓存既是跨用例的进程级状态、也可能真连网络。
     """
     monkeypatch.setattr(settings, "EMBEDDING_BASE_URL", "")
     monkeypatch.setattr(settings, "EMBEDDING_MODEL", "")
     monkeypatch.setattr(settings, "MILVUS_URI", "")
+    monkeypatch.setattr(settings, "REDIS_URL", "")
+    kv.reset()
 
 
 # ---------------- 字符检索（默认通道） ----------------
@@ -108,3 +112,77 @@ async def test_kb_ask_falls_back_to_bigram_when_embedding_unreachable(
     assert data["embedding_model"] == ""
     assert data["retrieval_fallback_reason"]
     assert data["count"] >= 1
+
+
+# ---------------- embedding 缓存（ADR-0005 阶段三：embed_texts 前置透明缓存） ----------------
+
+
+class _FakeRedis:
+    """最小 kv 后端替身（只实现 get/set），经 kv.install_client 注入，全程零网络。"""
+
+    def __init__(self) -> None:
+        self.store: dict[str, str] = {}
+        self.writes: list[int | None] = []
+
+    async def get(self, key: str) -> str | None:
+        return self.store.get(key)
+
+    async def set(self, key: str, value: str, ex: int | None = None, nx: bool = False):
+        self.writes.append(ex)
+        self.store[key] = value
+        return True
+
+
+def _counting_remote(calls: list[list[str]]):  # type: ignore[no-untyped-def]
+    """假远端 embedding：记录每次入参文本，向量 = 文本长度归一（确定性可断言）。"""
+
+    async def _remote(texts: list[str]) -> list[list[float]]:
+        calls.append(list(texts))
+        return [[float(len(text)), 1.0] for text in texts]
+
+    return _remote
+
+
+async def test_embed_texts_cache_hit_skips_network(monkeypatch: pytest.MonkeyPatch) -> None:
+    """同文本第二次取向量命中缓存零网络（远端只被调一次），回填 TTL 为 7 天。"""
+    fake = _FakeRedis()
+    kv.install_client(fake)
+    calls: list[list[str]] = []
+    monkeypatch.setattr(settings, "EMBEDDING_MODEL", "fake-embedding")
+    monkeypatch.setattr(retrieval, "_embed_remote", _counting_remote(calls))
+
+    first = await retrieval.embed_texts(["制度正文"])
+    second = await retrieval.embed_texts(["制度正文"])
+    assert first == second == [[4.0, 1.0]]
+    assert len(calls) == 1, calls  # 第二次完全命中：零网络
+    assert fake.writes == [kv.VECTOR_CACHE_TTL_SECONDS]  # 只回填一次，SETEX 7 天
+
+
+async def test_embed_texts_embeds_only_cache_misses(monkeypatch: pytest.MonkeyPatch) -> None:
+    """部分命中：只对未命中的文本发远端请求，返回值顺序与入参一一对应（不错位）。"""
+    fake = _FakeRedis()
+    kv.install_client(fake)
+    calls: list[list[str]] = []
+    monkeypatch.setattr(settings, "EMBEDDING_MODEL", "fake-embedding")
+    monkeypatch.setattr(retrieval, "_embed_remote", _counting_remote(calls))
+
+    await retrieval.embed_texts(["甲乙丙"])
+    vectors = await retrieval.embed_texts(["甲乙丙", "丁戊"])
+    assert calls == [["甲乙丙"], ["丁戊"]]  # 第二次只算未命中的那句
+    assert vectors == [[3.0, 1.0], [2.0, 1.0]]  # 命中位在前、新增位在后，顺序不乱
+
+
+async def test_embed_texts_survives_cache_backend_failure(monkeypatch: pytest.MonkeyPatch) -> None:
+    """缓存后端故障不影响取向量（绝不 500）：读按未命中、写失败静默，仍返回真实向量。"""
+
+    class _BrokenRedis:
+        async def get(self, key: str):
+            raise ConnectionError("cache down")
+
+        async def set(self, key: str, value: str, ex: int | None = None, nx: bool = False):
+            raise ConnectionError("cache down")
+
+    kv.install_client(_BrokenRedis())
+    monkeypatch.setattr(settings, "EMBEDDING_MODEL", "fake-embedding")
+    monkeypatch.setattr(retrieval, "_embed_remote", _counting_remote([]))
+    assert await retrieval.embed_texts(["制度"]) == [[2.0, 1.0]]

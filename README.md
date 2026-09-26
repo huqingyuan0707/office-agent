@@ -334,6 +334,23 @@ docker compose -f deploy/docker-compose.yml up -d     # milvus standalone + etcd
 - HTTP 级冒烟：`python tests/smoke_milvus.py [base_url] [期望通道]`（六项断言，可重复执行）；
   `@pytest.mark.milvus` 的真实集成用例 `MILVUS_URI` 未配置即 skip。
 
+要启用 Redis 键值层（embedding 结果跨进程复用 + 调度环多实例护栏）：
+
+```powershell
+docker compose -f deploy/docker-compose.yml up -d redis   # redis:8-alpine（刻意不持久化）
+# .env 追加（键的唯一出处 packages/core/office_agent_core/settings.py）：
+#   REDIS_URL=redis://127.0.0.1:6379/0     # 留空 = 整体关闭、零网络
+#   REDIS_KEY_PREFIX=oa
+#   REDIS_TIMEOUT_SECONDS=2
+```
+
+- **用途只收敛两处**（防过度工程，ADR-0005 §3）：`retrieval.embed_texts` 前置向量缓存（键含模型名、
+  TTL 7 天，同文本跨进程零重算）+ 调度环 `SET key NX EX <2×tick>` 租约锁（多实例只允许一个实例扫到点作业）。
+- 降级（**绝不 500**）：未配置或连接/读写失败 → 进程内 `OrderedDict` LRU（容量 2048）与无锁单实例语义
+  （`try_lock` 恒 True，调度不因后端缺失而停摆）；未配置记一次 INFO（属默认口径），失败记一次 WARNING，不刷屏。
+- 刻意不做：LangGraph checkpointer 进 Redis、会话缓存、任务队列、业务数据缓存、redlock 库。
+- HTTP 级冒烟：`python tests/smoke_redis.py [redis_url]`（五项断言，可重复执行；默认死端口验证降级路径）。
+
 ## 数据库迁移
 
 `alembic` 是持久库 schema 演进唯一入口：async 引擎 `env.py`，URL 唯一出处 `Settings.DATABASE_URL`。

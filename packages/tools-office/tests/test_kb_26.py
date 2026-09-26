@@ -16,6 +16,7 @@ from pathlib import Path
 import pytest
 from PIL import Image
 
+from office_agent_core import kv
 from office_agent_core.contracts import ToolContext
 from office_agent_core.errors import BusinessError
 from office_agent_core.settings import settings
@@ -55,6 +56,8 @@ def _no_embedding_by_default(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setattr(settings, "EMBEDDING_BASE_URL", "")
     monkeypatch.setattr(settings, "EMBEDDING_MODEL", "")
     monkeypatch.setattr(settings, "MILVUS_URI", "")
+    monkeypatch.setattr(settings, "REDIS_URL", "")
+    kv.reset()
 
 
 # ---------------- visibility 原语 ----------------

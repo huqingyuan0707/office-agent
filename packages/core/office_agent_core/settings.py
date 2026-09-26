@@ -123,6 +123,13 @@ class Settings(BaseSettings):
     MILVUS_COLLECTION: str = "office_chunks"
     MILVUS_TIMEOUT_SECONDS: float = 5.0
 
+    # ---- Redis 键值层（可选，ADR-0005 阶段三）：URL 为空即整体关闭、零网络，
+    # 向量缓存退化为进程内 LRU、调度环按无锁单实例语义运行；配置后 embedding 结果
+    # 跨进程复用 + 调度环 SET NX 多实例护栏，对端不可用同样降级，绝不 500。----
+    REDIS_URL: str = ""
+    REDIS_KEY_PREFIX: str = "oa"
+    REDIS_TIMEOUT_SECONDS: float = 2.0
+
     # ---- 主动消息推送（站内通知扫描阈值）----
     APPROVAL_STALE_HOURS: float = 24.0
     NOTIFICATION_MAX_PER_SCAN: int = 50

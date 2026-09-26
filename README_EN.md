@@ -328,6 +328,30 @@ docker compose -f deploy/docker-compose.yml up -d     # milvus standalone + etcd
 - HTTP-level smoke: `python tests/smoke_milvus.py [base_url] [expected_mode]` (six assertions,
   re-runnable); the real `@pytest.mark.milvus` integration test is skipped when `MILVUS_URI` is unset.
 
+To enable the Redis key-value layer (reuse embedding results across processes + multi-instance
+guard for the scheduler loop):
+
+```powershell
+docker compose -f deploy/docker-compose.yml up -d redis   # redis:8-alpine (deliberately non-persistent)
+# Append to .env (keys are owned by packages/core/office_agent_core/settings.py):
+#   REDIS_URL=redis://127.0.0.1:6379/0     # empty = fully off, zero network
+#   REDIS_KEY_PREFIX=oa
+#   REDIS_TIMEOUT_SECONDS=2
+```
+
+- **Only two uses, by design** (anti-over-engineering, ADR-0005 §3): a vector cache in front of
+  `retrieval.embed_texts` (key includes the model name, TTL 7 days, identical text never re-embedded
+  across processes) and a `SET key NX EX <2×tick>` lease lock for the scheduler loop (only one instance
+  may scan due jobs).
+- Degradation (**never a 500**): unconfigured or connect/read/write failure → in-process `OrderedDict`
+  LRU (capacity 2048) and lock-free single-instance semantics (`try_lock` always True, so scheduling
+  never stalls on a missing backend); one INFO when unconfigured (the default path), one WARNING on
+  failure, never spamming.
+- Deliberately out of scope: LangGraph checkpointer in Redis, session cache, task queue, business-data
+  cache, redlock library.
+- HTTP-level smoke: `python tests/smoke_redis.py [redis_url]` (five assertions, re-runnable; defaults
+  to a dead port to exercise the degradation path).
+
 ## Database Migrations
 
 `alembic` is the single entry point for schema evolution: async `env.py`, URL sourced only from `Settings.DATABASE_URL`. Model column changes must ship as `autogenerate` migrations (`create_all` never ALTERs); CI runs `alembic check` for drift.

@@ -11,6 +11,7 @@ from __future__ import annotations
 
 from datetime import datetime
 
+from office_agent_core.settings import settings
 from office_agent_server.services import jobs as jobs_mod
 from office_agent_server.services.jobs import compute_next_run, parse_schedule
 
@@ -217,3 +218,40 @@ def test_tick_due_jobs_executes_and_advances(client, monkeypatch) -> None:
     row = next(item for item in items if item["id"] == job["id"])
     assert row["next_run_at"].startswith("2099"), row
     client.delete(f"/api/v1/jobs/{job['id']}", headers=headers)
+
+
+async def test_scheduler_tick_respects_lease_lock(monkeypatch) -> None:
+    """多实例护栏（ADR-0005 阶段三）：抢不到租约锁本轮不扫，抢到则照常扫。
+
+    Redis 未配置/不可用时 kv.try_lock 恒 True（无锁单实例语义），调度环不被拖累——
+    该分支由 packages/core/tests/test_kv.py 覆盖，此处只锁「锁语义 → 是否扫描」的接线。
+    """
+    from office_agent_core import kv
+    from office_agent_server.services import scheduler
+
+    ticks: list[str] = []
+
+    async def fake_tick(_db, **_kw):  # type: ignore[no-untyped-def]
+        ticks.append("tick")
+        return {"jobs": []}
+
+    monkeypatch.setattr(scheduler, "tick_due_jobs", fake_tick)
+    monkeypatch.setattr(settings, "SCHEDULER_TICK_SECONDS", 30)
+
+    seen: list[tuple[str, float]] = []
+
+    async def deny(key: str, ttl: float) -> bool:
+        seen.append((key, ttl))
+        return False
+
+    monkeypatch.setattr(kv, "try_lock", deny)
+    await scheduler._tick_once()
+    assert ticks == []  # 他实例持有租约 → 本轮跳过
+    assert seen == [(kv.lock_key("scheduler:tick"), 60.0)]  # 租约 TTL = 2×tick
+
+    async def allow(key: str, ttl: float) -> bool:
+        return True
+
+    monkeypatch.setattr(kv, "try_lock", allow)
+    await scheduler._tick_once()
+    assert ticks == ["tick"]
