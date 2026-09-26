@@ -97,6 +97,24 @@ def chunks_of(
     return chunks
 
 
+def chunks_with_meta(
+    entries: list[dict[str, str]], max_chars: int | None = CHUNK_CHARS
+) -> list[dict[str, str]]:
+    """条目 → 段落块并保留调用方扩展键（origin/visibility 等，chunks_of 会丢弃它们）。
+
+    切块只读 title/content/source；其余键（如权限与来源标记）原样透传到每个块，
+    供 kb.ask（visibility 回显）与跨源检索（origin 分组）使用，不参与检索排序。
+    """
+    chunks: list[dict[str, str]] = []
+    for entry in entries:
+        for chunk in chunk_entry(entry, max_chars):
+            for key, value in entry.items():
+                if key not in ("title", "content", "source") and key not in chunk:
+                    chunk[key] = value
+            chunks.append(chunk)
+    return chunks
+
+
 def embedding_ready() -> bool:
     """向量检索是否可用（base_url 与 model 都配了才发网络；未配置即字符检索，零网络）。"""
     return bool(settings.EMBEDDING_BASE_URL.strip() and settings.EMBEDDING_MODEL.strip())

@@ -52,6 +52,11 @@ def _ocr_available() -> tuple[bool, str]:
     return True, ""
 
 
+def ocr_available() -> tuple[bool, str]:
+    """OCR 引擎可用性公开探针（office.image.ask 复用同一判定，不重复实现）。"""
+    return _ocr_available()
+
+
 async def _ocr_image(ctx: ToolContext, args: dict[str, Any]) -> dict[str, Any]:
     """ocr.image：图片元数据直读 + 可选引擎识别（引擎不可用走 degraded）。"""
     _ = ctx
