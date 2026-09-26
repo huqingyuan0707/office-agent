@@ -228,7 +228,7 @@ async def retrieve_by_embedding(
     return scored[:top_k]
 
 
-def _store_records(chunks: list[dict[str, str]], origin: str) -> list[vector_store.VectorRecord]:
+def store_records(chunks: list[dict[str, str]], origin: str) -> list[vector_store.VectorRecord]:
     """段落块 → 向量库记录（origin 取块自带标记，缺省用调用方声明的域；id 见 record_id）。"""
     return [
         vector_store.VectorRecord(
@@ -245,6 +245,40 @@ def _store_records(chunks: list[dict[str, str]], origin: str) -> list[vector_sto
     ]
 
 
+async def ingest_records(
+    records: list[vector_store.VectorRecord], store: vector_store.VectorStore
+) -> int:
+    """增量写入向量记录：known_ids 差集 → 只 embed 缺失块 → upsert；返回本次写入块数。
+
+    差集是增量的唯一依据（块 id = sha1(origin|source|text)，文本一改即新 id），
+    因此重复入盘同一文件不会重复计算向量。
+    """
+    if not records:
+        return 0
+    known = await store.known_ids([record.id for record in records])
+    missing = [record for record in records if record.id not in known]
+    if not missing:
+        return 0
+    vectors = await embed_texts([f"{r.title}\n{r.text}" for r in missing])
+    for record, vector in zip(missing, vectors, strict=True):
+        record.vector = vector
+    await store.upsert(missing)
+    return len(missing)
+
+
+async def index_chunks(chunks: list[dict[str, str]], origin: str = "knowledge") -> int:
+    """把段落块落进向量库（知识库后台上传入录的显式灌库入口），返回新增块数。
+
+    与检索时的**按需灌库**分工不同：此处是「入库即向量化」，让 stats 能如实报出已落库块数。
+    向量库未配置时返回 0（调用方据 vector_store.get_store() 判定并如实标注模式），
+    对端不可用则抛错由调用方降级裁决（本模块只抛不吞）。
+    """
+    store = vector_store.get_store()
+    if store is None:
+        return 0
+    return await ingest_records(store_records(chunks, origin), store)
+
+
 async def retrieve_by_store(
     query: str,
     chunks: list[dict[str, str]],
@@ -259,14 +293,8 @@ async def retrieve_by_store(
     同源的陈旧块（文本已改、旧 id 未清）因不在当前块集而被自然剔除，不污染结果。
     origin 只作块未自带归属时的兜底标签（kb.ask 走 knowledge、file.ask 走 docs 等）。
     """
-    records = _store_records(chunks, origin)
-    known = await store.known_ids([record.id for record in records])
-    missing = [record for record in records if record.id not in known][:INGEST_CAP]
-    if missing:
-        vectors = await embed_texts([f"{r.title}\n{r.text}" for r in missing])
-        for record, vector in zip(missing, vectors, strict=True):
-            record.vector = vector
-        await store.upsert(missing)
+    records = store_records(chunks, origin)
+    await ingest_records(records[:INGEST_CAP], store)
     [query_vector] = await embed_texts([query])
     origins = sorted({record.origin for record in records})
     hits = await store.search(query_vector, top_k, settings.EMBEDDING_MIN_SCORE, origins=origins)

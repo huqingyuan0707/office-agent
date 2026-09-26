@@ -3,7 +3,8 @@
 // 契约：登录 POST /auth/login；工具 GET /agent/tools、POST /agent/tools/{name}/invoke；任务 GET /tasks；
 //      审批 GET /approvals、POST /approvals/{id}/approve|reject；智能体 GET /agents（{total,items}）；
 //      运行 POST /runs（{agent?, goal}——agent 省略 = 按目标自动路由）、GET /runs/{run_id}；
-//      治理 GET /governance/status；运营 GET /admin/overview（admin 可见）
+//      治理 GET /governance/status；运营 GET /admin/overview（admin 可见）；
+//      知识库后台 GET /kb/files、POST /kb/files（multipart）、DELETE /kb/files/{name}、GET /kb/stats（admin 可见）
 // 对齐：AGENTS.md §3 信封与溯源口径 + §4 前端红线（401 中央处理，视图内不自跳、禁直写 fetch）
 
 const TOKEN_KEY = 'office_token'
@@ -177,7 +178,8 @@ export const request = async <T = unknown>(path: string, options: RequestInit = 
   if (options.headers) Object.assign(headers, options.headers)
   const token = getToken()
   if (token) headers.Authorization = `Bearer ${token}`
-  if (options.body) headers['Content-Type'] = 'application/json'
+  // 仅字符串体按 JSON 声明；FormData 交给浏览器自带 multipart boundary（手设会丢 boundary）
+  if (typeof options.body === 'string') headers['Content-Type'] = 'application/json'
 
   let res: Response
   try {
@@ -393,3 +395,107 @@ export interface JobTickResult {
 }
 
 export const tickJobs = () => request<JobTickResult>('/jobs/tick', { method: 'POST' })
+
+// 知识库后台（PRD §2.13：资料上传 / 知识库维护 / 入库统计 / 按源删除；全部仅 admin，
+// 非 admin 如实 403 不降级造假数据；上传即解析向量化、删除即生效——管理员配置即配置变更）
+export interface KbSourceItem {
+  filename: string
+  title: string
+  format: string
+  size_bytes: number
+  chunks: number
+  vectorized: boolean
+  vector_mode: string
+  vector_reason: string
+  visibility: string
+  uploaded_by: string
+  uploaded_at: string
+  degraded: boolean
+  degraded_reason: string
+  // indexed=已入库 / unindexed=已入盘未解析 / missing=清单在但文件缺失（两侧不一致如实标）
+  state: 'indexed' | 'unindexed' | 'missing'
+  state_label: string
+}
+export interface KbSummary {
+  files: number
+  indexed: number
+  unindexed: number
+  missing: number
+  chunks: number
+  vectorized_files: number
+  vectorized_chunks: number
+  total_bytes: number
+}
+export interface KbStoreStatus {
+  // unconfigured=未配向量检索（字符通道）/ on_demand_embedding=检索时按需算 / milvus=已落库
+  mode: string
+  reason: string
+}
+export interface KbFileList {
+  items: KbSourceItem[]
+  total: number
+  summary: KbSummary
+  supported_formats: string[]
+  store: KbStoreStatus
+  kb_dir: string
+  source: string
+  fetched_at: string
+}
+export interface KbFormatBucket {
+  format: string
+  files: number
+  chunks: number
+  bytes: number
+}
+export interface KbStats {
+  summary: KbSummary
+  by_format: KbFormatBucket[]
+  store: KbStoreStatus
+  embedding_model: string
+  supported_formats: string[]
+  kb_dir: string
+  source: string
+  fetched_at: string
+}
+export interface KbUploadResult {
+  filename: string
+  title: string
+  format: string
+  size_bytes: number
+  visibility: string
+  chunks: number
+  vectorized: boolean
+  vector_mode: string
+  vector_reason: string
+  truncated: boolean
+  degraded: boolean
+  degraded_reason: string
+  reuploaded: boolean
+  note: string
+  source: string
+  fetched_at: string
+}
+export interface KbDeleteResult {
+  filename: string
+  deleted: boolean
+  removed_vectors: number
+  vector_reason: string
+  note: string
+  source: string
+  fetched_at: string
+}
+
+export const listKbFiles = () => request<KbFileList>('/kb/files')
+
+export const kbStats = () => request<KbStats>('/kb/stats')
+
+export const deleteKbFile = (name: string) =>
+  request<KbDeleteResult>(`/kb/files/${encodeURIComponent(name)}`, { method: 'DELETE' })
+
+// 上传走 multipart（FormData 不手设 Content-Type，由浏览器补 boundary）
+export const uploadKbFile = (file: File, visibility: string) => {
+  const form = new FormData()
+  form.append('file', file)
+  form.append('visibility', visibility)
+  return request<KbUploadResult>('/kb/files', { method: 'POST', body: form })
+}

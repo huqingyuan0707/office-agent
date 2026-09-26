@@ -306,12 +306,13 @@ HTTP 级冒烟：`python tests/smoke_personal_affairs.py`（8 项断言，可重
 
 | 能力 | 工具 | 口径要点 |
 |---|---|---|
-| 制度答疑 | `kb.ask`（KB_DIR `*.md/*.txt` + 内置演示条目 8 条：考勤/报销/请假/差旅/人事/行政/合规 + 薪酬保密） | 检索通道三级化（Milvus → 向量 → 字符，口径见上）；新增条目级 `visibility`（`public` 或角色名，KB_DIR 首行 `visibility: hr` 声明受限，` * `/`admin` 可见全部，被滤只计 `permission_filtered` 不外泄标题正文）；命中条目回显 `visibility` |
+| 制度答疑 | `kb.ask`（KB_DIR pdf/docx/xlsx/csv/txt/md + 内置演示条目 8 条：考勤/报销/请假/差旅/人事/行政/合规 + 薪酬保密） | 检索通道三级化（Milvus → 向量 → 字符，口径见上）；新增条目级 `visibility`（`public` 或角色名：后台上传时选定并记入来源清单，md/txt 另支持首行 `visibility: hr` 指令；` * `/`admin` 可见全部，被滤只计 `permission_filtered` 不外泄标题正文）；命中条目回显 `visibility` |
 | 跨源联合检索 | `office.kb.search_unified` | 一次问句联查知识/网盘文档（DOCS_DIR，`restricted-` 前缀受限）/本人待办日程（身份过滤）/审批单据台账（本人或管理员）/项目数据台账五源，各源双通道检索后按分数合并，全程只摘录原文；聊天记录/OA 远端需经联动白名单接入，本地无源不造假 |
 | 图片/截图问答 | `office.image.ask` | 先 OCR 取真实文本（复用 `ocr.image` 同一引擎探针）再按段落检索摘录作答；引擎缺失/识别为空/零命中如实 `degraded`，图片元数据来自 Pillow 实测 |
 | 示例智能体 | `plugins/office-assistant` | 白名单追加 `office.kb.search_unified` 与 `office.image.ask`，跨域链可直达联查与图片问答 |
+| 知识库后台（PRD §2.13） | `/kb-admin`（知识库后台页）+ `POST/GET/DELETE /kb/files`、`GET /kb/stats`（仅 admin，管理面直接生效不走审批） | 资料上传（pdf/docx/xlsx/csv/txt/md 拖拽多选，后缀/体积前置校验，可见范围 public 或角色名）→ 入盘即解析切块（与 `kb.ask` 同一提取/切块口径，上传即刻可检索）→ 向量化如实标注（`milvus` 已落库 / `on_demand_embedding` 按需算 / `unconfigured` 未配）；知识库维护（清单×目录联查三态：已入库 / 已入盘未解析 / 文件缺失，KPI + 按源删除连向量块一并清理，重传同名先清旧块）+ 统计（按格式分组 + 向量存储口径 + embedding_model）；解析失败只降级入账 `degraded_reason` 不 500 |
 
-HTTP 级冒烟：`python tests/smoke_kb_26.py`（8 项断言，可重复执行；向量通道下报销问句实测命中 0.6452）。
+HTTP 级冒烟：`python tests/smoke_kb_26.py`（8 项断言，可重复执行；向量通道下报销问句实测命中 0.6452）；知识库后台由单测覆盖（tools-office 17 例 + server 7 例：全格式入库/三态联查/权限门槛/上传即可检索/按源删除）。
 
 ## 可选外部服务（Docker Compose，ADR-0005）
 

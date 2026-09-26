@@ -1,15 +1,17 @@
 """企业知识库问答工具（kb.ask：双通道检索 + 条目级权限过滤，对齐 PRD §2.6）。
 
 职责：
-- kb.ask（office:read）：对「内置演示条目 + KB_DIR 本地文件（*.md/*.txt）」做检索，
-  返回 top_k 命中片段，带 source + fetched_at 溯源；库为空时 degraded=True 留白不编造答案。
+- kb.ask（office:read）：对「内置演示条目 + KB_DIR 本地文件」做检索，返回 top_k 命中片段，
+  带 source + fetched_at 溯源；库为空时 degraded=True 留白不编造答案。
+- 本地文件支持 pdf/docx/xlsx/csv/txt/md（与 office.file.read 同一提取口径）——知识库后台
+  office_agent_tools_office.kb_admin 入盘的文件即刻可被检索，无需额外注册步骤。
 - 检索双通道：**向量语义检索**优先（Settings 的 EMBEDDING_* 配置本地 OpenAI 兼容
   /embeddings，按段落余弦相似度排序）→ 未配置或调用失败时回退**字符 bigram 检索**。
   降级只在结果里如实标注（retrieval_mode / retrieval_fallback_reason），绝不 500。
 - 权限适配（PRD §2.6）：每条目带 `visibility`（`public` 或角色名如 `hr`）——
   检索前按 ToolContext.roles 过滤（`*`/`admin` 可见全部，其余需精确命中角色名），
-  被滤条目只计 `permission_filtered` 个数，标题与正文一律不外泄；KB_DIR 文件首非空行
-  写 `visibility: hr` 即声明受限（该行不计入正文），缺省为 public。
+  被滤条目只计 `permission_filtered` 个数，标题与正文一律不外泄；pdf/docx/xlsx 的可见范围
+  取来源清单（后台上传时选定），md/txt 另支持首非空行 `visibility: hr` 指令（该行不计入正文）。
 - 检索原语（切块 / 双通道 / 片段口径）已抽到同包 retrieval.py，与 office.file.ask 共用。
 
 链路：__init__.register_all() → registry.register(spec) → executor.call 执行 handler。
@@ -33,6 +35,7 @@ from office_agent_core.contracts import ToolContext, ToolSpec
 from office_agent_core.errors import BusinessError, ErrorCode
 from office_agent_core.registry import register
 from office_agent_core.settings import settings
+from office_agent_tools_office import file_read, kb_admin
 from office_agent_tools_office.retrieval import (
     chunks_with_meta,
     first_snippet,
@@ -43,8 +46,8 @@ logger = logging.getLogger(__name__)
 
 SCOPE_READ = "office:read"
 
-_KB_SUFFIXES = (".md", ".txt")
-_MAX_FILE_BYTES = 200_000  # 单文件读取上限（防超大文件拖垮响应）
+#: 可见性与正文指令只对纯文本资料生效（pdf/docx/xlsx 的首行是正文，不该被当指令吃掉）
+_DIRECTIVE_SUFFIXES = (".md", ".txt")
 
 #: 可见性口径：public 人人可见；其余值为角色名，需调用方 roles 精确命中；
 #: 通配 `*` 与 `admin` 可见全部（含受限条目，管理口径）。
@@ -149,6 +152,10 @@ def _now_text() -> str:
 def load_entries() -> tuple[list[dict[str, str]], bool]:
     """合并内置条目与 KB_DIR 本地文件；返回 (条目列表, 目录是否缺失)。
 
+    文件侧支持 pdf/docx/xlsx/csv/txt/md，统一走 file_read.extract_document 提取口径——
+    后台上传（kb_admin.save_and_ingest）与手工放盘的文件被同一装载口径读取，检索行为一致。
+    可见范围优先取来源清单（后台上传时选定，pdf/docx 等无法在正文里写指令的格式全靠它）；
+    md/txt 另支持首非空行 `visibility: xxx` 指令。解析引擎缺失/损坏的文件跳过并告警。
     公开给跨源联合检索复用同一装载口径（含 visibility 解析，不重复实现）。
     """
     entries = [
@@ -167,31 +174,41 @@ def load_entries() -> tuple[list[dict[str, str]], bool]:
         files = sorted(
             path
             for path in root.iterdir()
-            if path.is_file() and path.suffix.lower() in _KB_SUFFIXES
+            if path.is_file() and path.suffix.lower() in kb_admin.KB_SUFFIXES
         )
     except OSError as exc:
         logger.warning("知识库目录不可读（降级为内置条目）：%s", str(exc)[:120])
         return entries, True
+    declared = kb_admin.manifest_visibility()
     for path in files:
         try:
-            if path.stat().st_size > _MAX_FILE_BYTES:
+            if path.stat().st_size > file_read.MAX_FILE_BYTES:
                 logger.warning("知识文件过大已跳过：%s", path.name)
                 continue
-            text = path.read_text(encoding="utf-8", errors="replace").strip()
         except OSError as exc:
             logger.warning("知识文件读取失败已跳过 %s：%s", path.name, str(exc)[:120])
             continue
-        if text:
-            visibility, body = parse_visibility_block(text)
-            first_line = next((ln.strip("# \t") for ln in body.splitlines() if ln.strip()), "")
-            entries.append(
-                {
-                    "title": first_line or path.stem,
-                    "content": body,
-                    "source": f"local-kb:{os.path.basename(path.name)}",
-                    "visibility": visibility,
-                }
-            )
+        try:
+            extracted = file_read.extract_document(path)
+        except (OSError, ValueError) as exc:
+            logger.warning("知识文件解析失败已跳过 %s：%s", path.name, str(exc)[:120])
+            continue
+        body = str(extracted.get("text") or "").strip()
+        if not body or extracted.get("degraded"):
+            continue
+        file_visibility = VISIBILITY_PUBLIC
+        if path.suffix.lower() in _DIRECTIVE_SUFFIXES:
+            file_visibility, body = parse_visibility_block(body)
+        visibility = declared.get(path.name) or file_visibility
+        first_line = next((ln.strip("# \t") for ln in body.splitlines() if ln.strip()), "")
+        entries.append(
+            {
+                "title": first_line or path.stem,
+                "content": body,
+                "source": f"local-kb:{os.path.basename(path.name)}",
+                "visibility": visibility,
+            }
+        )
     return entries, False
 
 
@@ -255,7 +272,7 @@ def specs() -> tuple[ToolSpec, ...]:
         ToolSpec(
             name="kb.ask",
             scope=SCOPE_READ,
-            description="企业知识库制度问答：检索内置条目与知识目录（KB_DIR，*.md/*.txt），按段落返回命中原文片段与来源溯源；配 EMBEDDING_* 时走向量语义检索（改说法也能命中），未配置或调用失败自动回退字符检索并在 retrieval_mode 如实标注；条目级权限过滤（visibility=public 或角色名，KB_DIR 首行 visibility: xxx 声明受限，* /admin 可见全部，被滤只计 permission_filtered 不外泄标题正文）；无命中时如实告知 degraded，绝不编造答案",
+            description="企业知识库制度问答：检索内置条目与知识目录（KB_DIR，pdf/docx/xlsx/csv/txt/md，与文件解析同一提取口径），按段落返回命中原文片段与来源溯源；配 EMBEDDING_* 时走向量语义检索（改说法也能命中），未配置或调用失败自动回退字符检索并在 retrieval_mode 如实标注；条目级权限过滤（visibility=public 或角色名，后台入盘时选定或 KB_DIR 纯文本首行 visibility: xxx 声明，* /admin 可见全部，被滤只计 permission_filtered 不外泄标题正文）；无命中时如实告知 degraded，绝不编造答案",
             params={
                 "type": "object",
                 "properties": {

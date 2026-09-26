@@ -11,6 +11,7 @@ from office_agent_server.api import (
     auth,
     governance,
     jobs,
+    kb_admin,
     notifications,
     tasks,
     tools,
@@ -27,3 +28,4 @@ api_router.include_router(governance.router)
 api_router.include_router(admin.router)
 api_router.include_router(workflows.router)
 api_router.include_router(jobs.router)
+api_router.include_router(kb_admin.router)

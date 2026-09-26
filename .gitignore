@@ -9,8 +9,10 @@ __pycache__/
 # 环境与密钥（绝不入库）
 .env
 
-# 本地数据库
+# 本地数据库（含 SQLite WAL 伴生文件，运行期自动重建）
 *.db
+*.db-shm
+*.db-wal
 
 # 前端
 node_modules/

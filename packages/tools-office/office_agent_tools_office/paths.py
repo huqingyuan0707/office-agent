@@ -17,8 +17,8 @@ from office_agent_core.settings import settings
 _IMG_SUFFIXES = (".png", ".jpg", ".jpeg", ".bmp", ".gif", ".webp")
 
 
-def resolve_under_docs(filename: str, suffixes: tuple[str, ...]) -> Path:
-    """把文件名解析到 DOCS_DIR 内的绝对路径（basename 化 + 后缀白名单 + 越界拒绝）。"""
+def _resolve_under(root_dir: str, filename: str, suffixes: tuple[str, ...], label: str) -> Path:
+    """basename 化 + 后缀白名单 + 越界拒绝，把文件名解析到指定根目录内（两个守卫共用）。"""
     raw = str(filename or "").strip()
     name = os.path.basename(raw)
     if not name:
@@ -31,12 +31,22 @@ def resolve_under_docs(filename: str, suffixes: tuple[str, ...]) -> Path:
     if not name.lower().endswith(suffixes):
         allowed = " / ".join(suffixes)
         raise BusinessError(ErrorCode.PARAM_INVALID, f"文件名必须以 {allowed} 结尾（当前：{name}）")
-    root = Path(settings.DOCS_DIR).resolve()
+    root = Path(root_dir).resolve()
     root.mkdir(parents=True, exist_ok=True)
     target = (root / name).resolve()
     if root not in target.parents and target != root:
-        raise BusinessError(ErrorCode.PARAM_INVALID, "文件名非法：不允许越界访问文档工作目录")
+        raise BusinessError(ErrorCode.PARAM_INVALID, f"文件名非法：不允许越界访问{label}")
     return target
+
+
+def resolve_under_docs(filename: str, suffixes: tuple[str, ...]) -> Path:
+    """把文件名解析到 DOCS_DIR 内的绝对路径（basename 化 + 后缀白名单 + 越界拒绝）。"""
+    return _resolve_under(settings.DOCS_DIR, filename, suffixes, "文档工作目录")
+
+
+def resolve_under_kb(filename: str, suffixes: tuple[str, ...]) -> Path:
+    """把文件名解析到 KB_DIR 内的绝对路径（知识库后台入盘与按源删除共用同一守卫）。"""
+    return _resolve_under(settings.KB_DIR, filename, suffixes, "知识库目录")
 
 
 def image_suffixes() -> tuple[str, ...]:
