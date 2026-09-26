@@ -109,7 +109,7 @@ with httpx.Client(base_url=OFFICE, trust_env=False, timeout=120) as c:
         "④ search_unified 全源联查（merged 非空 + knowledge 命中 + 通道标注）",
         d.get("merged_count", 0) >= 1
         and (d.get("per_source") or {}).get("knowledge", {}).get("count", 0) >= 1
-        and d.get("retrieval_mode") in ("bigram", "embedding")
+        and d.get("retrieval_mode") in ("bigram", "embedding", "milvus")
         and isinstance(d.get("permission_filtered"), int),
         str({k: d.get(k) for k in ("merged_count", "retrieval_mode")}),
     )

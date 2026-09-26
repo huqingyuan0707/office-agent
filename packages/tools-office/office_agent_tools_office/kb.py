@@ -35,10 +35,8 @@ from office_agent_core.registry import register
 from office_agent_core.settings import settings
 from office_agent_tools_office.retrieval import (
     chunks_with_meta,
-    embedding_ready,
     first_snippet,
-    retrieve_bigram,
-    retrieve_by_embedding,
+    retrieve,
 )
 
 logger = logging.getLogger(__name__)
@@ -219,21 +217,8 @@ async def _kb_ask(ctx: ToolContext, args: dict[str, Any]) -> dict[str, Any]:
     ]
     permission_filtered = len(entries) - len(visible)
     chunks = chunks_with_meta(visible)
-    mode = "bigram"
-    fallback_reason = ""
-    if embedding_ready():
-        try:
-            scored = await retrieve_by_embedding(query, chunks, top_k)
-        except Exception as exc:  # 网络/超时/响应非法一律降级，绝不 500
-            fallback_reason = (
-                f"向量检索不可用已回退字符检索：{type(exc).__name__}: {str(exc)[:120]}"
-            )
-            logger.warning("kb.ask %s（model=%s）", fallback_reason, settings.EMBEDDING_MODEL)
-            scored = retrieve_bigram(query, chunks, top_k)
-        else:
-            mode = "embedding"
-    else:
-        scored = retrieve_bigram(query, chunks, top_k)
+    # 三级降级链统一入口（milvus → embedding 全量重算 → bigram），口径收口在 retrieval.retrieve
+    scored, mode, fallback_reason = await retrieve(query, chunks, top_k, origin="knowledge")
 
     results = [
         {
@@ -250,7 +235,7 @@ async def _kb_ask(ctx: ToolContext, args: dict[str, Any]) -> dict[str, Any]:
         "results": results,
         "count": len(results),
         "retrieval_mode": mode,
-        "embedding_model": settings.EMBEDDING_MODEL if mode == "embedding" else "",
+        "embedding_model": settings.EMBEDDING_MODEL if mode in ("embedding", "milvus") else "",
         "retrieval_fallback_reason": fallback_reason,
         "permission_filtered": permission_filtered,
         "degraded": not results,

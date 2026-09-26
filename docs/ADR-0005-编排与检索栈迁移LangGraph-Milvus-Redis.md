@@ -1,7 +1,8 @@
 # ADR-0005：编排与检索栈迁移 LangGraph / Milvus / Redis
 
 - 日期：2026-09-26
-- 状态：接受（阶段一 LangGraph 已落地（2026-09-26，实测见 §5 清单）→ 阶段二 Milvus 待实施 → 阶段三 Redis 待实施）
+- 状态：接受（阶段一 LangGraph 已落地（2026-09-26，实测见 §5 清单）→ 阶段二 Milvus 已落地
+  （2026-09-26，Docker 集成一轮因本机 registry 不可达顺延，见 §5）→ 阶段三 Redis 待实施）
 - 决策人：项目所有者（会话指令「项目改为 LangGraph/Milvus/Redis」，三项节奏决策已确认）
 - 关联文档：`AGENTS.md` §3（后端红线）/ `CLAUDE.md` §一.2（依赖报批）§八（Agent 专属规则）/
   `.trae/documents/LangGraph-Milvus-Redis三阶段迁移方案.md`（实施计划 SSOT）
@@ -41,7 +42,11 @@
 
 检索侧裁决（阶段二）：单 collection + `origin` 标量过滤（五源联查一次合查；本仓语料量级远未到分
 collection 收益点）；`visibility` 权限**不进**向量库（检索后回表过滤，杜绝权限第二真相源）；
-metric=COSINE 与现余弦同构，`EMBEDDING_MIN_SCORE=0.35` 直接复用。
+metric=COSINE 与现余弦同构，`EMBEDDING_MIN_SCORE=0.35` 直接复用；块 id = `sha1(origin|source|text)`
+（文本或归属变更即新 id，`known_ids` 差集天然覆盖增量）。**依赖关系**：milvus 通道前置
+`EMBEDDING_*` 已配置（检索前要在本地算出缺失块与查询的向量）——`MILVUS_URI` 配了而
+`EMBEDDING_*` 未配时不会走 milvus 通道，直接落到字符检索（合理且零网络，出参 `retrieval_mode`
+如实标注）。
 
 ## 3. 决策
 
@@ -84,8 +89,19 @@ metric=COSINE 与现余弦同构，`EMBEDDING_MIN_SCORE=0.35` 直接复用。
 - [x] 阶段一：五包 pytest + 四门禁 + alembic check + 冒烟三件双跑 + 并发实测 + 浏览器 E2E
       （实测：五包 354 passed、ruff/naming/arch/alembic 全绿、approval_flow 10/10、
       personal_affairs 8/8、v1_features 17/17、并发双 run code 0 零 locked、E2E 双路径 DONE 无报错）
-- [ ] 阶段二：`vector_store.py` 抽象 + Milvus 实现 + 三级降级 + `deploy/docker-compose.yml` +
-      MILVUS_* 配置键 + FakeVectorStore 用例 + `smoke_milvus.py`（前置：§2.6 并发在途落库）
+- [x] 阶段二：`vector_store.py` 抽象（VectorStore Protocol + MilvusVectorStore + 惰性建连）+
+      三级降级链（milvus → embedding 全量重算 → bigram，逐级链式如实标注）+ `deploy/docker-compose.yml` +
+      MILVUS_* 配置键 + FakeVectorStore 用例 + `smoke_milvus.py`
+      （实测：五包 **366 passed / 0 failed / 1 skipped**（skip 为需真实 Milvus 的集成例）、
+      ruff/naming/arch/alembic check 全绿、`smoke_milvus.py` 六项 PASS 双场景——未配 URI 时
+      通道 embedding 且 Milvus 零参与（现行为不变）；配死端口 URI 时如实产出
+      `retrieval_mode=embedding` + `retrieval_fallback_reason=Milvus 不可用已回退全量向量检索：
+      MilvusException: ...`；`smoke_kb_26.py` 8/8 与 `smoke_file_ask.py` 7/7 无回归）
+- [x] 阶段二如实标注（顺延项）：`docker compose -f deploy/docker-compose.yml up -d` 本机实测失败——
+      Docker 守护进程正常，但 `docker.io` registry 不可达（`dialing registry-1.docker.io:443 …
+      connection attempt failed`），镜像拉不下来 → 「起 Docker 后集成一轮」未完成，降级路径改由
+      11 例零网络 FakeVectorStore 单测 + 上条死端口实测覆盖；`test_milvus_integration_roundtrip`
+      标 `@pytest.mark.milvus`，`MILVUS_URI` 未配置即 skip，待环境可达后跑一次即补齐
 - [ ] 阶段三：`core/kv.py` + embedding 缓存（embed_texts 前置透明）+ 调度环 SET NX 锁 +
       REDIS_* 配置键 + compose 追加 redis + 用例
 - [ ] 文档同步：README 中英技术栈与功能表、AGENTS.md §5 验证命令/§6 登记、CLAUDE.md 技术栈行改真实

@@ -30,10 +30,8 @@ from office_agent_core.registry import register
 from office_agent_core.settings import settings
 from office_agent_tools_office.retrieval import (
     chunks_with_meta,
-    embedding_ready,
     first_snippet,
-    retrieve_bigram,
-    retrieve_by_embedding,
+    retrieve,
 )
 
 from . import approval_submit, data_analysis, file_read, kb
@@ -71,17 +69,13 @@ def _sources_or_raise(raw: Any) -> list[str]:
 
 
 async def _retrieve_chunks(
-    query: str, chunks: list[dict[str, str]], top_k: int
+    query: str, chunks: list[dict[str, str]], top_k: int, origin: str
 ) -> tuple[list[tuple[float, dict[str, str]]], str, str]:
-    """单源双通道检索（向量优先、失败回退字符；调用方按源调用，口径与 kb.ask 一致）。"""
-    if embedding_ready():
-        try:
-            return await retrieve_by_embedding(query, chunks, top_k), "embedding", ""
-        except Exception as exc:
-            reason = f"向量检索不可用已回退字符检索：{type(exc).__name__}: {str(exc)[:120]}"
-            logger.warning("search_unified %s", reason)
-            return retrieve_bigram(query, chunks, top_k), "bigram", reason
-    return retrieve_bigram(query, chunks, top_k), "bigram", ""
+    """单源检索：委托 retrieval.retrieve 三级降级链（milvus → embedding → bigram）。
+
+    origin 传给向量库做标量过滤，五源各自只查本源（跨源合并与排序由调用方负责）。
+    """
+    return await retrieve(query, chunks, top_k, origin=origin)
 
 
 def _format_hit(score: float, chunk: dict[str, str], query: str, mode: str) -> dict[str, Any]:
@@ -319,7 +313,7 @@ async def _search_unified(ctx: ToolContext, args: dict[str, Any]) -> dict[str, A
         if not chunks:
             per_source[origin] = {"count": 0, "results": [], "note": "本源无可见内容"}
             continue
-        scored, used, fallback = await _retrieve_chunks(query, chunks, top_k)
+        scored, used, fallback = await _retrieve_chunks(query, chunks, top_k, origin)
         mode = used if len(all_scored) == 0 else mode
         if fallback and fallback not in fallbacks:
             fallbacks.append(fallback)
@@ -336,7 +330,7 @@ async def _search_unified(ctx: ToolContext, args: dict[str, Any]) -> dict[str, A
         "merged": merged,
         "merged_count": len(merged),
         "retrieval_mode": mode,
-        "embedding_model": settings.EMBEDDING_MODEL if mode == "embedding" else "",
+        "embedding_model": settings.EMBEDDING_MODEL if mode in ("embedding", "milvus") else "",
         "retrieval_fallback_reason": "；".join(fallbacks),
         "permission_filtered": permission_filtered,
         "notes": notes,

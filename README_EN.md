@@ -193,7 +193,7 @@ HTTP-level smoke: `python tests/smoke_mcp_im.py` (bundled fake MCP server + fake
 | Feature | Tool / endpoint | Key guarantees |
 |---|---|---|
 | Copywriting (daily/weekly/minutes) | `office.report.generate` (daily/weekly), `office.minutes.generate` | template-driven; numbers come only from inputs; missing sections are left blank, never fabricated |
-| Knowledge-base Q&A | `kb.ask` (KB_DIR `*.md/*.txt` + built-in demo entries) | dual-channel retrieval: with `EMBEDDING_*` configured it does vector semantic search (per-paragraph cosine + a similarity floor, so rephrased questions still hit); otherwise, or when the endpoint is unreachable, it falls back to character bigrams and says so in `retrieval_mode` / `retrieval_fallback_reason`; quotes matched source text only and reports `degraded` honestly on no match |
+| Knowledge-base Q&A | `kb.ask` (KB_DIR `*.md/*.txt` + built-in demo entries) | three-tier retrieval (Milvus incremental ingest → `EMBEDDING_*` full vector recompute → character bigrams, see "Optional External Services"): per-paragraph cosine + a similarity floor, so rephrased questions still hit; any unavailable tier drops to the next one and says so, chained, in `retrieval_mode` / `retrieval_fallback_reason`; quotes matched source text only and reports `degraded` honestly on no match |
 | Image OCR | `ocr.image` | real metadata; falls back to metadata-only when Tesseract is absent — never fabricates text |
 | Document comparison | `office.doc.compare` | paragraph-level diff (added/removed/changed + summary), measured facts only |
 | Task decomposition | `office.task.decompose` → `office.task.commit` | missing people/dates stay blank with follow-up prompts; batch creation is always approved + idem_key |
@@ -210,7 +210,7 @@ HTTP-level smoke: `python tests/smoke_v1_features.py` (17 assertions, re-runnabl
 | Generic drafting | `office.memo.compose` | five template kinds (notice/email/proposal/summary/briefing); missing sections stay blank, never fabricated |
 | Text processing | `office.text.summarize` / `office.text.normalize` | extractive summaries (single doc + multi-doc via `texts`, verbatim sentences only) and whitespace-only normalisation; prose polishing needs an LLM and is explicitly deferred (see module footer) |
 | Document parsing | `office.file.read` | docx paragraphs/tables/image list, xlsx sheet dimensions + first N rows, plain csv/txt/md, and **real page-by-page PDF text extraction via pypdf** (page count returned honestly; missing engine / encrypted / corrupted files degrade or return 1001 instead of inventing text); read scope, 404 on missing file |
-| Document Q&A | `office.file.ask` | retrieves **paragraph-level** fragments from a given DOCS_DIR file and quotes source text only (so "what is X in this file" lands on the right paragraph); reuses the `retrieval.py` dual channel (vector semantic search when `EMBEDDING_*` is set — rephrased questions still hit; otherwise/by failure it falls back to character bigrams and says so in `retrieval_mode`/`retrieval_fallback_reason`); zero hits or no text layer degrade honestly. **Stated boundary**: cosine scores every text, so a garbage query still scored 0.37–0.39 in testing (the 0.35 floor is a precision/recall knob, not a clean separator) — `score` is exposed verbatim for the caller to judge |
+| Document Q&A | `office.file.ask` | retrieves **paragraph-level** fragments from a given DOCS_DIR file and quotes source text only (so "what is X in this file" lands on the right paragraph); reuses the `retrieval.py` three-tier chain (Milvus → full vector recompute → character bigrams; each failure falls through and is reported in `retrieval_mode`/`retrieval_fallback_reason`); zero hits or no text layer degrade honestly. **Stated boundary**: cosine scores every text, so a garbage query still scored 0.37–0.39 in testing (the 0.35 floor is a precision/recall knob, not a clean separator) — `score` is exposed verbatim for the caller to judge |
 | Batch document ops | `office.docs.rename` | batch rename (≤20 pairs) is an approved write, refuses to overwrite, replay fails honestly (idempotent=False); image extraction is folded into `office.file.read`'s image list and multi-doc summaries reuse the `texts` mode; batch PDF conversion needs system LibreOffice and is explicitly deferred |
 | Custom templates | `office.template.save` → `office.template.apply` | save weekly-report/leave-note templates and reuse them; unfilled placeholders stay literal and are listed in `unfilled` |
 | Internal terminology | `office.terms.translate` | built-in glossary + `DOCS_DIR/terms.csv`, deterministic longest-first replacement for term consistency; zero hits returned verbatim; full-sentence multilingual translation needs an LLM and is explicitly deferred |
@@ -296,12 +296,37 @@ HTTP-level smoke: `python tests/smoke_personal_affairs.py` (8 assertions, re-run
 
 | Capability | Tools | Key guarantees |
 |---|---|---|
-| Policy Q&A | `kb.ask` (KB_DIR `*.md/*.txt` + 8 built-in demo entries: attendance/expense/leave/travel/HR/admin/compliance + confidential compensation) | dual-channel retrieval unchanged; new per-entry `visibility` (`public` or a role name; KB_DIR files declare it with a first-line `visibility: hr`; `*`/`admin` see everything; filtered entries are only counted in `permission_filtered`, titles never leak); hits echo their `visibility` |
+| Policy Q&A | `kb.ask` (KB_DIR `*.md/*.txt` + 8 built-in demo entries: attendance/expense/leave/travel/HR/admin/compliance + confidential compensation) | retrieval is now three-tier (Milvus → full vector → bigrams, same contract as above); new per-entry `visibility` (`public` or a role name; KB_DIR files declare it with a first-line `visibility: hr`; `*`/`admin` see everything; filtered entries are only counted in `permission_filtered`, titles never leak); hits echo their `visibility` |
 | Federated search | `office.kb.search_unified` | one query searches knowledge / drive docs (DOCS_DIR, `restricted-` prefix is restricted) / own todos & schedules (identity-scoped) / approval ledger (own or admin) / project data ledgers; per-source dual-channel retrieval merged by score, verbatim quotes only; remote chat/OA sources join via linkage allow-list tools — no local source, no fabricated data |
 | Image Q&A | `office.image.ask` | OCR the real text first (same engine probe as `ocr.image`), then retrieve paragraph fragments; missing engine / empty text / zero hits degrade honestly; image metadata measured by Pillow |
 | Example agent | `plugins/office-assistant` | allow-list extended with `office.kb.search_unified` and `office.image.ask` so cross-domain chains can reach federated search and image Q&A |
 
 HTTP-level smoke: `python tests/smoke_kb_26.py` (8 assertions, re-runnable; the expense query scored 0.6452 over the vector channel in testing).
+
+## Optional External Services (Docker Compose, ADR-0005)
+
+Retrieval/cache add-ons are **all optional**: leave them unconfigured and nothing touches the network —
+behaviour stays as-is (retrieval over `embedding`/`bigram`, cache in a process-local dict).
+To enable Milvus incremental vector retrieval (ingest once, then only embed new chunks):
+
+```powershell
+docker compose -f deploy/docker-compose.yml up -d     # milvus standalone + etcd + minio
+# Append to .env (keys are owned by packages/core/office_agent_core/settings.py):
+#   MILVUS_URI=http://127.0.0.1:19530      # empty = fully off, zero network
+#   MILVUS_COLLECTION=office_chunks
+#   MILVUS_TOKEN=                          # may stay empty for an unauthenticated self-hosted setup
+```
+
+- Three-tier degradation chain (**never a 500**): `milvus` (requires `MILVUS_URI` **and** `EMBEDDING_*`)
+  → `embedding` full recompute → `bigram`; each failure is chained into `retrieval_fallback_reason`
+  (e.g. `Milvus unavailable, fell back to full vector retrieval: MilvusException: ...`), and
+  `retrieval_mode` is always one of those three values.
+- One collection + `origin` scalar filter (federated search queries all sources at once); `visibility`
+  never enters the vector store (filtering stays on the read-back path); chunk id =
+  `sha1(origin|source|text)`, so any text change yields a new id and the id diff covers incremental
+  ingest; at most 128 chunks are embedded per call (keeps a same-host Ollama chat model responsive).
+- HTTP-level smoke: `python tests/smoke_milvus.py [base_url] [expected_mode]` (six assertions,
+  re-runnable); the real `@pytest.mark.milvus` integration test is skipped when `MILVUS_URI` is unset.
 
 ## Database Migrations
 

@@ -26,9 +26,11 @@ def _kb_bigram_by_default(monkeypatch: pytest.MonkeyPatch) -> None:
 
     否则本机 `.env` 一旦登记 EMBEDDING_*，整个用例集都会去打真实 /embeddings。
     要测向量通道的用例在自身内再 monkeypatch 覆盖。
+    Milvus 同理钉空（MILVUS_URI 一登记，检索会先试向量库，同样会打网络）。
     """
     monkeypatch.setattr(settings, "EMBEDDING_BASE_URL", "")
     monkeypatch.setattr(settings, "EMBEDDING_MODEL", "")
+    monkeypatch.setattr(settings, "MILVUS_URI", "")
 
 
 # ---------------- 字符检索（默认通道） ----------------

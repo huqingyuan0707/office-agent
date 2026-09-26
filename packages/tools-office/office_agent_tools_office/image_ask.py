@@ -33,10 +33,8 @@ from office_agent_core.registry import register
 from office_agent_core.settings import settings
 from office_agent_tools_office.retrieval import (
     chunks_of,
-    embedding_ready,
     first_snippet,
-    retrieve_bigram,
-    retrieve_by_embedding,
+    retrieve,
 )
 
 from . import ocr
@@ -117,21 +115,8 @@ async def _image_ask(ctx: ToolContext, args: dict[str, Any]) -> dict[str, Any]:
         }
 
     chunks = chunks_of([{"title": path.name, "content": text, "source": source}], max_chars=None)
-    mode = "bigram"
-    fallback_reason = ""
-    if embedding_ready():
-        try:
-            scored = await retrieve_by_embedding(query, chunks, top_k)
-        except Exception as exc:
-            fallback_reason = (
-                f"向量检索不可用已回退字符检索：{type(exc).__name__}: {str(exc)[:120]}"
-            )
-            logger.warning("image.ask %s（model=%s）", fallback_reason, settings.EMBEDDING_MODEL)
-            scored = retrieve_bigram(query, chunks, top_k)
-        else:
-            mode = "embedding"
-    else:
-        scored = retrieve_bigram(query, chunks, top_k)
+    # 三级降级链统一入口（milvus → embedding 全量重算 → bigram），口径收口在 retrieval.retrieve
+    scored, mode, fallback_reason = await retrieve(query, chunks, top_k, origin="image")
     fragments = [
         {
             "snippet": first_snippet(chunk["text"], query, mode),
@@ -147,7 +132,7 @@ async def _image_ask(ctx: ToolContext, args: dict[str, Any]) -> dict[str, Any]:
         "answer_fragments": fragments,
         "count": len(fragments),
         "retrieval_mode": mode,
-        "embedding_model": settings.EMBEDDING_MODEL if mode == "embedding" else "",
+        "embedding_model": settings.EMBEDDING_MODEL if mode in ("embedding", "milvus") else "",
         "retrieval_fallback_reason": fallback_reason,
         "degraded": not fragments,
         "degraded_reason": (

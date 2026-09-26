@@ -9,6 +9,7 @@ dependencies = [
     "tzdata",
     "pypdf>=5",
     "openpyxl>=3.1",
+    "pymilvus>=2.6.17,<2.7",
 ]
 
 [build-system]
@@ -52,3 +53,6 @@ testpaths = ["tests"]
 pythonpath = ["..", "../core"]
 asyncio_mode = "auto"
 addopts = "-q --strict-markers --strict-config"
+markers = [
+    "milvus: 需真实 Milvus 实例的集成用例（MILVUS_URI 未配置即 skip）",
+]

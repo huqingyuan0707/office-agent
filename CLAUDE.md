@@ -1,6 +1,6 @@
 # 项目编码规范｜AI编码约束文档
 项目：智能办公Agent系统
-技术栈：Python 3.11, FastAPI, LangGraph, Ollama, Pydantic；Milvus 与 Redis 为分阶段引入的可选组件（未配置即降级现行为，见 docs/ADR-0005）
+技术栈：Python 3.11, FastAPI, LangGraph, Ollama, Pydantic；Milvus（检索，ADR-0005 阶段二）已作为可选组件落地、Redis（缓存/调度锁，阶段三）待引入——均未配置即零网络降级现行为
 
 ## 一、基础约束（AI必须遵守）
 1. 单次任务**优先最小改动，尽量控制在1个文件；如需多文件修改，提前列出全部改动清单，人工确认后再执行**。禁止无告知自动全局重构整个项目。

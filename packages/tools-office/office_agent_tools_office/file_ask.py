@@ -40,10 +40,8 @@ from office_agent_tools_office.file_read import (
 from office_agent_tools_office.paths import resolve_under_docs
 from office_agent_tools_office.retrieval import (
     chunks_of,
-    embedding_ready,
     first_snippet,
-    retrieve_bigram,
-    retrieve_by_embedding,
+    retrieve,
 )
 
 logger = logging.getLogger(__name__)
@@ -101,21 +99,8 @@ async def _file_ask(ctx: ToolContext, args: dict[str, Any]) -> dict[str, Any]:
 
     # 粒度取「每段独立成块」：问「文件里 X 是什么」要能定位到具体段落，不做跨段合并
     chunks = chunks_of([{"title": path.name, "content": text, "source": source}], max_chars=None)
-    mode = "bigram"
-    fallback_reason = ""
-    if embedding_ready():
-        try:
-            scored = await retrieve_by_embedding(query, chunks, top_k)
-        except Exception as exc:  # 网络/超时/响应非法一律降级，绝不 500
-            fallback_reason = (
-                f"向量检索不可用已回退字符检索：{type(exc).__name__}: {str(exc)[:120]}"
-            )
-            logger.warning("file.ask %s（model=%s）", fallback_reason, settings.EMBEDDING_MODEL)
-            scored = retrieve_bigram(query, chunks, top_k)
-        else:
-            mode = "embedding"
-    else:
-        scored = retrieve_bigram(query, chunks, top_k)
+    # 三级降级链统一入口（milvus → embedding 全量重算 → bigram），口径收口在 retrieval.retrieve
+    scored, mode, fallback_reason = await retrieve(query, chunks, top_k, origin="docs")
 
     fragments = [
         {
@@ -133,7 +118,7 @@ async def _file_ask(ctx: ToolContext, args: dict[str, Any]) -> dict[str, Any]:
         "answer_fragments": fragments,
         "count": len(fragments),
         "retrieval_mode": mode,
-        "embedding_model": settings.EMBEDDING_MODEL if mode == "embedding" else "",
+        "embedding_model": settings.EMBEDDING_MODEL if mode in ("embedding", "milvus") else "",
         "retrieval_fallback_reason": fallback_reason,
         "truncated": bool(extracted.get("truncated")),
         "degraded": not fragments,

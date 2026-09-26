@@ -203,7 +203,7 @@ HTTP 级冒烟：`python tests/smoke_mcp_im.py`（自带假 MCP Server + 假 IM 
 | 功能 | 工具 / 端点 | 口径要点 |
 |---|---|---|
 | 文案生成 | `office.report.generate`（daily/weekly）、`office.minutes.generate` | 模板直出；数值只取入参原值，缺板块留白不编造 |
-| 知识库问答 | `kb.ask`（KB_DIR `*.md/*.txt` + 内置演示条目） | 双通道检索：配 `EMBEDDING_*` 走向量语义检索（按段落余弦排序 + 相似度门槛，改说法也能命中），未配置/对端不可用回退字符检索并在 `retrieval_mode`、`retrieval_fallback_reason` 如实标注；只摘录命中原文片段，无命中 degraded 如实告知 |
+| 知识库问答 | `kb.ask`（KB_DIR `*.md/*.txt` + 内置演示条目） | 三级检索（Milvus 增量灌库 → `EMBEDDING_*` 全量向量重算 → 字符，见「可选外部服务」）：按段落余弦排序 + 相似度门槛，改说法也能命中；任一级不可用自动降下一级并在 `retrieval_mode`、`retrieval_fallback_reason` 链式如实标注；只摘录命中原文片段，无命中 degraded 如实告知 |
 | 图片 OCR | `ocr.image` | 元数据直读；Tesseract 缺失降级只回元数据，绝不编造文字 |
 | 文档对比 | `office.doc.compare` | 段落级 diff（新增/删除/修改 + 摘要），只报实测差异 |
 | 任务拆解 | `office.task.decompose` → `office.task.commit` | 缺人/缺期留空不臆造（missing_info 追问）；批量建单恒送审 + idem_key |
@@ -220,7 +220,7 @@ HTTP 级冒烟：`python tests/smoke_v1_features.py`（17 项断言，可重复�
 | 通用文案起草 | `office.memo.compose` | 通知/邮件/方案/总结/汇报五类模板直出，缺板块留白不编造 |
 | 文本处理 | `office.text.summarize` / `office.text.normalize` | 抽取式摘要（单篇 + `texts` 多篇整合，全部原文原句）+ 格式统一只动空白不改编正文；文案润色改写需大模型，明确后置（见模块末尾说明） |
 | 文档解析 | `office.file.read` | docx 段落/表格文本/图片清单、xlsx 每表行列数与前 N 行、csv/txt/md 直读、**PDF 走 pypdf 逐页文本抽取**（页数如实返回；引擎缺失/加密/损坏如实降级或 1001，不编造半页文字）；读口径免审，缺文件 404 |
-| 文件内容问答 | `office.file.ask` | 对 DOCS_DIR 指定文件按**段落**检索并只摘录原文片段作答（问「文件里 X 是什么」定位到具体段）；复用 `retrieval.py` 双通道（配 `EMBEDDING_*` 走向量语义检索，改说法也能命中；失败回退字符检索并在 `retrieval_mode`/`retrieval_fallback_reason` 标注）；零命中/无文字层 degraded 不编造。**如实边界**：向量通道余弦对任意文本都给分，乱码问句实测仍得 0.37~0.39（门槛 0.35 是取舍杆非分界线），故 `score` 原样暴露供自判 |
+| 文件内容问答 | `office.file.ask` | 对 DOCS_DIR 指定文件按**段落**检索并只摘录原文片段作答（问「文件里 X 是什么」定位到具体段）；复用 `retrieval.py` 三级降级链（Milvus → 向量全量重算 → 字符；失败逐级回退并在 `retrieval_mode`/`retrieval_fallback_reason` 标注）；零命中/无文字层 degraded 不编造。**如实边界**：向量通道余弦对任意文本都给分，乱码问句实测仍得 0.37~0.39（门槛 0.35 是取舍杆非分界线），故 `score` 原样暴露供自判 |
 | 文档批量处理 | `office.docs.rename` | 批量重命名（≤20 对）写口径恒送审、目标已存在拒绝覆盖、重放诚实失败（idempotent=False）；批量提图并入 `office.file.read` 图片清单、多篇批量摘要复用 `texts` 多篇模式；批量转 PDF 需系统 LibreOffice，明确后置 |
 | 自定义模板 | `office.template.save` → `office.template.apply` | 保存周报/请假说明等模板，应用时缺值占位符保持原样并在 `unfilled` 列出 |
 | 内部术语库 | `office.terms.translate` | 内置术语表 + `DOCS_DIR/terms.csv` 叠加，按源词长度降序确定性替换（专业名词统一），零命中原样返回；整句多语种机翻需大模型，明确后置 |
@@ -306,12 +306,33 @@ HTTP 级冒烟：`python tests/smoke_personal_affairs.py`（8 项断言，可重
 
 | 能力 | 工具 | 口径要点 |
 |---|---|---|
-| 制度答疑 | `kb.ask`（KB_DIR `*.md/*.txt` + 内置演示条目 8 条：考勤/报销/请假/差旅/人事/行政/合规 + 薪酬保密） | 双通道检索不变；新增条目级 `visibility`（`public` 或角色名，KB_DIR 首行 `visibility: hr` 声明受限，` * `/`admin` 可见全部，被滤只计 `permission_filtered` 不外泄标题正文）；命中条目回显 `visibility` |
+| 制度答疑 | `kb.ask`（KB_DIR `*.md/*.txt` + 内置演示条目 8 条：考勤/报销/请假/差旅/人事/行政/合规 + 薪酬保密） | 检索通道三级化（Milvus → 向量 → 字符，口径见上）；新增条目级 `visibility`（`public` 或角色名，KB_DIR 首行 `visibility: hr` 声明受限，` * `/`admin` 可见全部，被滤只计 `permission_filtered` 不外泄标题正文）；命中条目回显 `visibility` |
 | 跨源联合检索 | `office.kb.search_unified` | 一次问句联查知识/网盘文档（DOCS_DIR，`restricted-` 前缀受限）/本人待办日程（身份过滤）/审批单据台账（本人或管理员）/项目数据台账五源，各源双通道检索后按分数合并，全程只摘录原文；聊天记录/OA 远端需经联动白名单接入，本地无源不造假 |
 | 图片/截图问答 | `office.image.ask` | 先 OCR 取真实文本（复用 `ocr.image` 同一引擎探针）再按段落检索摘录作答；引擎缺失/识别为空/零命中如实 `degraded`，图片元数据来自 Pillow 实测 |
 | 示例智能体 | `plugins/office-assistant` | 白名单追加 `office.kb.search_unified` 与 `office.image.ask`，跨域链可直达联查与图片问答 |
 
 HTTP 级冒烟：`python tests/smoke_kb_26.py`（8 项断言，可重复执行；向量通道下报销问句实测命中 0.6452）。
+
+## 可选外部服务（Docker Compose，ADR-0005）
+
+检索/缓存增强组件**全部可选**：不配置即零网络、现行为不变（检索走 `embedding`/`bigram`，缓存用进程内字典）。
+要启用 Milvus 增量向量检索（首查灌库、此后只算新增块）：
+
+```powershell
+docker compose -f deploy/docker-compose.yml up -d     # milvus standalone + etcd + minio
+# .env 追加（键的唯一出处 packages/core/office_agent_core/settings.py）：
+#   MILVUS_URI=http://127.0.0.1:19530      # 留空 = 整体关闭、零网络
+#   MILVUS_COLLECTION=office_chunks
+#   MILVUS_TOKEN=                          # 自建无鉴权可留空
+```
+
+- 通道三级降级（**绝不 500**）：`milvus`（需 `MILVUS_URI` 且 `EMBEDDING_*` 已配）→ `embedding`
+  全量重算 → `bigram`；每级失败在出参 `retrieval_fallback_reason` **链式如实标注**（如
+  `Milvus 不可用已回退全量向量检索：MilvusException: ...`），`retrieval_mode` 取值即三值之一。
+- 单 collection + `origin` 标量过滤（五源联查一次合查）；`visibility` 权限**不进**向量库（检索后回表过滤）；
+  块 id = `sha1(origin|source|text)`，文本变更即新 id，增量差集天然覆盖；单次 embed 上限 128 块（防拖垮同机 Ollama）。
+- HTTP 级冒烟：`python tests/smoke_milvus.py [base_url] [期望通道]`（六项断言，可重复执行）；
+  `@pytest.mark.milvus` 的真实集成用例 `MILVUS_URI` 未配置即 skip。
 
 ## 数据库迁移
 

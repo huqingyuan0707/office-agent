@@ -40,9 +40,13 @@ def docs_dir(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Path:
 
 @pytest.fixture(autouse=True)
 def _no_embedding_by_default(monkeypatch: pytest.MonkeyPatch) -> None:
-    """默认钉住「未配向量检索」：不给 EMBEDDING_* 就零网络走字符检索。"""
+    """默认钉住「未配向量检索/向量库」：不给 EMBEDDING_* 且 MILVUS_URI 为空，零网络走字符检索。
+
+    Milvus 必须一并钉空——本机 .env 一登记 MILVUS_URI，检索就会先试向量库打网络。
+    """
     monkeypatch.setattr(settings, "EMBEDDING_BASE_URL", "")
     monkeypatch.setattr(settings, "EMBEDDING_MODEL", "")
+    monkeypatch.setattr(settings, "MILVUS_URI", "")
 
 
 # ---------------- 字符检索（默认通道） ----------------

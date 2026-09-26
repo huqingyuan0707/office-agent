@@ -115,6 +115,14 @@ class Settings(BaseSettings):
     # 换模型/换语料必须重新校准；命中分数在出参 score 里原样暴露，调用方可自行判强弱。
     EMBEDDING_MIN_SCORE: float = 0.35
 
+    # ---- Milvus 向量库（可选，ADR-0005 阶段二）：URI 为空即整体关闭、零网络，
+    # 检索走「全量重算 embedding」现路径；配置后走「增量灌库 + 过滤检索」，
+    # 对端不可用/超时按三级降级链回退（milvus → embedding → bigram），绝不 500。----
+    MILVUS_URI: str = ""
+    MILVUS_TOKEN: SecretStr = SecretStr("")
+    MILVUS_COLLECTION: str = "office_chunks"
+    MILVUS_TIMEOUT_SECONDS: float = 5.0
+
     # ---- 主动消息推送（站内通知扫描阈值）----
     APPROVAL_STALE_HOURS: float = 24.0
     NOTIFICATION_MAX_PER_SCAN: int = 50

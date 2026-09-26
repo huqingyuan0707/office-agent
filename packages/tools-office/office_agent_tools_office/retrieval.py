@@ -14,12 +14,17 @@
 
 from __future__ import annotations
 
+import hashlib
+import logging
 import math
 import re
 
 import httpx
 
 from office_agent_core.settings import settings
+from office_agent_tools_office import vector_store
+
+logger = logging.getLogger(__name__)
 
 #: 段落切块上限：长文整篇压成一个向量会丢语义（模型还会静默截断），故按段落切
 CHUNK_CHARS = 600
@@ -27,6 +32,8 @@ CHUNK_CHARS = 600
 EMBED_BATCH = 16
 #: 字符通道的片段窗口长度（向量通道返回整段，不用此值）
 SNIPPET_CHARS = 120
+#: 单次检索最多灌库的块数（首查突发会拖垮同机 Ollama chat，超出部分下轮续灌）
+INGEST_CAP = 128
 
 
 def bigrams(text: str) -> set[str]:
@@ -198,6 +205,91 @@ async def retrieve_by_embedding(
     return scored[:top_k]
 
 
+def _store_records(chunks: list[dict[str, str]], origin: str) -> list[vector_store.VectorRecord]:
+    """段落块 → 向量库记录（origin 取块自带标记，缺省用调用方声明的域；id 见 record_id）。"""
+    return [
+        vector_store.VectorRecord(
+            id=vector_store.record_id(
+                str(chunk.get("origin") or origin), chunk["source"], chunk["text"]
+            ),
+            origin=str(chunk.get("origin") or origin),
+            source=chunk["source"],
+            title=chunk["title"],
+            text=chunk["text"],
+            text_hash=hashlib.sha1(chunk["text"].encode("utf-8")).hexdigest(),
+        )
+        for chunk in chunks
+    ]
+
+
+async def retrieve_by_store(
+    query: str,
+    chunks: list[dict[str, str]],
+    top_k: int,
+    store: vector_store.VectorStore,
+    origin: str = "knowledge",
+) -> list[tuple[float, dict[str, str]]]:
+    """Milvus 通道检索：增量灌库（只 embed 缺失块）→ 查询向量 → 带 origin 过滤检索 → 回表。
+
+    embed_texts 仍是唯一 embedding 出口（测试 patch 目标不变）；检索前把本次语料的
+    缺失块补进库（上限 INGEST_CAP，超出下轮续灌），命中结果按当前块集回表——库里
+    同源的陈旧块（文本已改、旧 id 未清）因不在当前块集而被自然剔除，不污染结果。
+    origin 只作块未自带归属时的兜底标签（kb.ask 走 knowledge、file.ask 走 docs 等）。
+    """
+    records = _store_records(chunks, origin)
+    known = await store.known_ids([record.id for record in records])
+    missing = [record for record in records if record.id not in known][:INGEST_CAP]
+    if missing:
+        vectors = await embed_texts([f"{r.title}\n{r.text}" for r in missing])
+        for record, vector in zip(missing, vectors, strict=True):
+            record.vector = vector
+        await store.upsert(missing)
+    [query_vector] = await embed_texts([query])
+    origins = sorted({record.origin for record in records})
+    hits = await store.search(query_vector, top_k, settings.EMBEDDING_MIN_SCORE, origins=origins)
+    current = {record.id: chunk for record, chunk in zip(records, chunks, strict=True)}
+    return [(round(score, 4), current[hit.id]) for score, hit in hits if hit.id in current]
+
+
+async def retrieve(
+    query: str, chunks: list[dict[str, str]], top_k: int, *, origin: str = "knowledge"
+) -> tuple[list[tuple[float, dict[str, str]]], str, str]:
+    """三级降级链统一入口（ADR-0005 阶段二）：milvus → embedding 全量重算 → 字符 bigram。
+
+    返回 (scored, mode, fallback_reason)：mode ∈ {milvus, embedding, bigram}，与出参
+    `retrieval_mode` 一一对应；每级失败只在 fallback_reason 如实标注后降下一级，
+    任何一级都不 500。MILVUS_URI 未配置即跳过第一级（零网络，现行为不变）。
+    """
+    milvus_reason = ""
+    try:
+        store = vector_store.get_store()  # 取单例（不建连；缺失依赖/意外一律视为本通道不可用）
+    except Exception as exc:  # 防御：构造期任何意外都不得穿透（降级绝不 500 红线）
+        store = None
+        milvus_reason = f"Milvus 不可用已回退全量向量检索：{type(exc).__name__}: {str(exc)[:120]}"
+        logger.warning("retrieve %s（uri=%s）", milvus_reason, settings.MILVUS_URI)
+    if store is not None and chunks and embedding_ready():
+        try:
+            scored = await retrieve_by_store(query, chunks, top_k, store, origin)
+        except Exception as exc:  # 对端离线/超时/响应非法一律降级，绝不 500
+            milvus_reason = (
+                f"Milvus 不可用已回退全量向量检索：{type(exc).__name__}: {str(exc)[:120]}"
+            )
+            logger.warning("retrieve %s（uri=%s）", milvus_reason, settings.MILVUS_URI)
+        else:
+            return scored, "milvus", ""
+    if embedding_ready():
+        try:
+            scored = await retrieve_by_embedding(query, chunks, top_k)
+        except Exception as exc:
+            reason = f"向量检索不可用已回退字符检索：{type(exc).__name__}: {str(exc)[:120]}"
+            logger.warning("retrieve %s（model=%s）", reason, settings.EMBEDDING_MODEL)
+            # 两侧都失败时保留完整降级链（Milvus 的原因不能丢，否则用户只看到末级）
+            chained = f"{milvus_reason}；{reason}" if milvus_reason else reason
+            return retrieve_bigram(query, chunks, top_k), "bigram", chained
+        return scored, "embedding", milvus_reason
+    return retrieve_bigram(query, chunks, top_k), "bigram", milvus_reason
+
+
 def snippet(text: str, query_grams: set[str]) -> str:
     """截取命中片段：优先首个 bigram 命中位置，取前后窗口。"""
     lower = text.lower()
@@ -217,4 +309,4 @@ def first_snippet(text: str, query: str, mode: str) -> str:
 
     两种口径由本函数统一裁决，避免调用方各写一遍 mode 分支（口径漂移源头）。
     """
-    return text[:CHUNK_CHARS] if mode == "embedding" else snippet(text, bigrams(query))
+    return text[:CHUNK_CHARS] if mode in ("embedding", "milvus") else snippet(text, bigrams(query))
