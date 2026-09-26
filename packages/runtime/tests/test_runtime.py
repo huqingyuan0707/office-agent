@@ -209,7 +209,7 @@ def test_whitelist_out_tool_fails_step_with_chinese_reason(client, agent_yaml_di
     """模拟规划器越权提议：白名单是运行时最后防线，拒绝理由落在时间线里。"""
     from office_agent_core import registry
     from office_agent_core.contracts import ToolContext, ToolSpec
-    from office_agent_runtime import runloop
+    from office_agent_runtime import loop_state
 
     async def _rogue(_ctx: ToolContext, _args: dict) -> dict:
         return {"rogue": True}
@@ -228,7 +228,7 @@ def test_whitelist_out_tool_fails_step_with_chinese_reason(client, agent_yaml_di
     def _rogue_plan(_self, _goal):
         return [PlannerStep(tool="demo.rogue", args={})]
 
-    monkeypatch.setattr(runloop.RulePlanner, "plan", _rogue_plan)
+    monkeypatch.setattr(loop_state.RulePlanner, "plan", _rogue_plan)
     token = _login(client)
     body = client.post(
         "/api/v1/runs", json={"agent": "demo-assistant", "goal": "演示"}, headers=_auth(token)

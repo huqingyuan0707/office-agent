@@ -4,7 +4,7 @@
 > On top of the kernel sits an **agent orchestration runtime**: a natural-language goal is planned into a chain of tool calls, executed step by step, and returned with provenance. The planner can only *propose* — every step goes through the executor, so governance cannot be bypassed.
 > Office scenarios and external systems are plugin packages; the main packages carry zero domain-specific semantics.
 
-Design records: `docs/office-agent仓库骨架与内核提取方案.md`, `docs/ADR-0003-办公Agent拆分独立开源项目.md` (Chinese); orchestration plan: `.trae/documents/智能体编排层实现方案.md`; AI collaboration rules: `AGENTS.md`.
+Design records: `docs/office-agent仓库骨架与内核提取方案.md`, `docs/ADR-0003-办公Agent拆分独立开源项目.md`, `docs/ADR-0005-编排与检索栈迁移LangGraph-Milvus-Redis.md` (Chinese); orchestration plan: `.trae/documents/智能体编排层实现方案.md`; AI collaboration rules: `AGENTS.md`.
 
 ## Architecture
 
@@ -15,7 +15,9 @@ User goal (natural language)
 packages/runtime ── orchestration layer (optional; RUNTIME_ENABLED=false → pure-kernel mode)
    ├─ spec.py + loader.py   declarative AgentSpec (plugins/*/agent.yaml — customization without code)
    ├─ planner/              LlmFunctionCallPlanner (OpenAI-compatible) → RulePlanner fallback (works with zero LLM)
-   ├─ runner.py             main loop: propose → execute → observe → checkpoint; max_steps cap; approval suspend + lazy resume
+   ├─ graph.py + loop_state.py  main loop = LangGraph StateGraph (plan → act self-loop → END, ADR-0005):
+   │                     propose → execute → observe → checkpoint; max_steps cap; approval suspend + lazy resume
+   │                     (Task.checkpoint stays the single source of truth; graph is checkpointer-free & stateless)
    └─ validation.py         answer numbers must trace back to tool output, otherwise flagged as unverified
    │
    ▼  each proposed step is restricted to (role-visible scopes ∩ agent whitelist)

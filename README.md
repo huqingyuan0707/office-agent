@@ -6,7 +6,8 @@
 > 产出带溯源的结果。编排层只能「提议」，每一步都走执行器——治理口径绕不过。
 > 办公场景与外部系统一律插件化接入，主包零业务域语义。
 
-设计依据：`docs/office-agent仓库骨架与内核提取方案.md`、`docs/ADR-0003-办公Agent拆分独立开源项目.md`；
+设计依据：`docs/office-agent仓库骨架与内核提取方案.md`、`docs/ADR-0003-办公Agent拆分独立开源项目.md`、
+`docs/ADR-0005-编排与检索栈迁移LangGraph-Milvus-Redis.md`（编排层 LangGraph 化，检索/缓存栈分阶段迁移）；
 编排层方案：`.trae/documents/智能体编排层实现方案.md`；AI 协作纪律：`AGENTS.md`。
 
 ## 架构总览
@@ -18,7 +19,9 @@
 packages/runtime ── 智能体编排层（可选装配，RUNTIME_ENABLED=false 即纯地基模式）
    ├─ spec.py + loader.py   AgentSpec 声明式配置（plugins/*/agent.yaml，零代码定制）
    ├─ planner/              LlmFunctionCallPlanner（OpenAI 兼容）→ 降级 RulePlanner（零 LLM 可演示）
-   ├─ runner.py             主循环：提议 → 执行 → 观察 → checkpoint；max_steps 硬顶、审批挂起 lazy resume
+   ├─ graph.py + loop_state.py  主循环 = LangGraph StateGraph（plan → act 自环 → END，ADR-0005）：
+   │                     提议 → 执行 → 观察 → checkpoint；max_steps 硬顶、审批挂起 lazy resume
+   │                     （Task.checkpoint 是业务唯一真相源，图不挂 checkpointer、无状态可复用）
    └─ validation.py         回答数值校验：数字必须能溯源到工具返回，否则标注失信
    │
    ▼  每步提议 = {tool, args}，只能从（角色可见 ∩ 白名单）里选

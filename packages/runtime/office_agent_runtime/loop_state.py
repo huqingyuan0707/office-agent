@@ -1,13 +1,14 @@
-"""Run 主循环执行态（runner.py 的拆分产物：循环骨架 + 单步治理分支 + 收敛收尾）
+"""一次 run 的执行态宿主（LoopState：runloop.py 的 LangGraph 迁移改造产物）
 
-链路：runner.execute_run（薄装配，resolve_pending 注入契约）→ RunLoop.run() 跑
-      「准备计划 → 逐步 run_step → 状态流转」→ RunLoop.finish() 做数值校验与概要合成。
-      每步提议仍走 executor.call（Scope 硬拦 / 审批分流 / 熔断 / 审计全在内核，绕不过）。
+链路：graph.py 的 StateGraph 节点闭包持有本类实例——plan 节点调 prepare_plan、
+      act 节点调 run_step（白名单 / 取值模板 / 送审分流 / executor.call），
+      图收敛后由 runner.execute_run 调 finish() 做数值校验与概要合成。
+      原 RunLoop.run() 的 while 循环由 graph.py 条件边替代（ADR-0005 阶段一）。
 
 口径与决策记录见 runner.py 模块 docstring（受理与执行分离 / max_steps 硬顶 /
-计划持久化 / 状态机 / 白名单最后防线）——本文件只承载实现，决策唯一出处不复制两份。
-对齐：.trae/documents/智能体编排层实现方案.md §3（运行实体与断点）、AGENTS.md §6
-（execute_run 复杂度豁免的拆分偿还）。
+计划持久化 / 状态机 / 白名单最后防线）——本文件只承载执行态实现；
+checkpoint JSON 形状、状态流转（move_state → 内核 TRANSITIONS）与 SQLite 锁纪律
+（finish 进 finalize_answer 前先 commit）与原 runloop.py 逐点一致。
 """
 
 from __future__ import annotations
@@ -58,7 +59,11 @@ def _needs_approval(tool_spec: ToolSpec | None, index: int, pre_approved: list[i
 
 
 def _replay_results(checkpoint: dict[str, Any]) -> dict[int, dict[str, Any]]:
-    """断点恢复：已成功步骤的完整出参从 checkpoint 回放（取值模板与数值校验的地基）。"""
+    """断点恢复：已成功步骤的完整出参从 checkpoint 回放（取值模板与数值校验的地基）。
+
+    入参 checkpoint 为解析后的检查点字典；返回 {步号: 完整出参}。
+    无 steps 条目或条目缺 status=ok / outcome 时跳过该条（不抛异常）。
+    """
     results: dict[int, dict[str, Any]] = {}
     for entry in step_entries(checkpoint):
         if entry.get("status") != "ok" or not isinstance(entry.get("outcome"), dict):
@@ -70,7 +75,7 @@ def _replay_results(checkpoint: dict[str, Any]) -> dict[int, dict[str, Any]]:
     return results
 
 
-def _enter_executing(task: Task) -> None:
+def enter_executing(task: Task) -> None:
     """进入执行前状态：常规路径走 PLANNING（重规划或回放计划）；审批解除的重入从
     WAITING_APPROVAL 直进 ACTING（内核口径），已在 ACTING 的不重复流转。"""
     if task.status == AgentState.WAITING_APPROVAL.value:
@@ -79,14 +84,18 @@ def _enter_executing(task: Task) -> None:
         move_state(task, AgentState.PLANNING)
 
 
-def _begin_acting(task: Task) -> None:
+def begin_acting(task: Task) -> None:
     """规划落定后进入执行态（审批解除的重入已在 ACTING，不重复流转）。"""
     if task.status != AgentState.ACTING.value:
         move_state(task, AgentState.ACTING)
 
 
-def _conclude_at_boundary(task: Task, checkpoint: dict[str, Any], save: Callable[[], None]) -> None:
-    """续跑边界（断点已在末尾）：循环体未再执行，直接收敛 DONE。"""
+def conclude_at_boundary(task: Task, checkpoint: dict[str, Any], save: Callable[[], None]) -> None:
+    """续跑边界（断点已在末尾）：图未再执行任何步骤，直接收敛 DONE。
+
+    入参：task 当前任务行、checkpoint 解析后的检查点、save 检查点落盘回调。
+    已在 DONE 的不重复流转（末步成功后 runner 侧已流转 DONE 的正常路径）。
+    """
     if task.status != AgentState.DONE.value:
         move_state(task, AgentState.OBSERVING)
         move_state(task, AgentState.REFLECTING)
@@ -156,12 +165,12 @@ async def _choose_and_plan(spec: AgentSpec, goal: str) -> tuple[list[PlannerStep
     )
 
 
-class RunLoop:
-    """一次 run 主循环的执行态（runner.execute_run 的拆分产物：状态集中，方法各自收敛复杂度）。
+class LoopState:
+    """一次 run 主循环的执行态宿主（原 RunLoop 类去掉 run() 循环骨架后的全部成员）。
 
-    职责边界：run() 只跑「规划 → 逐步执行 → 收敛」的循环骨架；单步治理分支
-    （白名单 / 取值模板 / 送审挂起 / executor 调用）全在 run_step()；
-    收尾（数值校验 + 概要合成）在 finish()。行为与原内联版逐分支等价。
+    职责边界：graph.py 的节点驱动本类——plan 节点调 prepare_plan，act 节点调
+    run_step（每步治理分支：白名单 / 取值模板 / 送审挂起 / executor.call 全在此），
+    收尾调 finish()（数值校验 + 概要合成）。行为与原 RunLoop 逐分支等价。
     """
 
     def __init__(
@@ -256,7 +265,7 @@ class RunLoop:
     async def prepare_plan(self) -> list[PlannerStep]:
         """计划持久化：首次执行时规划并写入 checkpoint（含 planner_source），
         续跑回放原计划 + 原来源（防 agent.yaml 中途变更导致步号与历史结果错位）；
-        无持久化计划时按当前配置走降级链重规划。"""
+        无持久化计划时按当前配置走降级链重规划。计划为空时抛 BusinessError。"""
         planned, src = _plan_from_checkpoint(self.checkpoint)
         if planned is None:
             planned, src = await _choose_and_plan(self.spec, self.goal)
@@ -317,35 +326,6 @@ class RunLoop:
         move_state(self.task, AgentState.REFLECTING)
         self.succeed_step(index, step.tool, args, outcome)
         return True
-
-    async def run(self) -> None:
-        """主循环骨架：不向外抛错，失败也收敛终态（受理与执行分离，见 runner.py docstring）。"""
-        try:
-            _enter_executing(self.task)
-            planned = await self.prepare_plan()
-            self.total = len(planned)
-            _begin_acting(self.task)
-            while self.index < self.total:
-                if self.index >= self.spec.max_steps:
-                    raise BusinessError(
-                        ErrorCode.QUOTA_EXCEEDED,
-                        f"已达智能体 {self.spec.name} 的最大步数上限 {self.spec.max_steps}，"
-                        f"剩余 {self.total - self.index} 步未执行；可处理断点后显式续跑",
-                    )
-                if not await self.run_step(planned[self.index]):
-                    break
-                self.index += 1
-                move_state(
-                    self.task,
-                    AgentState.ACTING if self.index < self.total else AgentState.DONE,
-                )
-            else:
-                _conclude_at_boundary(self.task, self.checkpoint, self.save_checkpoint)
-        except BusinessError as exc:
-            self.fail_run(exc.msg)
-        except Exception as exc:  # 未预期异常同样收敛终态：受理接口保持 code 0，细节进检查点
-            logger.exception("run %s 执行异常", self.task.id)
-            self.fail_run(f"运行异常：{str(exc)[:200]}")
 
     async def finish(self) -> dict[str, Any]:
         """收敛收尾：R2 数值校验（降级不 500）+ 输出概要合成（不抛错，失败也走概要）。"""
