@@ -27,6 +27,7 @@ from office_agent_runtime.loop_state import (
     conclude_at_boundary,
     enter_executing,
 )
+from office_agent_runtime.planner.llm import LlmPlanError
 from office_agent_runtime.spec import PlannerStep
 
 logger = logging.getLogger(__name__)
@@ -69,27 +70,50 @@ async def _plan_node(state: RunGraphState) -> dict[str, Any]:
 async def _act_node(state: RunGraphState) -> dict[str, Any]:
     """单步执行节点（自环即原 while 循环）：边界收敛 → max_steps 硬顶 → run_step。
 
+    react 边界（混合串联）：步骤耗尽且未达步数顶时先问 plan_next（LLM 看真实出参
+    提议下一步）；None = LLM 判定收工 → 边界收敛；出站失败按「已有真实产出则带
+    产出收敛、零产出则失败」分级，绝不丢弃已执行的真实数据。
     route=again 继续下一步；stop 停图（审批挂起 / 单步失败 / 超步数 / 未预期异常 /
-    续跑边界直达）。挂起与失败的区分由 task.status 承载，图不做分支。
+    续跑边界直达 / react 收工）。挂起与失败的区分由 task.status 承载，图不做分支。
     """
     ls: LoopState = state["ls"]
     planned: list[PlannerStep] = state["planned"]
     try:
+        step: PlannerStep | None = None
         if ls.index >= ls.total:
-            # 续跑边界（断点已在末尾）或末步后回环：直接收敛 DONE
-            conclude_at_boundary(ls.task, ls.checkpoint, ls.save_checkpoint)
-            return {"route": "stop"}
+            if ls.planner_source == "react" and ls.index < ls.spec.max_steps:
+                try:
+                    step = await ls.plan_next()
+                except LlmPlanError as exc:
+                    if ls.index == 0:
+                        ls.fail_run(f"ReAct 规划不可用：{exc.msg}")
+                        return {"route": "stop"}
+                    logger.warning(
+                        "ReAct 中途规划失败（已有 %d 步产出，带产出收敛）：%s", ls.index, exc.msg
+                    )
+                    conclude_at_boundary(ls.task, ls.checkpoint, ls.save_checkpoint)
+                    return {"route": "stop"}
+            if step is None:
+                # 续跑边界（断点已在末尾）或末步后回环：直接收敛 DONE
+                conclude_at_boundary(ls.task, ls.checkpoint, ls.save_checkpoint)
+                return {"route": "stop"}
         if ls.index >= ls.spec.max_steps:
             raise BusinessError(
                 ErrorCode.QUOTA_EXCEEDED,
                 f"已达智能体 {ls.spec.name} 的最大步数上限 {ls.spec.max_steps}，"
                 f"剩余 {ls.total - ls.index} 步未执行；可处理断点后显式续跑",
             )
-        if not await ls.run_step(planned[ls.index]):
+        if step is None:
+            step = planned[ls.index]
+        if not await ls.run_step(step):
             return {"route": "stop"}
         ls.index += 1
-        move_after_step = AgentState.ACTING if ls.index < ls.total else AgentState.DONE
-        move_state(ls.task, move_after_step)
+        if ls.planner_source == "react" and ls.index >= ls.total:
+            # react 开放式计划：刚补的步骤已执行完，是否收工下一轮问 LLM，先回 ACTING
+            move_state(ls.task, AgentState.ACTING)
+        else:
+            move_after_step = AgentState.ACTING if ls.index < ls.total else AgentState.DONE
+            move_state(ls.task, move_after_step)
     except BusinessError as exc:
         ls.fail_run(exc.msg)
         return {"route": "stop"}

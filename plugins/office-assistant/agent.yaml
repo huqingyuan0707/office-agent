@@ -9,11 +9,14 @@
 #
 # 两条如实说明：
 # 1. 每条链末步 kb.ask 的问句是固化的制度问题——这是**规则兜底链**的边界；
-#    本文件 llm: default 后由 qwen3:8b 现场编排多步并自行组织检索问句，
-#    LLM 不可用/未返回 tool_calls 时自动落回本文件 rules（降级链不阻断）。
+#    llm_mode: react 后自由目标由 qwen3:8b 逐步再规划（每步看真实出参决定下一步），
+#    关键词命中走本文件 rules 快路径；LLM 不可用时未命中目标明确中文报错（不硬编造）。
 # 2. llm 字段口径（2026-09-25 更新）：本地模型已切 qwen3:8b（.env LLM_PROVIDERS），
 #    实测规划能返回合法 tool_calls 且含糊目标会回头追问不硬编造，故升为 LLM 主路径；
 #    rules 保留作降级兜底（0.5b 时代结论见 AGENTS §6）。
+# 3. 大模型串联（2026-09-26）：规则链文档步从 office.report.generate（纯模板直出）切到
+#    office.doc.compose——素材传 {steps[*].result}（全部已完成步骤真实出参），成稿交
+#    大模型、数字仍取真实台账（成稿侧另有数字溯源校验）；模型不可用降级素材原文直出。
 name: office-assistant
 description: 跨域办公助手：一句话串起数据查询、文档生成与制度问答（多步编排，数字全部来自上一步真实结果）
 system_prompt: |
@@ -21,6 +24,8 @@ system_prompt: |
   缺数宁可留白，不补数。
   目标分流：问「制度/流程/标准/规定/怎么报销/如何申请」这类知识咨询时，用 kb.ask 检索制度原文回答；
   只有用户明确要发起/填写单据（如「报销」「帮我请两天假」）才用 office.approval.draft 出草稿追问缺项。
+  需要产出文档时用 office.doc.compose：material 参数传全部已完成步骤的真实出参素材，
+  让成稿基于真实数据而非编造。
 tools:
   - office.data.query
   - office.data.analyze
@@ -48,11 +53,13 @@ tools:
   - office.desk.ticket
   - office.desk.tickets
   - office.report.generate
+  - office.doc.compose
   - kb.ask
   - office.kb.search_unified
   - office.image.ask
 max_steps: 8
 llm: default
+llm_mode: react
 rules:
   # 规则〇〇：报销制度/流程咨询 → kb.ask 检索制度原文（必须排在裸「报销」起草规则之前，
   #           否则「报销制度」被子串抢走答成草稿追问）。只收报销类问法：规则问句是固化的，
@@ -77,57 +84,52 @@ rules:
         args:
           kind: expense
           fields: {}
-  # 规则一：经营数据复盘 → 查业绩台账 → 出周报（记录数取自步骤 0 真实出参）→ 引披露口径
+  # 规则一：经营数据复盘 → 查业绩台账 → 引披露口径 → 大模型成稿周报（素材=前两步真实出参，
+  #         数字由成稿侧溯源校验；模型不可用降级素材原文直出，绝不编造）
   - match: ["经营复盘", "经营分析", "数据分析", "数据报告"]
     steps:
       - tool: office.data.query
         args:
           dataset: sales
           limit: 20
-      - tool: office.report.generate
-        args:
-          title: 经营数据复盘
-          report_type: weekly
-          metrics:
-            命中记录数: "{steps[0].result.count}"
-            全量记录数: "{steps[0].result.total}"
       - tool: kb.ask
         args:
           query: 经营数据对外披露需要哪些审批
           top_k: 3
-  # 规则二：工时统计 → 查工时台账 → 出周报 → 引加班认定口径
+      - tool: office.doc.compose
+        args:
+          title: 经营数据复盘
+          instruction: 写成周报：先按台账查询真实数据汇总核心指标（命中记录数与全量记录数用素材原值），再附对外披露所需的审批要求
+          material: "{steps[*].result}"
+  # 规则二：工时统计 → 查工时台账 → 引加班认定口径 → 大模型成稿周报
   - match: ["工时统计", "工时周报", "工时复盘"]
     steps:
       - tool: office.data.query
         args:
           dataset: work
           limit: 20
-      - tool: office.report.generate
-        args:
-          title: 工时周报
-          report_type: weekly
-          metrics:
-            命中记录数: "{steps[0].result.count}"
-            全量记录数: "{steps[0].result.total}"
       - tool: kb.ask
         args:
           query: 加班工时如何认定
           top_k: 3
-  # 规则三：考勤分析 → 查考勤台账 → 出月报 → 引请假制度
+      - tool: office.doc.compose
+        args:
+          title: 工时周报
+          instruction: 写成周报：按工时台账真实数据汇总命中与全量记录数（用素材原值），并附加班工时认定口径
+          material: "{steps[*].result}"
+  # 规则三：考勤分析 → 查考勤台账 → 引请假制度 → 大模型成稿月报
   - match: ["考勤分析", "考勤统计", "出勤情况"]
     steps:
       - tool: office.data.query
         args:
           dataset: attendance
           limit: 20
-      - tool: office.report.generate
-        args:
-          title: 考勤统计报告
-          report_type: monthly
-          metrics:
-            命中记录数: "{steps[0].result.count}"
-            全量记录数: "{steps[0].result.total}"
       - tool: kb.ask
         args:
           query: 请假流程与考勤制度
           top_k: 3
+      - tool: office.doc.compose
+        args:
+          title: 考勤统计报告
+          instruction: 写成月报：按考勤台账真实数据汇总命中与全量记录数（用素材原值），并附请假流程与考勤制度要点
+          material: "{steps[*].result}"

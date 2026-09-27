@@ -280,6 +280,7 @@ HTTP 级冒烟：`python tests/smoke_2_4_data.py`（11 项断言，可重复执�
 | 能力 | 入口 | 口径要点 |
 |---|---|---|
 | 对话办理 | `/chat`（默认首页） | 一句话 → `POST /runs` 省略 `agent` 自动路由（`runtime/router.py`：规则命中优先，LLM 智能体兜底仅当其 profile 已在 `LLM_PROVIDERS` 配置；全不中 1001 中文列出已装载智能体与能力描述）→ 2s 轮询呈现：路由到的智能体、步骤时间线、终答/末步结果、审批挂起卡（链去审批页）；路由失败原文进气泡，零 mock；终答里「…」引住的示例短语渲染为独立可点击标签，点击即发起办理。工具页降级为管理员调试台 |
+| 大模型串联（ADR-0006） | `llm_mode: react`（智能体声明式切换）+ `office.doc.compose` | 混合规划：关键词命中走规则快路径（确定性、毫秒级），规则不中的自由目标走 **ReAct 逐步再规划**（每步看全部已完成步骤真实出参再提议下一步，素材单轮规划「参数靠编」根治）；链内文档步切 `office.doc.compose` 大模型成稿——素材 = `{steps[*].result}` 各步真实出参整体注入，成稿后数字溯源校验（失信清单如实标注不拦截），LLM 不可用降级素材原文直出（`degraded` 标记绝不 500）；react 计划增量 append 进 checkpoint（断点续跑/审批重放契约不漂移）；前端文档卡带来源角标（大模型成稿·模型名 / 模型不可用·素材直出） |
 
 ## V1.2 办公功能·批次 C（PRD §5.3，多场景串联 / 可视化编排 / RPA 联动）
 
@@ -298,7 +299,7 @@ HTTP 级冒烟：`python tests/smoke_v1_2_batch_c.py`（7 项断言，自带起�
 | 事务汇总 | `office.worklog.generate` | 个人工作台账：日/周窗口内已完成/待完成/日程三段聚合直出，实测计数留白不编造，带 source+fetched_at 溯源 |
 | 智能主动推送 | `/notifications/scan` 扩展四类信号 | 待办到期提醒（临近/逾期两口径）、会议临近通知（创建人+参会人逐人）、项目节点预警（N 天内）、周五主动提示周报草稿；今日简报并入「今日到期/逾期待办数 + 今日会议数」；业务时区 `BUSINESS_TIMEZONE` 可配（缺 tzdata 降级 UTC 只告警）；事务存储损坏只降级 `affairs_degraded` 绝不 500 |
 | 示例智能体 | `plugins/personal-affairs-assistant` | 查待办/台账/空闲只读直达；建待办/建日程走对话恒送审挂起→批准续跑；daily-report-assistant 关键词同步收窄避免子串抢路由 |
-| 跨域串联 | `plugins/office-assistant` | 一句话（不指定智能体）自动路由到这里，一条 run 内串起三域。主路径 `llm: default`（本地 qwen3:8b）现场编排多步并自行组织 `kb.ask` 检索问句；LLM 不可用自动落回 `rules` 兜底链——`office.data.query` 查数 → `office.report.generate` 出报告（指标值用 `{steps[0].result.count}` 从上一步**真实出参**注入，数值一致率 100%）→ `kb.ask` 引制度条文，全链溯源。注意：LLM 一次性提议全部步骤、拿不到上一步输出，统计类入参可能编数，跨步取数以规则链更可靠 |
+| 跨域串联 | `plugins/office-assistant` | 一句话（不指定智能体）自动路由到这里，一条 run 内串起三域。**混合规划 `llm_mode: react`**：经营复盘/工时统计/考勤分析等关键词走规则快路径（`data.query` 查数 → `kb.ask` 检索 → `office.doc.compose` 大模型成稿，数字取素材原值 + 溯源校验）；规则不中的自由目标由 LLM 逐步再规划（每步看真实出参，编参根治）；LLM 不可用规则链照跑（降级互不拖累） |
 
 HTTP 级冒烟：`python tests/smoke_personal_affairs.py`（8 项断言，可重复执行）。
 
@@ -313,6 +314,19 @@ HTTP 级冒烟：`python tests/smoke_personal_affairs.py`（8 项断言，可重
 | 知识库后台（PRD §2.13） | `/kb-admin`（知识库后台页）+ `POST/GET/DELETE /kb/files`、`GET /kb/stats`（仅 admin，管理面直接生效不走审批） | 资料上传（pdf/docx/xlsx/csv/txt/md 拖拽多选，后缀/体积前置校验，可见范围 public 或角色名）→ 入盘即解析切块（与 `kb.ask` 同一提取/切块口径，上传即刻可检索）→ 向量化如实标注（`milvus` 已落库 / `on_demand_embedding` 按需算 / `unconfigured` 未配）；知识库维护（清单×目录联查三态：已入库 / 已入盘未解析 / 文件缺失，KPI + 按源删除连向量块一并清理，重传同名先清旧块）+ 统计（按格式分组 + 向量存储口径 + embedding_model）；解析失败只降级入账 `degraded_reason` 不 500 |
 
 HTTP 级冒烟：`python tests/smoke_kb_26.py`（8 项断言，可重复执行；向量通道下报销问句实测命中 0.6452）；知识库后台由单测覆盖（tools-office 17 例 + server 7 例：全格式入库/三态联查/权限门槛/上传即可检索/按源删除）。
+
+## 数据资产目录（21 类 461 项自动化登记）
+
+数据资产目录以 `packages/server/office_agent_server/data_asset_catalog.py` 为**唯一数据源**，覆盖产品需求、用户权限安全、办公模板、文档处理、术语翻译、待办日程、审批、数据查询分析、会议、知识库 RAG、邮件 IM、人事行政、项目管理、财务、高阶自动化、Agent 工程、系统运营、测试评测、集成接口、运维高可用、项目交付 21 类共 461 项登记。
+
+```powershell
+.venv\Scripts\python.exe scripts\seed_data_asset_catalog.py   # 幂等灌库 data_assets + 同步重跑文档
+.venv\Scripts\python.exe scripts\generate_data_asset_docs.py  # 只重跑 docs/data-assets/ 文档套件
+```
+
+- 文档输出：`docs/data-assets/README.md`（总览统计）+ 每类一份 Markdown（含分类职责、资产形态、流水表）+ `index.json`（机器可读目录）；改目录后重跑脚本即全量幂等覆写。
+- 管理面只读 API：`GET /api/v1/admin/data-assets`（分页/分类过滤）、`/data-assets/categories`（目录条目数 vs 库表已登记行数）、`/data-assets/detail`（单个详情）；仅 `admin`，不落任何业务数据。
+- 口径：文档与 `data_assets` 表 description 都来自 `asset_summary()`（分类职责 + 资产形态），不编造字段级细节；新增/改名资产只改目录常量，禁止在 API/文档/测试另写一份目录。
 
 ## 可选外部服务（Docker Compose，ADR-0005）
 
@@ -356,6 +370,7 @@ docker compose -f deploy/docker-compose.yml up -d redis   # redis:8-alpine（刻
 
 `alembic` 是持久库 schema 演进唯一入口：async 引擎 `env.py`，URL 唯一出处 `Settings.DATABASE_URL`。
 模型改列必须 `autogenerate` 迁移（`create_all` 不做 ALTER）；CI 用 `alembic check` 做漂移自检。
+`data_assets` 目录行由种子脚本幂等写入，不随迁移手工维护。
 
 ## 质量门禁（本地与 CI 同一口径）
 
@@ -387,6 +402,7 @@ cd apps\web; npm run build                                       # 前端构建�
 - 决策记录：`docs/ADR-0003-办公Agent拆分独立开源项目.md`、`docs/ADR-0004-MCP协议桥与IM审批通知出站.md`
 - 骨架与内核提取：`docs/office-agent仓库骨架与内核提取方案.md`
 - 编排层方案：`.trae/documents/智能体编排层实现方案.md`
+- 数据资产目录：`docs/data-assets/README.md`（自动化生成，勿手改）
 - 贡献：`CONTRIBUTING.md`（PR 检查清单）；AI 协作纪律：`AGENTS.md`
 
 ## License

@@ -37,6 +37,11 @@ class AgentSpec:
 
     llm 为空串 = 未配置 LLM，走规则规划（R1 接入 LlmFunctionCallPlanner 后
     该字段作为 LLM profile 名，未配置且无 rules 时创建 run 明确中文报错）。
+
+    llm_mode 声明 LLM 规划的工作方式：plan（默认）= 单轮一次性出全计划（零回归）；
+    react = ReAct 逐步再规划——每步执行完拿真实出参再提议下一步（解决单轮规划
+    拿不到上一步结果、参数只能编造的边界，见 AGENTS §6）。字段与 LLM 是否配置
+    正交：llm 为空时 react 无从生效，由 planner 构造侧按降级链处理。
     """
 
     name: str
@@ -46,6 +51,7 @@ class AgentSpec:
     max_steps: int
     llm: str
     rules: tuple[PlannerRule, ...]
+    llm_mode: str = "plan"
 
     def to_dict(self) -> dict[str, Any]:
         """清单出参（不含 system_prompt：清单展示不需要，prompt 留给执行链路）。"""
@@ -55,6 +61,7 @@ class AgentSpec:
             "tools": list(self.tools),
             "max_steps": self.max_steps,
             "llm": self.llm,
+            "llm_mode": self.llm_mode,
             "rule_count": len(self.rules),
         }
 
@@ -86,6 +93,14 @@ def parse_agent_spec(raw: Any) -> AgentSpec:
             ErrorCode.PARAM_INVALID, f"智能体 {name} 的 max_steps 必须是不小于 1 的整数"
         )
 
+    llm_mode = str(raw.get("llm_mode") or "plan").strip() or "plan"
+    if llm_mode not in ("plan", "react"):
+        raise BusinessError(
+            ErrorCode.PARAM_INVALID,
+            f"智能体 {name} 的 llm_mode 只认 plan（单轮规划）或 react（逐步再规划），"
+            f"收到：{llm_mode}",
+        )
+
     rules = _parse_rules(name, frozenset(tools), raw.get("rules"))
     return AgentSpec(
         name=name,
@@ -95,6 +110,7 @@ def parse_agent_spec(raw: Any) -> AgentSpec:
         max_steps=max_steps,
         llm=str(raw.get("llm") or "").strip(),
         rules=rules,
+        llm_mode=llm_mode,
     )
 
 

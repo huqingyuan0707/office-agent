@@ -1,0 +1,5 @@
+INFO:     Started server process [30912]
+INFO:     Waiting for application startup.
+种子账号仍用本地默认口令，仅限本机演示，禁止暴露到公网；生产用 ENV=prod 关种子并改用显式口令
+INFO:     Application startup complete.
+INFO:     Uvicorn running on http://127.0.0.1:8200 (Press CTRL+C to quit)

@@ -3,8 +3,8 @@
 #
 # 定制化 = 声明式配置而非代码：prompt / 工具白名单 / 步数上限 / 规划规则全在这里。
 # 工具来源无关：白名单里只是 registry 中的 ToolSpec 名字，办公内置工具与远程工具同一治理口径。
-# llm 留空 = 走规则规划（零 LLM 可演示）；配置 LLM_PROVIDERS 后可改 llm: default 走函数调用规划，
-# LLM 不可用时自动降级回本文件的 rules（降级链见 runner._choose_and_plan）。
+# llm 留空 = 走规则规划（零 LLM 路由、关键词可演示可单测）；文档步内部经
+# office.doc.compose 调大模型成稿（素材=前步真实出参，模型不可用降级素材直出）。
 name: daily-report-assistant
 description: 办公日报助手：查日程、出日报、建待办（写动作恒送审，编排层绕不过闸门）
 system_prompt: |
@@ -12,23 +12,25 @@ system_prompt: |
   缺数宁可留白，不补数。
 tools:
   - office.schedule.view
+  - office.doc.compose
   - office.report.generate
   - office.todo.create
 max_steps: 6
 llm: ""
 rules:
-  # 规则一：日报/查日程类目标 → 先查日程，再用日程真实计数生成日报（数值来自上一步结果，非硬编码）
+  # 规则一：日报/查日程类目标 → 先查日程，再把日程真实出参交大模型成稿日报
+  # （数字取素材原值+成稿侧溯源校验；模型不可用降级素材原文直出）
   # 「日程」收窄为「查日程/看日程」：避免「建日程」等写动作目标被子串抢走路由（个人事务助手负责建）
   - match: ["日报", "今天做了什么", "查日程", "看日程", "工作总结"]
     steps:
       - tool: office.schedule.view
         args:
           view_type: daily
-      - tool: office.report.generate
+      - tool: office.doc.compose
         args:
           title: 工作日报
-          metrics:
-            日程天数: "{steps[0].result.count}"
+          instruction: 按日程查询真实数据整理成工作日报：概述当天安排与场次统计，数字必须取素材 JSON 原值
+          material: "{steps[*].result}"
   # 规则二：建待办类目标 → 恒送审写工具，run 挂起 WAITING_APPROVAL，复核员批准后自动续跑
   # 关键词收窄（原「待办」裸词）：「查待办」等只读目标让位给个人事务助手，避免子串抢路由
   - match: ["建个待办", "创建待办", "提醒我", "记一下"]

@@ -139,6 +139,30 @@ class Workflow(Base):
     updated_at: Mapped[datetime] = mapped_column(default=_now, onupdate=_now)
 
 
+class DataAsset(Base):
+    """数据资产目录（数据文档/数据资产清单的落库位）。
+
+    口径：按业务域分类登记数据资产名（文档或表均可），同一资产名在不同分类
+    可重复登记（分类即语境）；目录由 scripts/seed_data_asset_catalog.py 幂等补齐，
+    API 只读查询，不提供在线编辑（改目录改种子清单重跑即可）。
+    """
+
+    __tablename__ = "data_assets"
+    __table_args__ = (
+        UniqueConstraint(
+            "tenant", "category", "asset_name", name="uq_data_assets_tenant_category_name"
+        ),
+    )
+
+    id: Mapped[str] = mapped_column(String(32), primary_key=True, default=_uid)
+    tenant: Mapped[str] = mapped_column(String(64), nullable=False, index=True)
+    category: Mapped[str] = mapped_column(String(64), nullable=False)
+    asset_name: Mapped[str] = mapped_column(String(128), nullable=False)
+    description: Mapped[str] = mapped_column(Text, default="")
+    created_at: Mapped[datetime] = mapped_column(default=_now)
+    updated_at: Mapped[datetime] = mapped_column(default=_now, onupdate=_now)
+
+
 class ScheduledJob(Base):
     """定时任务定义（PRD §2.11 高阶自动化·定时任务的落库位）。
 

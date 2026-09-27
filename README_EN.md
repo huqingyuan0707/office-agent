@@ -270,6 +270,7 @@ HTTP-level smoke: `python tests/smoke_2_4_data.py` (11 assertions, re-runnable: 
 | Capability | Entry | Key guarantees |
 |---|---|---|
 | Chat assistant | `/chat` (default home) | One sentence → `POST /runs` without `agent` triggers auto-routing (`runtime/router.py`: rule hits first; LLM agents only used as fallback when their profile is configured in `LLM_PROVIDERS`; when nobody can take it, 1001 with an actionable Chinese message listing loaded agents) → 2s polling renders the routed agent, step timeline, final answer / last-step result, and a pending-approval card linking to the approvals page; routing failures surface verbatim in the bubble, zero mock; example phrases quoted with 「…」 in the final answer render as standalone clickable tags — one click launches the task. The tools page becomes an admin debug console |
+| LLM chaining (ADR-0006) | `llm_mode: react` (declarative per-agent switch) + `office.doc.compose` | hybrid planning: keyword goals ride the deterministic rule fast path; free-form goals (no rule hit) go **ReAct step-by-step replanning** (each step sees all prior real outputs before proposing the next — the invented-parameters flaw of single-shot planning is fixed at the root); document steps inside chains switch to `office.doc.compose` LLM composition — material is the full `{steps[*].result}` real outputs, followed by number provenance checking (untrusted numbers are flagged, not blocked); LLM unavailable degrades to verbatim material passthrough (`degraded` flag, never a 500); react plans append incrementally into the checkpoint (resume/approval-replay contract unchanged); the chat document card shows a source badge (LLM-composed · model name / model unavailable · material passthrough) |
 
 ## V1.2 Office Features · Batch C (PRD §5.3; multi-scenario chaining / visual orchestration / RPA)
 
@@ -288,7 +289,7 @@ HTTP-level smoke: `python tests/smoke_v1_2_batch_c.py` (7 assertions, self-conta
 | Worklog | `office.worklog.generate` | personal ledger: done / pending / schedule segments aggregated over a daily/weekly window, measured counts with blanks instead of fabrication, source + fetched_at provenance |
 | Proactive reminders | `/notifications/scan` extended with four signals | todo-due (approaching/overdue), meeting-upcoming (per creator + attendee), milestone-alert (within N days), Friday weekly-draft hint; the daily briefing now embeds today's due/overdue todo and meeting counts; business timezone configurable via `BUSINESS_TIMEZONE` (falls back to UTC with a warning when tzdata is missing); a corrupt affairs store only degrades `affairs_degraded`, never 500 |
 | Example agent | `plugins/personal-affairs-assistant` | read-only lookups (todos / worklog / freebusy) answer directly from one sentence; creating todos/schedules goes through the always-approved chat flow (suspend → approve → resume); daily-report-assistant keywords narrowed in sync to avoid substring route hijacking |
-| Cross-domain chaining | `plugins/office-assistant` | one sentence (agent omitted) auto-routes here and chains three domains inside a single run. Main path is `llm: default` (local qwen3:8b) which orchestrates steps on the fly and phrases the `kb.ask` query itself; when the LLM is unavailable it falls back to the `rules` chain — `office.data.query` → `office.report.generate` (metric values injected from the previous step's **real output** via `{steps[0].result.count}`, 100% numeric consistency) → `kb.ask` policy lookup, fully traceable. Caveat: the LLM proposes all steps in one shot without seeing prior outputs, so stats inputs may be invented — cross-step data passing stays more reliable via rules |
+| Cross-domain chaining | `plugins/office-assistant` | one sentence (agent omitted) auto-routes here and chains three domains inside a single run. **Hybrid planning with `llm_mode: react`**: keyword goals (business review / work-hours stats / attendance analysis) ride the rule fast path (`data.query` → `kb.ask` → `office.doc.compose` LLM composition, numbers taken verbatim from material + provenance-checked); free-form goals are replanned step-by-step by the LLM (each step sees real outputs — invented parameters fixed); when the LLM is unavailable the rule chains keep running (degradations don't drag each other) |
 
 HTTP-level smoke: `python tests/smoke_personal_affairs.py` (8 assertions, re-runnable).
 
@@ -303,6 +304,19 @@ HTTP-level smoke: `python tests/smoke_personal_affairs.py` (8 assertions, re-run
 | KB admin console (PRD §2.13) | `/kb-admin` (KB admin page) + `POST/GET/DELETE /kb/files`, `GET /kb/stats` (admin only; management-plane, effective immediately without approval) | drag-and-drop multi-upload (pdf/docx/xlsx/csv/txt/md with suffix/size pre-checks, visibility = public or a role name) → files land in KB_DIR and are parsed & chunked immediately (same extraction/chunking contract as `kb.ask`, searchable the moment they land) → vectorization status reported honestly (`milvus` persisted / `on_demand_embedding` computed on demand / `unconfigured`); source maintenance joins the manifest with the real directory into three states (indexed / on-disk-unindexed / missing), KPIs + per-source delete that also clears that source's vectors, re-upload clears stale chunks first; parse failures degrade into the manifest with `degraded_reason`, never a 500 |
 
 HTTP-level smoke: `python tests/smoke_kb_26.py` (8 assertions, re-runnable; the expense query scored 0.6452 over the vector channel in testing); the KB admin console is covered by unit tests (17 tools-office + 7 server cases: all-format ingest / three-state listing / permission gate / searchable-after-upload / per-source delete).
+
+## Data Asset Catalog (21 categories / 461 items, generated automatically)
+
+The catalog is defined **only** in `packages/server/office_agent_server/data_asset_catalog.py`, covering 21 categories (product requirements, user-permission & security, office templates, document processing, terminology & translation, todos & schedules, approvals, data query & analysis, meetings, KB & RAG, email & IM, HR & admin resources, project management, finance, high-level automation, agent engineering, system management & operations, testing & evaluation, integrations & interfaces, ops & high availability, delivery & rollout) — 461 registered items in total.
+
+```bash
+.venv\Scripts\python.exe scripts\seed_data_asset_catalog.py   # idempotent seed into data_assets + regenerate docs
+.venv\Scripts\python.exe scripts\generate_data_asset_docs.py  # regenerate docs/data-assets only
+```
+
+- Output: `docs/data-assets/README.md` (overview stats) + one Markdown per category (category intro, asset kind, numbered table) + `index.json` (machine-readable mirror); re-running the script fully overwrites, idempotently.
+- Read-only admin API: `GET /api/v1/admin/data-assets` (pagination/category filter), `/data-assets/categories` (catalog counts vs seeded rows), `/data-assets/detail` (single asset, 404 when absent); admin only, touches no business data.
+- Discipline: docs and the `data_assets` table descriptions both come from `asset_summary()` (category responsibility + asset kind), never fabricated field-level detail; to add/rename an asset, edit only the catalog constant — never keep a second copy in APIs, docs, or tests.
 
 ## Optional External Services (Docker Compose, ADR-0005)
 

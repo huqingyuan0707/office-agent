@@ -1,0 +1,111 @@
+﻿........................................................................ [ 16%]
+........................................................................ [ 33%]
+............................FF...............................F.F........ [ 50%]
+.................................F...................................... [ 67%]
+......F...F............................................................. [ 84%]
+........................................s.......................         [100%]
+================================== FAILURES ===================================
+___________________ test_query_all_rows_with_derived_fields ___________________
+
+    async def test_query_all_rows_with_derived_fields() -> None:
+        data = await budget._budget_query(CTX, {})
+>       assert data["count"] == 5
+E       assert 12 == 5
+
+packages\tools-office\tests\test_budget.py:27: AssertionError
+___________________ test_query_filters_by_project_substring ___________________
+
+    async def test_query_filters_by_project_substring() -> None:
+        data = await budget._budget_query(CTX, {"project": "改版"})
+>       assert data["count"] == 1
+E       assert 2 == 1
+
+packages\tools-office\tests\test_budget.py:44: AssertionError
+_______________ test_query_returns_builtin_rows_with_provenance _______________
+
+    async def test_query_returns_builtin_rows_with_provenance() -> None:
+        data = await data_analysis._data_query(CTX, {"dataset": "sales"})
+>       assert data["count"] == 4
+E       assert 20 == 4
+
+packages\tools-office\tests\test_data_analysis.py:22: AssertionError
+_________________________ test_query_limit_truncates __________________________
+
+    async def test_query_limit_truncates() -> None:
+        data = await data_analysis._data_query(CTX, {"dataset": "work", "limit": 2})
+        assert data["count"] == 2
+>       assert data["total"] == 5
+E       assert 35 == 5
+
+packages\tools-office\tests\test_data_analysis.py:38: AssertionError
+__________________ test_attendance_sums_status_and_overtime ___________________
+
+    async def test_attendance_sums_status_and_overtime() -> None:
+        data = await hr._hr_attendance(CTX, {"person": "李四"})
+        assert data["status_count"].get("迟到") == 1
+        assert data["total_hours"] == 17.0  # 8 + 9
+        assert data["overtime_hours"] == 1.0  # max(0,9-8)
+        assert "max(0" in data["overtime_rule"]
+>       assert data["source"] == "builtin-demo"
+E       AssertionError: assert 'builtin-demo+local-csv' == 'builtin-demo'
+E         
+E         - builtin-demo
+E         + builtin-demo+local-csv
+
+packages\tools-office\tests\test_hr_im.py:88: AssertionError
+_______________________ test_kb_ask_hits_builtin_entry ________________________
+
+    async def test_kb_ask_hits_builtin_entry() -> None:
+        data = await kb._kb_ask(CTX, {"query": "报销超过1000元需要谁审批"})
+        assert data["count"] >= 1
+>       assert data["results"][0]["source"] == "builtin-demo"
+E       AssertionError: assert 'local-kb:差旅与招待管理办法.md' == 'builtin-demo'
+E         
+E         - builtin-demo
+E         + local-kb:差旅与招待管理办法.md
+
+packages\tools-office\tests\test_kb_ask.py:46: AssertionError
+_______________ test_kb_ask_semantic_retrieval_when_configured ________________
+
+monkeypatch = <_pytest.monkeypatch.MonkeyPatch object at 0x000001EE68D83650>
+
+    async def test_kb_ask_semantic_retrieval_when_configured(
+        monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
+        """配了 EMBEDDING_* → 走向量通道：改说法（不含「差旅」二字）也能命中。"""
+        monkeypatch.setattr(settings, "EMBEDDING_BASE_URL", "http://127.0.0.1:11434/v1")
+        monkeypatch.setattr(settings, "EMBEDDING_MODEL", "fake-embedding")
+    
+        async def fake_embed(texts: list[str]) -> list[list[float]]:
+            # 只按「语义归属」给向量：问句与差旅段落同向（余弦 1.0），其余正交（0.0 被门槛滤掉）
+            return [[1.0, 0.0] if ("签字" in text or "差旅" in text) else [0.0, 1.0] for text in texts]
+    
+        monkeypatch.setattr(retrieval, "embed_texts", fake_embed)
+        data = await kb._kb_ask(CTX, {"query": "出差花销找谁签字"})
+        assert data["retrieval_mode"] == "embedding"
+        assert data["embedding_model"] == "fake-embedding"
+        assert data["retrieval_fallback_reason"] == ""
+>       assert data["count"] == 1
+E       assert 3 == 1
+
+packages\tools-office\tests\test_kb_ask.py:96: AssertionError
+============================== warnings summary ===============================
+packages/server/tests/test_admin.py::test_overview_admin_200_with_five_sections
+  D:\智能办公Agent\.venv\Lib\site-packages\starlette\testclient.py:53: DeprecationWarning: The anyio.abc.BlockingPortal alias is deprecated, use anyio.from_thread.BlockingPortal instead.
+    _PortalFactoryType = Callable[[], AbstractContextManager[anyio.abc.BlockingPortal]]
+
+-- Docs: https://docs.pytest.org/en/stable/how-to/capture-warnings.html
+=========================== short test summary info ===========================
+FAILED packages/tools-office/tests/test_budget.py::test_query_all_rows_with_derived_fields - assert 12 == 5
+FAILED packages/tools-office/tests/test_budget.py::test_query_filters_by_project_substring - assert 2 == 1
+FAILED packages/tools-office/tests/test_data_analysis.py::test_query_returns_builtin_rows_with_provenance - assert 20 == 4
+FAILED packages/tools-office/tests/test_data_analysis.py::test_query_limit_truncates - assert 35 == 5
+FAILED packages/tools-office/tests/test_hr_im.py::test_attendance_sums_status_and_overtime - AssertionError: assert 'builtin-demo+local-csv' == 'builtin-demo'
+  
+  - builtin-demo
+  + builtin-demo+local-csv
+FAILED packages/tools-office/tests/test_kb_ask.py::test_kb_ask_hits_builtin_entry - AssertionError: assert 'local-kb:差旅与招待管理办法.md' == 'builtin-demo'
+  
+  - builtin-demo
+  + local-kb:差旅与招待管理办法.md
+FAILED packages/tools-office/tests/test_kb_ask.py::test_kb_ask_semantic_retrieval_when_configured - assert 3 == 1

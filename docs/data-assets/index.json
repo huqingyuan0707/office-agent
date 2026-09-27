@@ -1,0 +1,1849 @@
+{
+  "generated_at": "2026-09-26 16:50:06",
+  "items": [
+    {
+      "category": "产品需求类",
+      "asset_name": "产品需求文档PRD"
+    },
+    {
+      "category": "产品需求类",
+      "asset_name": "产品路线图"
+    },
+    {
+      "category": "产品需求类",
+      "asset_name": "版本迭代计划"
+    },
+    {
+      "category": "产品需求类",
+      "asset_name": "功能清单"
+    },
+    {
+      "category": "产品需求类",
+      "asset_name": "需求跟踪矩阵"
+    },
+    {
+      "category": "产品需求类",
+      "asset_name": "用户故事地图"
+    },
+    {
+      "category": "产品需求类",
+      "asset_name": "场景用例库"
+    },
+    {
+      "category": "产品需求类",
+      "asset_name": "验收标准库"
+    },
+    {
+      "category": "产品需求类",
+      "asset_name": "上线检查清单"
+    },
+    {
+      "category": "产品需求类",
+      "asset_name": "回滚预案"
+    },
+    {
+      "category": "产品需求类",
+      "asset_name": "版本变更日志"
+    },
+    {
+      "category": "产品需求类",
+      "asset_name": "术语表"
+    },
+    {
+      "category": "产品需求类",
+      "asset_name": "缩略语表"
+    },
+    {
+      "category": "产品需求类",
+      "asset_name": "竞品分析"
+    },
+    {
+      "category": "产品需求类",
+      "asset_name": "用户调研记录"
+    },
+    {
+      "category": "产品需求类",
+      "asset_name": "需求池"
+    },
+    {
+      "category": "产品需求类",
+      "asset_name": "缺陷库"
+    },
+    {
+      "category": "产品需求类",
+      "asset_name": "用户反馈库"
+    },
+    {
+      "category": "产品需求类",
+      "asset_name": "发布记录"
+    },
+    {
+      "category": "产品需求类",
+      "asset_name": "培训材料"
+    },
+    {
+      "category": "产品需求类",
+      "asset_name": "用户手册"
+    },
+    {
+      "category": "产品需求类",
+      "asset_name": "管理员手册"
+    },
+    {
+      "category": "用户权限与安全类",
+      "asset_name": "用户表"
+    },
+    {
+      "category": "用户权限与安全类",
+      "asset_name": "组织表"
+    },
+    {
+      "category": "用户权限与安全类",
+      "asset_name": "部门表"
+    },
+    {
+      "category": "用户权限与安全类",
+      "asset_name": "岗位表"
+    },
+    {
+      "category": "用户权限与安全类",
+      "asset_name": "角色表"
+    },
+    {
+      "category": "用户权限与安全类",
+      "asset_name": "权限表"
+    },
+    {
+      "category": "用户权限与安全类",
+      "asset_name": "角色权限关联表"
+    },
+    {
+      "category": "用户权限与安全类",
+      "asset_name": "用户角色关联表"
+    },
+    {
+      "category": "用户权限与安全类",
+      "asset_name": "租户表"
+    },
+    {
+      "category": "用户权限与安全类",
+      "asset_name": "租户隔离配置表"
+    },
+    {
+      "category": "用户权限与安全类",
+      "asset_name": "数据权限规则表"
+    },
+    {
+      "category": "用户权限与安全类",
+      "asset_name": "功能权限表"
+    },
+    {
+      "category": "用户权限与安全类",
+      "asset_name": "工具权限矩阵"
+    },
+    {
+      "category": "用户权限与安全类",
+      "asset_name": "登录日志表"
+    },
+    {
+      "category": "用户权限与安全类",
+      "asset_name": "操作日志表"
+    },
+    {
+      "category": "用户权限与安全类",
+      "asset_name": "访问日志表"
+    },
+    {
+      "category": "用户权限与安全类",
+      "asset_name": "权限变更记录表"
+    },
+    {
+      "category": "用户权限与安全类",
+      "asset_name": "敏感操作告警表"
+    },
+    {
+      "category": "用户权限与安全类",
+      "asset_name": "会话审计表"
+    },
+    {
+      "category": "用户权限与安全类",
+      "asset_name": "数据分类分级表"
+    },
+    {
+      "category": "用户权限与安全类",
+      "asset_name": "脱敏规则表"
+    },
+    {
+      "category": "用户权限与安全类",
+      "asset_name": "数据保留策略表"
+    },
+    {
+      "category": "用户权限与安全类",
+      "asset_name": "加密密钥管理表"
+    },
+    {
+      "category": "用户权限与安全类",
+      "asset_name": "安全审计报告"
+    },
+    {
+      "category": "用户权限与安全类",
+      "asset_name": "合规检查清单"
+    },
+    {
+      "category": "用户权限与安全类",
+      "asset_name": "隐私政策"
+    },
+    {
+      "category": "用户权限与安全类",
+      "asset_name": "用户协议"
+    },
+    {
+      "category": "用户权限与安全类",
+      "asset_name": "数据处理协议"
+    },
+    {
+      "category": "用户权限与安全类",
+      "asset_name": "等保材料"
+    },
+    {
+      "category": "用户权限与安全类",
+      "asset_name": "开源组件清单"
+    },
+    {
+      "category": "用户权限与安全类",
+      "asset_name": "许可证清单"
+    },
+    {
+      "category": "用户权限与安全类",
+      "asset_name": "供应商安全评估表"
+    },
+    {
+      "category": "用户权限与安全类",
+      "asset_name": "数据出境评估表"
+    },
+    {
+      "category": "办公内容与模板类",
+      "asset_name": "周报模板"
+    },
+    {
+      "category": "办公内容与模板类",
+      "asset_name": "月报模板"
+    },
+    {
+      "category": "办公内容与模板类",
+      "asset_name": "工作总结模板"
+    },
+    {
+      "category": "办公内容与模板类",
+      "asset_name": "会议纪要模板"
+    },
+    {
+      "category": "办公内容与模板类",
+      "asset_name": "工作汇报模板"
+    },
+    {
+      "category": "办公内容与模板类",
+      "asset_name": "通知公告模板"
+    },
+    {
+      "category": "办公内容与模板类",
+      "asset_name": "邮件模板"
+    },
+    {
+      "category": "办公内容与模板类",
+      "asset_name": "方案草稿模板"
+    },
+    {
+      "category": "办公内容与模板类",
+      "asset_name": "请假说明模板"
+    },
+    {
+      "category": "办公内容与模板类",
+      "asset_name": "报销单模板"
+    },
+    {
+      "category": "办公内容与模板类",
+      "asset_name": "采购单模板"
+    },
+    {
+      "category": "办公内容与模板类",
+      "asset_name": "加班申请模板"
+    },
+    {
+      "category": "办公内容与模板类",
+      "asset_name": "出差申请模板"
+    },
+    {
+      "category": "办公内容与模板类",
+      "asset_name": "审批意见模板"
+    },
+    {
+      "category": "办公内容与模板类",
+      "asset_name": "会议议程模板"
+    },
+    {
+      "category": "办公内容与模板类",
+      "asset_name": "会议资料包模板"
+    },
+    {
+      "category": "办公内容与模板类",
+      "asset_name": "项目简报模板"
+    },
+    {
+      "category": "办公内容与模板类",
+      "asset_name": "风险预警模板"
+    },
+    {
+      "category": "办公内容与模板类",
+      "asset_name": "入职指引模板"
+    },
+    {
+      "category": "办公内容与模板类",
+      "asset_name": "离职交接模板"
+    },
+    {
+      "category": "办公内容与模板类",
+      "asset_name": "资源预订模板"
+    },
+    {
+      "category": "办公内容与模板类",
+      "asset_name": "PPT大纲模板"
+    },
+    {
+      "category": "办公内容与模板类",
+      "asset_name": "PPT每页文案模板"
+    },
+    {
+      "category": "办公内容与模板类",
+      "asset_name": "数据报告模板"
+    },
+    {
+      "category": "办公内容与模板类",
+      "asset_name": "图表解读模板"
+    },
+    {
+      "category": "办公内容与模板类",
+      "asset_name": "跨部门简报模板"
+    },
+    {
+      "category": "办公内容与模板类",
+      "asset_name": "今日待办简报模板"
+    },
+    {
+      "category": "办公内容与模板类",
+      "asset_name": "周报提醒模板"
+    },
+    {
+      "category": "办公内容与模板类",
+      "asset_name": "自定义模板表"
+    },
+    {
+      "category": "办公内容与模板类",
+      "asset_name": "模板字段表"
+    },
+    {
+      "category": "办公内容与模板类",
+      "asset_name": "模板版本表"
+    },
+    {
+      "category": "办公内容与模板类",
+      "asset_name": "模板权限表"
+    },
+    {
+      "category": "文档处理类",
+      "asset_name": "文档表"
+    },
+    {
+      "category": "文档处理类",
+      "asset_name": "文档版本表"
+    },
+    {
+      "category": "文档处理类",
+      "asset_name": "文档对比记录表"
+    },
+    {
+      "category": "文档处理类",
+      "asset_name": "文档解析记录表"
+    },
+    {
+      "category": "文档处理类",
+      "asset_name": "文档摘要记录表"
+    },
+    {
+      "category": "文档处理类",
+      "asset_name": "文档润色记录表"
+    },
+    {
+      "category": "文档处理类",
+      "asset_name": "文档格式转换记录表"
+    },
+    {
+      "category": "文档处理类",
+      "asset_name": "文档批量处理任务表"
+    },
+    {
+      "category": "文档处理类",
+      "asset_name": "批量转PDF记录表"
+    },
+    {
+      "category": "文档处理类",
+      "asset_name": "批量重命名记录表"
+    },
+    {
+      "category": "文档处理类",
+      "asset_name": "批量提取图片记录表"
+    },
+    {
+      "category": "文档处理类",
+      "asset_name": "多文档摘要记录表"
+    },
+    {
+      "category": "文档处理类",
+      "asset_name": "文件解析问答记录表"
+    },
+    {
+      "category": "文档处理类",
+      "asset_name": "长文摘要规则表"
+    },
+    {
+      "category": "文档处理类",
+      "asset_name": "重点提炼规则表"
+    },
+    {
+      "category": "文档处理类",
+      "asset_name": "多文档整合规则表"
+    },
+    {
+      "category": "文档处理类",
+      "asset_name": "格式统一规则表"
+    },
+    {
+      "category": "术语与翻译类",
+      "asset_name": "术语库"
+    },
+    {
+      "category": "术语与翻译类",
+      "asset_name": "企业专有名词表"
+    },
+    {
+      "category": "术语与翻译类",
+      "asset_name": "内部术语对照表"
+    },
+    {
+      "category": "术语与翻译类",
+      "asset_name": "多语种术语对照表"
+    },
+    {
+      "category": "术语与翻译类",
+      "asset_name": "行业词库"
+    },
+    {
+      "category": "术语与翻译类",
+      "asset_name": "翻译记录表"
+    },
+    {
+      "category": "术语与翻译类",
+      "asset_name": "翻译质量评估表"
+    },
+    {
+      "category": "术语与翻译类",
+      "asset_name": "术语库版本表"
+    },
+    {
+      "category": "术语与翻译类",
+      "asset_name": "术语权限表"
+    },
+    {
+      "category": "待办日程类",
+      "asset_name": "待办表"
+    },
+    {
+      "category": "待办日程类",
+      "asset_name": "待办状态表"
+    },
+    {
+      "category": "待办日程类",
+      "asset_name": "待办提醒表"
+    },
+    {
+      "category": "待办日程类",
+      "asset_name": "待办优先级规则表"
+    },
+    {
+      "category": "待办日程类",
+      "asset_name": "待办完成留痕表"
+    },
+    {
+      "category": "待办日程类",
+      "asset_name": "日程表"
+    },
+    {
+      "category": "待办日程类",
+      "asset_name": "日程参与人表"
+    },
+    {
+      "category": "待办日程类",
+      "asset_name": "空闲时间查询记录表"
+    },
+    {
+      "category": "待办日程类",
+      "asset_name": "会议预约表"
+    },
+    {
+      "category": "待办日程类",
+      "asset_name": "会议邀请表"
+    },
+    {
+      "category": "待办日程类",
+      "asset_name": "会议提醒表"
+    },
+    {
+      "category": "待办日程类",
+      "asset_name": "事务汇总表"
+    },
+    {
+      "category": "待办日程类",
+      "asset_name": "个人工作台账"
+    },
+    {
+      "category": "待办日程类",
+      "asset_name": "日报简报记录表"
+    },
+    {
+      "category": "待办日程类",
+      "asset_name": "周报简报记录表"
+    },
+    {
+      "category": "待办日程类",
+      "asset_name": "定期简报记录表"
+    },
+    {
+      "category": "待办日程类",
+      "asset_name": "主动推送记录表"
+    },
+    {
+      "category": "待办日程类",
+      "asset_name": "消息聚合表"
+    },
+    {
+      "category": "待办日程类",
+      "asset_name": "提醒去重规则表"
+    },
+    {
+      "category": "审批流程类",
+      "asset_name": "审批单表"
+    },
+    {
+      "category": "审批流程类",
+      "asset_name": "审批单字段表"
+    },
+    {
+      "category": "审批流程类",
+      "asset_name": "审批流程配置表"
+    },
+    {
+      "category": "审批流程类",
+      "asset_name": "审批节点表"
+    },
+    {
+      "category": "审批流程类",
+      "asset_name": "审批记录表"
+    },
+    {
+      "category": "审批流程类",
+      "asset_name": "审批意见表"
+    },
+    {
+      "category": "审批流程类",
+      "asset_name": "催办记录表"
+    },
+    {
+      "category": "审批流程类",
+      "asset_name": "审批超时预警表"
+    },
+    {
+      "category": "审批流程类",
+      "asset_name": "必填项校验规则表"
+    },
+    {
+      "category": "审批流程类",
+      "asset_name": "金额分级规则表"
+    },
+    {
+      "category": "审批流程类",
+      "asset_name": "高危操作清单"
+    },
+    {
+      "category": "审批流程类",
+      "asset_name": "二次确认规则表"
+    },
+    {
+      "category": "审批流程类",
+      "asset_name": "合规规则库"
+    },
+    {
+      "category": "审批流程类",
+      "asset_name": "敏感词库"
+    },
+    {
+      "category": "审批流程类",
+      "asset_name": "泄密词库"
+    },
+    {
+      "category": "审批流程类",
+      "asset_name": "语气风险词库"
+    },
+    {
+      "category": "审批流程类",
+      "asset_name": "发票OCR记录表"
+    },
+    {
+      "category": "审批流程类",
+      "asset_name": "发票要素表"
+    },
+    {
+      "category": "审批流程类",
+      "asset_name": "发票样本库"
+    },
+    {
+      "category": "审批流程类",
+      "asset_name": "报销单表"
+    },
+    {
+      "category": "审批流程类",
+      "asset_name": "采购单表"
+    },
+    {
+      "category": "审批流程类",
+      "asset_name": "请假单表"
+    },
+    {
+      "category": "审批流程类",
+      "asset_name": "加班单表"
+    },
+    {
+      "category": "审批流程类",
+      "asset_name": "出差单表"
+    },
+    {
+      "category": "审批流程类",
+      "asset_name": "报销台账"
+    },
+    {
+      "category": "审批流程类",
+      "asset_name": "采购台账"
+    },
+    {
+      "category": "审批流程类",
+      "asset_name": "请假台账"
+    },
+    {
+      "category": "审批流程类",
+      "asset_name": "加班台账"
+    },
+    {
+      "category": "审批流程类",
+      "asset_name": "出差台账"
+    },
+    {
+      "category": "审批流程类",
+      "asset_name": "审批日志表"
+    },
+    {
+      "category": "数据查询与分析类",
+      "asset_name": "数据源表"
+    },
+    {
+      "category": "数据查询与分析类",
+      "asset_name": "数据源权限表"
+    },
+    {
+      "category": "数据查询与分析类",
+      "asset_name": "业务数据库字典"
+    },
+    {
+      "category": "数据查询与分析类",
+      "asset_name": "数仓表结构"
+    },
+    {
+      "category": "数据查询与分析类",
+      "asset_name": "指标表"
+    },
+    {
+      "category": "数据查询与分析类",
+      "asset_name": "指标字典"
+    },
+    {
+      "category": "数据查询与分析类",
+      "asset_name": "指标口径表"
+    },
+    {
+      "category": "数据查询与分析类",
+      "asset_name": "数据血缘文档"
+    },
+    {
+      "category": "数据查询与分析类",
+      "asset_name": "元数据文档"
+    },
+    {
+      "category": "数据查询与分析类",
+      "asset_name": "主数据管理文档"
+    },
+    {
+      "category": "数据查询与分析类",
+      "asset_name": "数据质量规则表"
+    },
+    {
+      "category": "数据查询与分析类",
+      "asset_name": "查询模板表"
+    },
+    {
+      "category": "数据查询与分析类",
+      "asset_name": "保存查询表"
+    },
+    {
+      "category": "数据查询与分析类",
+      "asset_name": "常用查询复用记录表"
+    },
+    {
+      "category": "数据查询与分析类",
+      "asset_name": "查询执行记录表"
+    },
+    {
+      "category": "数据查询与分析类",
+      "asset_name": "图表配置表"
+    },
+    {
+      "category": "数据查询与分析类",
+      "asset_name": "图表模板库"
+    },
+    {
+      "category": "数据查询与分析类",
+      "asset_name": "图表解读记录表"
+    },
+    {
+      "category": "数据查询与分析类",
+      "asset_name": "异常标注规则表"
+    },
+    {
+      "category": "数据查询与分析类",
+      "asset_name": "2σ异常检测参数表"
+    },
+    {
+      "category": "数据查询与分析类",
+      "asset_name": "指标异动解释库"
+    },
+    {
+      "category": "数据查询与分析类",
+      "asset_name": "数据结论简报模板"
+    },
+    {
+      "category": "数据查询与分析类",
+      "asset_name": "导出记录表"
+    },
+    {
+      "category": "数据查询与分析类",
+      "asset_name": "导出格式规范表"
+    },
+    {
+      "category": "数据查询与分析类",
+      "asset_name": "Markdown导出模板"
+    },
+    {
+      "category": "数据查询与分析类",
+      "asset_name": "CSV导出模板"
+    },
+    {
+      "category": "数据查询与分析类",
+      "asset_name": "XLSX导出模板"
+    },
+    {
+      "category": "数据查询与分析类",
+      "asset_name": "SVG图表模板"
+    },
+    {
+      "category": "数据查询与分析类",
+      "asset_name": "数据快照表"
+    },
+    {
+      "category": "会议协作类",
+      "asset_name": "会议表"
+    },
+    {
+      "category": "会议协作类",
+      "asset_name": "会议议程表"
+    },
+    {
+      "category": "会议协作类",
+      "asset_name": "会议资料包表"
+    },
+    {
+      "category": "会议协作类",
+      "asset_name": "会议资料文件表"
+    },
+    {
+      "category": "会议协作类",
+      "asset_name": "会议转录表"
+    },
+    {
+      "category": "会议协作类",
+      "asset_name": "会议速记表"
+    },
+    {
+      "category": "会议协作类",
+      "asset_name": "会议重点表"
+    },
+    {
+      "category": "会议协作类",
+      "asset_name": "会议纪要表"
+    },
+    {
+      "category": "会议协作类",
+      "asset_name": "行动项表"
+    },
+    {
+      "category": "会议协作类",
+      "asset_name": "会议待办映射表"
+    },
+    {
+      "category": "会议协作类",
+      "asset_name": "会议风险表"
+    },
+    {
+      "category": "会议协作类",
+      "asset_name": "风险关键词表"
+    },
+    {
+      "category": "会议协作类",
+      "asset_name": "会议跟进表"
+    },
+    {
+      "category": "会议协作类",
+      "asset_name": "五态对账表"
+    },
+    {
+      "category": "会议协作类",
+      "asset_name": "会议提醒规则表"
+    },
+    {
+      "category": "会议协作类",
+      "asset_name": "会议资料抽取记录表"
+    },
+    {
+      "category": "会议协作类",
+      "asset_name": "会议议程模板表"
+    },
+    {
+      "category": "会议协作类",
+      "asset_name": "会议风险预警记录表"
+    },
+    {
+      "category": "知识库与RAG类",
+      "asset_name": "知识库表"
+    },
+    {
+      "category": "知识库与RAG类",
+      "asset_name": "知识文档表"
+    },
+    {
+      "category": "知识库与RAG类",
+      "asset_name": "知识切片表"
+    },
+    {
+      "category": "知识库与RAG类",
+      "asset_name": "向量索引表"
+    },
+    {
+      "category": "知识库与RAG类",
+      "asset_name": "向量库配置表"
+    },
+    {
+      "category": "知识库与RAG类",
+      "asset_name": "召回排序策略表"
+    },
+    {
+      "category": "知识库与RAG类",
+      "asset_name": "相似度阈值表"
+    },
+    {
+      "category": "知识库与RAG类",
+      "asset_name": "权限过滤规则表"
+    },
+    {
+      "category": "知识库与RAG类",
+      "asset_name": "检索记录表"
+    },
+    {
+      "category": "知识库与RAG类",
+      "asset_name": "问答记录表"
+    },
+    {
+      "category": "知识库与RAG类",
+      "asset_name": "答案反馈表"
+    },
+    {
+      "category": "知识库与RAG类",
+      "asset_name": "答案质量评分表"
+    },
+    {
+      "category": "知识库与RAG类",
+      "asset_name": "知识库上传审核记录表"
+    },
+    {
+      "category": "知识库与RAG类",
+      "asset_name": "知识库版本记录表"
+    },
+    {
+      "category": "知识库与RAG类",
+      "asset_name": "跨源检索配置表"
+    },
+    {
+      "category": "知识库与RAG类",
+      "asset_name": "数据源连接表"
+    },
+    {
+      "category": "知识库与RAG类",
+      "asset_name": "OCR识别记录表"
+    },
+    {
+      "category": "知识库与RAG类",
+      "asset_name": "FAQ库"
+    },
+    {
+      "category": "知识库与RAG类",
+      "asset_name": "SOP库"
+    },
+    {
+      "category": "知识库与RAG类",
+      "asset_name": "制度库"
+    },
+    {
+      "category": "知识库与RAG类",
+      "asset_name": "项目资料库"
+    },
+    {
+      "category": "知识库与RAG类",
+      "asset_name": "历史文档库"
+    },
+    {
+      "category": "知识库与RAG类",
+      "asset_name": "常见问题库"
+    },
+    {
+      "category": "知识库与RAG类",
+      "asset_name": "问答评测集"
+    },
+    {
+      "category": "知识库与RAG类",
+      "asset_name": "RAG评测集"
+    },
+    {
+      "category": "知识库与RAG类",
+      "asset_name": "幻觉评估集"
+    },
+    {
+      "category": "知识库与RAG类",
+      "asset_name": "badcase库"
+    },
+    {
+      "category": "知识库与RAG类",
+      "asset_name": "知识库回答规则表"
+    },
+    {
+      "category": "邮件与IM类",
+      "asset_name": "邮箱账户表"
+    },
+    {
+      "category": "邮件与IM类",
+      "asset_name": "邮件表"
+    },
+    {
+      "category": "邮件与IM类",
+      "asset_name": "邮件分类表"
+    },
+    {
+      "category": "邮件与IM类",
+      "asset_name": "邮件归类语料"
+    },
+    {
+      "category": "邮件与IM类",
+      "asset_name": "邮件回复草稿模板"
+    },
+    {
+      "category": "邮件与IM类",
+      "asset_name": "邮件行动项表"
+    },
+    {
+      "category": "邮件与IM类",
+      "asset_name": "行动项三字段正则表"
+    },
+    {
+      "category": "邮件与IM类",
+      "asset_name": "邮件预审规则表"
+    },
+    {
+      "category": "邮件与IM类",
+      "asset_name": "敏感词检查表"
+    },
+    {
+      "category": "邮件与IM类",
+      "asset_name": "泄密检查表"
+    },
+    {
+      "category": "邮件与IM类",
+      "asset_name": "语气检查表"
+    },
+    {
+      "category": "邮件与IM类",
+      "asset_name": "对外邮件语气规范"
+    },
+    {
+      "category": "邮件与IM类",
+      "asset_name": "IM消息表"
+    },
+    {
+      "category": "邮件与IM类",
+      "asset_name": "群消息摘要表"
+    },
+    {
+      "category": "邮件与IM类",
+      "asset_name": "群摘要模板"
+    },
+    {
+      "category": "邮件与IM类",
+      "asset_name": "@本人任务识别规则表"
+    },
+    {
+      "category": "邮件与IM类",
+      "asset_name": "IM消息源白名单表"
+    },
+    {
+      "category": "邮件与IM类",
+      "asset_name": "linkage白名单工具清单"
+    },
+    {
+      "category": "邮件与IM类",
+      "asset_name": "真实邮箱后置说明"
+    },
+    {
+      "category": "邮件与IM类",
+      "asset_name": "自动发信后置说明"
+    },
+    {
+      "category": "邮件与IM类",
+      "asset_name": "语音基建后置说明"
+    },
+    {
+      "category": "人事行政资源类",
+      "asset_name": "员工表"
+    },
+    {
+      "category": "人事行政资源类",
+      "asset_name": "考勤表"
+    },
+    {
+      "category": "人事行政资源类",
+      "asset_name": "加班表"
+    },
+    {
+      "category": "人事行政资源类",
+      "asset_name": "请假表"
+    },
+    {
+      "category": "人事行政资源类",
+      "asset_name": "入职指引表"
+    },
+    {
+      "category": "人事行政资源类",
+      "asset_name": "离职交接表"
+    },
+    {
+      "category": "人事行政资源类",
+      "asset_name": "交接事项表"
+    },
+    {
+      "category": "人事行政资源类",
+      "asset_name": "会议室表"
+    },
+    {
+      "category": "人事行政资源类",
+      "asset_name": "会议室预订表"
+    },
+    {
+      "category": "人事行政资源类",
+      "asset_name": "工位表"
+    },
+    {
+      "category": "人事行政资源类",
+      "asset_name": "工位预订表"
+    },
+    {
+      "category": "人事行政资源类",
+      "asset_name": "车辆表"
+    },
+    {
+      "category": "人事行政资源类",
+      "asset_name": "车辆预订表"
+    },
+    {
+      "category": "人事行政资源类",
+      "asset_name": "资源占用表"
+    },
+    {
+      "category": "人事行政资源类",
+      "asset_name": "资源预订记录表"
+    },
+    {
+      "category": "人事行政资源类",
+      "asset_name": "资源冲突规则表"
+    },
+    {
+      "category": "人事行政资源类",
+      "asset_name": "资源权限表"
+    },
+    {
+      "category": "人事行政资源类",
+      "asset_name": "行政工单表"
+    },
+    {
+      "category": "人事行政资源类",
+      "asset_name": "IT报修工单表"
+    },
+    {
+      "category": "人事行政资源类",
+      "asset_name": "资产申领工单表"
+    },
+    {
+      "category": "人事行政资源类",
+      "asset_name": "工单模板库"
+    },
+    {
+      "category": "项目管理类",
+      "asset_name": "项目表"
+    },
+    {
+      "category": "项目管理类",
+      "asset_name": "项目成员表"
+    },
+    {
+      "category": "项目管理类",
+      "asset_name": "里程碑表"
+    },
+    {
+      "category": "项目管理类",
+      "asset_name": "项目风险表"
+    },
+    {
+      "category": "项目管理类",
+      "asset_name": "项目问题表"
+    },
+    {
+      "category": "项目管理类",
+      "asset_name": "项目变更表"
+    },
+    {
+      "category": "项目管理类",
+      "asset_name": "项目台账"
+    },
+    {
+      "category": "项目管理类",
+      "asset_name": "项目简报表"
+    },
+    {
+      "category": "项目管理类",
+      "asset_name": "任务拆解表"
+    },
+    {
+      "category": "项目管理类",
+      "asset_name": "子任务表"
+    },
+    {
+      "category": "项目管理类",
+      "asset_name": "任务依赖表"
+    },
+    {
+      "category": "项目管理类",
+      "asset_name": "交付物表"
+    },
+    {
+      "category": "项目管理类",
+      "asset_name": "工时表"
+    },
+    {
+      "category": "项目管理类",
+      "asset_name": "责任人分派表"
+    },
+    {
+      "category": "项目管理类",
+      "asset_name": "任务通知表"
+    },
+    {
+      "category": "项目管理类",
+      "asset_name": "历史项目SOP表"
+    },
+    {
+      "category": "项目管理类",
+      "asset_name": "拆解案例库"
+    },
+    {
+      "category": "项目管理类",
+      "asset_name": "WBS模板"
+    },
+    {
+      "category": "项目管理类",
+      "asset_name": "RACI矩阵"
+    },
+    {
+      "category": "项目管理类",
+      "asset_name": "任务优先级规则表"
+    },
+    {
+      "category": "项目管理类",
+      "asset_name": "任务依赖规则表"
+    },
+    {
+      "category": "项目管理类",
+      "asset_name": "批量创建二次确认规则表"
+    },
+    {
+      "category": "项目管理类",
+      "asset_name": "项目节点预警规则表"
+    },
+    {
+      "category": "财务辅助类",
+      "asset_name": "财务库连接表"
+    },
+    {
+      "category": "财务辅助类",
+      "asset_name": "预算表"
+    },
+    {
+      "category": "财务辅助类",
+      "asset_name": "预算剩余额度表"
+    },
+    {
+      "category": "财务辅助类",
+      "asset_name": "费用台账"
+    },
+    {
+      "category": "财务辅助类",
+      "asset_name": "部门费用表"
+    },
+    {
+      "category": "财务辅助类",
+      "asset_name": "报销进度表"
+    },
+    {
+      "category": "财务辅助类",
+      "asset_name": "财务审批规则表"
+    },
+    {
+      "category": "财务辅助类",
+      "asset_name": "金额分级表"
+    },
+    {
+      "category": "财务辅助类",
+      "asset_name": "发票表"
+    },
+    {
+      "category": "财务辅助类",
+      "asset_name": "发票OCR样本表"
+    },
+    {
+      "category": "财务辅助类",
+      "asset_name": "财务系统接口文档"
+    },
+    {
+      "category": "财务辅助类",
+      "asset_name": "财务数据权限表"
+    },
+    {
+      "category": "财务辅助类",
+      "asset_name": "财务数据同步日志表"
+    },
+    {
+      "category": "高阶自动化类",
+      "asset_name": "定时任务表"
+    },
+    {
+      "category": "高阶自动化类",
+      "asset_name": "工作流表"
+    },
+    {
+      "category": "高阶自动化类",
+      "asset_name": "工作流节点表"
+    },
+    {
+      "category": "高阶自动化类",
+      "asset_name": "场景串联表"
+    },
+    {
+      "category": "高阶自动化类",
+      "asset_name": "RPA脚本表"
+    },
+    {
+      "category": "高阶自动化类",
+      "asset_name": "RPA联动配置表"
+    },
+    {
+      "category": "高阶自动化类",
+      "asset_name": "工具注册表"
+    },
+    {
+      "category": "高阶自动化类",
+      "asset_name": "插件表"
+    },
+    {
+      "category": "高阶自动化类",
+      "asset_name": "工具入参Schema表"
+    },
+    {
+      "category": "高阶自动化类",
+      "asset_name": "工具出参Schema表"
+    },
+    {
+      "category": "高阶自动化类",
+      "asset_name": "工具权限表"
+    },
+    {
+      "category": "高阶自动化类",
+      "asset_name": "工具调用日志表"
+    },
+    {
+      "category": "高阶自动化类",
+      "asset_name": "任务规划轨迹表"
+    },
+    {
+      "category": "高阶自动化类",
+      "asset_name": "Agent会话表"
+    },
+    {
+      "category": "高阶自动化类",
+      "asset_name": "会话消息表"
+    },
+    {
+      "category": "高阶自动化类",
+      "asset_name": "会话状态表"
+    },
+    {
+      "category": "高阶自动化类",
+      "asset_name": "任务中间状态表"
+    },
+    {
+      "category": "高阶自动化类",
+      "asset_name": "幂等键表"
+    },
+    {
+      "category": "高阶自动化类",
+      "asset_name": "审批闸门规则表"
+    },
+    {
+      "category": "高阶自动化类",
+      "asset_name": "读写操作清单表"
+    },
+    {
+      "category": "高阶自动化类",
+      "asset_name": "后置能力清单表"
+    },
+    {
+      "category": "高阶自动化类",
+      "asset_name": "可视化工作流模板库"
+    },
+    {
+      "category": "Agent工程类",
+      "asset_name": "系统架构文档"
+    },
+    {
+      "category": "Agent工程类",
+      "asset_name": "接口文档"
+    },
+    {
+      "category": "Agent工程类",
+      "asset_name": "API清单"
+    },
+    {
+      "category": "Agent工程类",
+      "asset_name": "API版本记录"
+    },
+    {
+      "category": "Agent工程类",
+      "asset_name": "Prompt库"
+    },
+    {
+      "category": "Agent工程类",
+      "asset_name": "Prompt版本记录"
+    },
+    {
+      "category": "Agent工程类",
+      "asset_name": "意图分类标注集"
+    },
+    {
+      "category": "Agent工程类",
+      "asset_name": "实体抽取标注集"
+    },
+    {
+      "category": "Agent工程类",
+      "asset_name": "对话语料集"
+    },
+    {
+      "category": "Agent工程类",
+      "asset_name": "多轮对话测试集"
+    },
+    {
+      "category": "Agent工程类",
+      "asset_name": "ReAct轨迹样本"
+    },
+    {
+      "category": "Agent工程类",
+      "asset_name": "参数校验规则表"
+    },
+    {
+      "category": "Agent工程类",
+      "asset_name": "正则表达式库"
+    },
+    {
+      "category": "Agent工程类",
+      "asset_name": "降级兜底规则表"
+    },
+    {
+      "category": "Agent工程类",
+      "asset_name": "最大迭代配置表"
+    },
+    {
+      "category": "Agent工程类",
+      "asset_name": "SessionID注册表"
+    },
+    {
+      "category": "Agent工程类",
+      "asset_name": "三级存储配置表"
+    },
+    {
+      "category": "Agent工程类",
+      "asset_name": "Redis缓存键规范"
+    },
+    {
+      "category": "Agent工程类",
+      "asset_name": "MySQL表结构"
+    },
+    {
+      "category": "Agent工程类",
+      "asset_name": "内存降级策略表"
+    },
+    {
+      "category": "Agent工程类",
+      "asset_name": "任务终止规则表"
+    },
+    {
+      "category": "Agent工程类",
+      "asset_name": "工具路由规则表"
+    },
+    {
+      "category": "Agent工程类",
+      "asset_name": "多工具串行配置表"
+    },
+    {
+      "category": "Agent工程类",
+      "asset_name": "多工具并行配置表"
+    },
+    {
+      "category": "Agent工程类",
+      "asset_name": "嵌套调用配置表"
+    },
+    {
+      "category": "系统管理与运营类",
+      "asset_name": "平台使用统计表"
+    },
+    {
+      "category": "系统管理与运营类",
+      "asset_name": "Agent使用率表"
+    },
+    {
+      "category": "系统管理与运营类",
+      "asset_name": "高频指令表"
+    },
+    {
+      "category": "系统管理与运营类",
+      "asset_name": "功能访问统计表"
+    },
+    {
+      "category": "系统管理与运营类",
+      "asset_name": "用户活跃表"
+    },
+    {
+      "category": "系统管理与运营类",
+      "asset_name": "留存表"
+    },
+    {
+      "category": "系统管理与运营类",
+      "asset_name": "转化漏斗表"
+    },
+    {
+      "category": "系统管理与运营类",
+      "asset_name": "运营看板指标表"
+    },
+    {
+      "category": "系统管理与运营类",
+      "asset_name": "知识库后台配置表"
+    },
+    {
+      "category": "系统管理与运营类",
+      "asset_name": "回答规则配置表"
+    },
+    {
+      "category": "系统管理与运营类",
+      "asset_name": "管理员操作日志表"
+    },
+    {
+      "category": "系统管理与运营类",
+      "asset_name": "租户配置表"
+    },
+    {
+      "category": "系统管理与运营类",
+      "asset_name": "系统配置表"
+    },
+    {
+      "category": "系统管理与运营类",
+      "asset_name": "字典表"
+    },
+    {
+      "category": "系统管理与运营类",
+      "asset_name": "枚举表"
+    },
+    {
+      "category": "系统管理与运营类",
+      "asset_name": "错误码表"
+    },
+    {
+      "category": "系统管理与运营类",
+      "asset_name": "埋点事件字典"
+    },
+    {
+      "category": "系统管理与运营类",
+      "asset_name": "客服工单表"
+    },
+    {
+      "category": "系统管理与运营类",
+      "asset_name": "NPS调查表"
+    },
+    {
+      "category": "系统管理与运营类",
+      "asset_name": "用户调研记录表"
+    },
+    {
+      "category": "系统管理与运营类",
+      "asset_name": "培训材料"
+    },
+    {
+      "category": "系统管理与运营类",
+      "asset_name": "发布公告"
+    },
+    {
+      "category": "系统管理与运营类",
+      "asset_name": "版本变更日志"
+    },
+    {
+      "category": "测试与评测类",
+      "asset_name": "测试计划"
+    },
+    {
+      "category": "测试与评测类",
+      "asset_name": "测试用例表"
+    },
+    {
+      "category": "测试与评测类",
+      "asset_name": "自动化测试脚本"
+    },
+    {
+      "category": "测试与评测类",
+      "asset_name": "接口测试集"
+    },
+    {
+      "category": "测试与评测类",
+      "asset_name": "性能测试报告"
+    },
+    {
+      "category": "测试与评测类",
+      "asset_name": "安全测试报告"
+    },
+    {
+      "category": "测试与评测类",
+      "asset_name": "兼容性测试记录"
+    },
+    {
+      "category": "测试与评测类",
+      "asset_name": "UAT验收表"
+    },
+    {
+      "category": "测试与评测类",
+      "asset_name": "验收报告"
+    },
+    {
+      "category": "测试与评测类",
+      "asset_name": "缺陷库"
+    },
+    {
+      "category": "测试与评测类",
+      "asset_name": "回归测试集"
+    },
+    {
+      "category": "测试与评测类",
+      "asset_name": "冒烟测试清单"
+    },
+    {
+      "category": "测试与评测类",
+      "asset_name": "需求跟踪矩阵"
+    },
+    {
+      "category": "测试与评测类",
+      "asset_name": "验收标准表"
+    },
+    {
+      "category": "测试与评测类",
+      "asset_name": "Prompt评测集"
+    },
+    {
+      "category": "测试与评测类",
+      "asset_name": "意图识别评测集"
+    },
+    {
+      "category": "测试与评测类",
+      "asset_name": "实体抽取评测集"
+    },
+    {
+      "category": "测试与评测类",
+      "asset_name": "RAG召回评测集"
+    },
+    {
+      "category": "测试与评测类",
+      "asset_name": "答案生成评测集"
+    },
+    {
+      "category": "测试与评测类",
+      "asset_name": "幻觉评估集"
+    },
+    {
+      "category": "测试与评测类",
+      "asset_name": "badcase库"
+    },
+    {
+      "category": "测试与评测类",
+      "asset_name": "用户反馈分析表"
+    },
+    {
+      "category": "集成与接口类",
+      "asset_name": "OA对接文档"
+    },
+    {
+      "category": "集成与接口类",
+      "asset_name": "企业微信对接文档"
+    },
+    {
+      "category": "集成与接口类",
+      "asset_name": "飞书对接文档"
+    },
+    {
+      "category": "集成与接口类",
+      "asset_name": "邮箱对接文档"
+    },
+    {
+      "category": "集成与接口类",
+      "asset_name": "企业网盘对接文档"
+    },
+    {
+      "category": "集成与接口类",
+      "asset_name": "业务数据库字典"
+    },
+    {
+      "category": "集成与接口类",
+      "asset_name": "项目管理工具对接文档"
+    },
+    {
+      "category": "集成与接口类",
+      "asset_name": "财务系统对接文档"
+    },
+    {
+      "category": "集成与接口类",
+      "asset_name": "CRM对接文档"
+    },
+    {
+      "category": "集成与接口类",
+      "asset_name": "RPA对接文档"
+    },
+    {
+      "category": "集成与接口类",
+      "asset_name": "Webhook配置表"
+    },
+    {
+      "category": "集成与接口类",
+      "asset_name": "鉴权配置表"
+    },
+    {
+      "category": "集成与接口类",
+      "asset_name": "数据映射表"
+    },
+    {
+      "category": "集成与接口类",
+      "asset_name": "同步日志表"
+    },
+    {
+      "category": "集成与接口类",
+      "asset_name": "集成错误日志表"
+    },
+    {
+      "category": "集成与接口类",
+      "asset_name": "接口限流配置表"
+    },
+    {
+      "category": "集成与接口类",
+      "asset_name": "接口重试规则表"
+    },
+    {
+      "category": "集成与接口类",
+      "asset_name": "接口幂等规则表"
+    },
+    {
+      "category": "运维与高可用类",
+      "asset_name": "部署文档"
+    },
+    {
+      "category": "运维与高可用类",
+      "asset_name": "环境配置表"
+    },
+    {
+      "category": "运维与高可用类",
+      "asset_name": "模型版本表"
+    },
+    {
+      "category": "运维与高可用类",
+      "asset_name": "Prompt版本表"
+    },
+    {
+      "category": "运维与高可用类",
+      "asset_name": "监控告警规则表"
+    },
+    {
+      "category": "运维与高可用类",
+      "asset_name": "SLA文档"
+    },
+    {
+      "category": "运维与高可用类",
+      "asset_name": "运维手册"
+    },
+    {
+      "category": "运维与高可用类",
+      "asset_name": "备份策略表"
+    },
+    {
+      "category": "运维与高可用类",
+      "asset_name": "恢复预案"
+    },
+    {
+      "category": "运维与高可用类",
+      "asset_name": "容灾演练记录"
+    },
+    {
+      "category": "运维与高可用类",
+      "asset_name": "故障演练记录"
+    },
+    {
+      "category": "运维与高可用类",
+      "asset_name": "Redis降级记录表"
+    },
+    {
+      "category": "运维与高可用类",
+      "asset_name": "MySQL持久化记录表"
+    },
+    {
+      "category": "运维与高可用类",
+      "asset_name": "任务重试记录表"
+    },
+    {
+      "category": "运维与高可用类",
+      "asset_name": "异常自动重试规则表"
+    },
+    {
+      "category": "运维与高可用类",
+      "asset_name": "服务健康检查表"
+    },
+    {
+      "category": "运维与高可用类",
+      "asset_name": "日志采集配置表"
+    },
+    {
+      "category": "运维与高可用类",
+      "asset_name": "链路追踪配置表"
+    },
+    {
+      "category": "项目交付与落地类",
+      "asset_name": "项目立项文档"
+    },
+    {
+      "category": "项目交付与落地类",
+      "asset_name": "项目计划"
+    },
+    {
+      "category": "项目交付与落地类",
+      "asset_name": "里程碑清单"
+    },
+    {
+      "category": "项目交付与落地类",
+      "asset_name": "交付物清单"
+    },
+    {
+      "category": "项目交付与落地类",
+      "asset_name": "验收报告"
+    },
+    {
+      "category": "项目交付与落地类",
+      "asset_name": "上线报告"
+    },
+    {
+      "category": "项目交付与落地类",
+      "asset_name": "投产记录"
+    },
+    {
+      "category": "项目交付与落地类",
+      "asset_name": "3个内部部门落地记录"
+    },
+    {
+      "category": "项目交付与落地类",
+      "asset_name": "复杂自动化任务完成率统计表"
+    },
+    {
+      "category": "项目交付与落地类",
+      "asset_name": "降本增效效果评估表"
+    },
+    {
+      "category": "项目交付与落地类",
+      "asset_name": "用户满意度调查表"
+    },
+    {
+      "category": "项目交付与落地类",
+      "asset_name": "项目复盘报告"
+    },
+    {
+      "category": "项目交付与落地类",
+      "asset_name": "风险登记册"
+    },
+    {
+      "category": "项目交付与落地类",
+      "asset_name": "问题台账"
+    },
+    {
+      "category": "项目交付与落地类",
+      "asset_name": "变更台账"
+    },
+    {
+      "category": "项目交付与落地类",
+      "asset_name": "会议纪要库"
+    },
+    {
+      "category": "项目交付与落地类",
+      "asset_name": "周报归档库"
+    },
+    {
+      "category": "项目交付与落地类",
+      "asset_name": "项目简报归档库"
+    }
+  ]
+}

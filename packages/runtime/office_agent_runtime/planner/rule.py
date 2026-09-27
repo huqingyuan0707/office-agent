@@ -1,7 +1,8 @@
 """规则规划器（零 LLM 可演示、可单测；LLM 规划器属 R1）
 
 链路：runner 用 AgentSpec 构造本规划器 → plan(goal) 关键词命中返回步骤模板
-      → resolve_args 把参数模板里的 ``{steps[N].result.路径}`` 替换为历史步骤结果。
+      → resolve_args 把参数模板里的 ``{steps[N].result.路径}``（单步取值）与
+      ``{steps[*].result}``（全部已完成步骤出参）替换为历史步骤的真实结果。
 
 红线：planner 只「提议」（tool + args 模板），永远不执行；每一步都由 runner 交内核
       executor.call，白名单越权只会被拒，不存在绕过执行器的路径。
@@ -18,7 +19,11 @@ from office_agent_core.errors import BusinessError, ErrorCode
 from office_agent_runtime.spec import AgentSpec, PlannerStep
 
 #: 取值模板：{steps[N].result.路径}（路径可省略 = 整个 result；支持字典键与数组下标）
-_TEMPLATE = re.compile(r"\{steps\[(\d+)\]\.result(?:\.([^{}]+))?\}")
+#: 或 {steps[*].result}（全部已完成步骤的出参列表，供成稿素材等「要全部真实数据」的场景）
+_TEMPLATE = re.compile(r"\{steps\[(\d+|\*)\]\.result(?:\.([^{}]+))?\}")
+
+#: 整体占位符的步号标记（{steps[*].result} 只能整体取，不接受字段路径）
+_ALL_STEPS = "*"
 
 
 class RulePlanner:
@@ -40,8 +45,9 @@ class RulePlanner:
     def resolve_args(args: dict[str, Any], results: dict[int, dict[str, Any]]) -> dict[str, Any]:
         """填充参数模板：results 是「步号 → executor.call 完整出参」的历史。
 
-        取不到值（步号尚未产生结果 / 结果里没有该字段）抛中文 BusinessError，
-        绝不静默用空值顶替——编造参数是编排层红线。
+        支持 ``{steps[N].result.路径}``（单步取值）与 ``{steps[*].result}``（全部已完成步骤
+        的出参列表）。取不到值（步号尚未产生结果 / 结果里没有该字段 / 还没有任何步骤出参）
+        抛中文 BusinessError，绝不静默用空值顶替——编造参数是编排层红线。
         """
         return {key: _resolve(value, results) for key, value in args.items()}
 
@@ -64,14 +70,24 @@ def _resolve_text(text: str, results: dict[int, dict[str, Any]]) -> Any:
         return text
 
     def _value_of(match: re.Match[str]) -> Any:
-        index = int(match.group(1))
+        marker = match.group(1)
+        path = (match.group(2) or "").strip()
+        if marker == _ALL_STEPS:
+            if path:
+                raise BusinessError(
+                    ErrorCode.PARAM_INVALID,
+                    f"占位符 {match.group(0)} 不接受字段路径：{{steps[*].result}} 只能整体取"
+                    "全部已完成步骤的出参",
+                )
+            return _all_results(results)
+        index = int(marker)
         outcome = results.get(index)
         if outcome is None:
             raise BusinessError(
                 ErrorCode.PARAM_INVALID,
                 f"步骤 {index} 还没有结果，无法填充参数模板「{match.group(0)}」",
             )
-        return _lookup(index, outcome.get("result"), (match.group(2) or "").strip(), match.group(0))
+        return _lookup(index, outcome.get("result"), path, match.group(0))
 
     if len(matches) == 1 and matches[0].span() == (0, len(text)):
         return _value_of(matches[0])
@@ -82,6 +98,28 @@ def _resolve_text(text: str, results: dict[int, dict[str, Any]]) -> Any:
             value = json.dumps(value, ensure_ascii=False)
         out = out.replace(match.group(0), value)
     return out
+
+
+def _all_results(results: dict[int, dict[str, Any]]) -> list[dict[str, Any]]:
+    """全部已完成步骤的出参列表（成稿素材的一次性注入源）。
+
+    形状 ``[{"index": 步号, "tool": 工具名, "result": 工具出参}]``——自带步号与工具名，
+    让成稿方能说清每段素材从哪来。还没有任何已完成步骤即抛中文 BusinessError，
+    绝不静默给空数组（那会把「没数据」伪装成「数据为空」）。
+    """
+    if not results:
+        raise BusinessError(
+            ErrorCode.PARAM_INVALID,
+            "占位符 {steps[*].result} 需要至少一个已完成的步骤，当前还没有任何步骤出参",
+        )
+    return [
+        {
+            "index": index,
+            "tool": str(results[index].get("tool") or ""),
+            "result": results[index].get("result"),
+        }
+        for index in sorted(results)
+    ]
 
 
 def _lookup(index: int, result: Any, path: str, template: str) -> Any:

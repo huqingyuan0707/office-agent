@@ -29,11 +29,17 @@ def _kb_bigram_by_default(monkeypatch: pytest.MonkeyPatch) -> None:
     要测向量通道的用例在自身内再 monkeypatch 覆盖。
     Milvus 同理钉空（MILVUS_URI 一登记，检索会先试向量库，同样会打网络）。
     Redis 同理：向量缓存既是跨用例的进程级状态、也可能真连网络。
+    KB_DIR 同理钉到「不存在的目录」：本机 data/knowledge 若有后台上传的残留文件，
+    会污染「只期待 builtin 条目」的断言。注意不能钉空串——Path("") 解析为当前目录，
+    会把仓库根当知识库装载；不存在路径才走 load_entries 的 kb_dir_missing 分支
+    （仅 builtin 条目）。要测本地装载的用例在自身内再覆盖，见
+    test_kb_ask_reads_local_files。
     """
     monkeypatch.setattr(settings, "EMBEDDING_BASE_URL", "")
     monkeypatch.setattr(settings, "EMBEDDING_MODEL", "")
     monkeypatch.setattr(settings, "MILVUS_URI", "")
     monkeypatch.setattr(settings, "REDIS_URL", "")
+    monkeypatch.setattr(settings, "KB_DIR", "kb-dir-not-exist-for-tests")
     kv.reset()
 
 

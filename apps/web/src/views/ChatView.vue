@@ -151,10 +151,14 @@ const emptyExamples = ['生成今天的工作日报', '记一下明天要跟进�
 interface RunDoc {
   title: string
   markdown: string
+  // 大模型成稿溯源（office.doc.compose 出参）：composed_by=llm/fallback、模型名、降级标记
+  composedBy?: string
+  degraded?: boolean
+  model?: string
 }
 
 // 文档字段口径：办公工具 markdown 产物的常见键（命中即整块按文档渲染，其余参数不摊开）
-const DOC_FIELDS = ['report', 'worklog', 'minutes', 'agenda', 'content', 'summary', 'markdown']
+const DOC_FIELDS = ['document', 'report', 'worklog', 'minutes', 'agenda', 'content', 'summary', 'markdown']
 
 const runDoc = (run: RunItem): RunDoc | null => {
   const steps = run.steps ?? []
@@ -173,7 +177,13 @@ const runDoc = (run: RunItem): RunDoc | null => {
       const lines = value.split('\n')
       const markdown =
         lines[0]?.trim() === `# ${title}` ? lines.slice(1).join('\n').replace(/^\n+/, '') : value
-      return { title, markdown }
+      return {
+        title,
+        markdown,
+        composedBy: typeof bag.composed_by === 'string' ? bag.composed_by : undefined,
+        degraded: bag.degraded === true,
+        model: typeof bag.model === 'string' ? bag.model : undefined,
+      }
     }
   }
   return null
@@ -404,19 +414,39 @@ onUnmounted(() => {
                     @click="quickSend(seg.text)"
                   >{{ seg.text }}</el-tag><span v-else>{{ seg.text }}</span></template
                 ></pre>
-                <!-- 末步结果是 markdown 文档产物：固定格式文档卡渲染（不摊参数）+ 下载 Word -->
+                <!-- 末步结果是 markdown 文档产物：固定格式文档卡渲染（不摊参数）+ 来源角标 + 下载 Word -->
                 <div v-else-if="runDoc(m.run)" class="doc-card">
                   <div class="doc-head">
                     <span class="doc-title">{{ runDoc(m.run)!.title }}</span>
-                    <el-button
-                      size="small"
-                      type="primary"
-                      :icon="Download"
-                      :loading="downloadingKey === m.key"
-                      @click="downloadDocx(m)"
-                    >
-                      下载 Word
-                    </el-button>
+                    <div class="doc-actions">
+                      <el-tag
+                        v-if="runDoc(m.run)!.composedBy === 'llm'"
+                        size="small"
+                        type="success"
+                        effect="light"
+                        round
+                      >
+                        大模型成稿{{ runDoc(m.run)!.model ? `·${runDoc(m.run)!.model}` : '' }}
+                      </el-tag>
+                      <el-tag
+                        v-else-if="runDoc(m.run)!.degraded"
+                        size="small"
+                        type="warning"
+                        effect="light"
+                        round
+                      >
+                        模型不可用·素材直出
+                      </el-tag>
+                      <el-button
+                        size="small"
+                        type="primary"
+                        :icon="Download"
+                        :loading="downloadingKey === m.key"
+                        @click="downloadDocx(m)"
+                      >
+                        下载 Word
+                      </el-button>
+                    </div>
                   </div>
                   <!-- 自家子集渲染器先转义后替换，无第三方 HTML 注入面 -->
                   <div class="doc-body" v-html="renderMarkdown(runDoc(m.run)!.markdown)"></div>
@@ -590,6 +620,12 @@ onUnmounted(() => {
   padding: 8px 14px;
   background: var(--brand-soft);
   border-bottom: 1px solid var(--line);
+}
+.doc-actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex: none;
 }
 .doc-title {
   font-weight: 700;

@@ -31,6 +31,13 @@ _DEFAULT_REVIEWER_PASSWORD = "reviewer123"
 #: office:read 让复核员用得动 draft/check/opinion 等审批辅助只读工具，写口径仍不给）
 _REVIEWER_ROLES = ("admin", "approver", "office:read")
 
+#: 演示员工账号（普通员工与 HR：均不含 admin/*，用于演示知识库条目级 visibility 权限过滤——
+#: public 人人可见、hr 条目仅 hr 角色/管理员可见）。口令仅用于开发演示，生产经 SEED_ON_START=false 关闭。
+_DEMO_EMPLOYEES: tuple[tuple[str, str, tuple[str, ...]], ...] = (
+    ("zhangsan", "zhangsan123", ("office:read",)),
+    ("hr", "hr123456", ("office:read", "hr")),
+)
+
 
 def _merge_roles(existing: str, wanted: list[str]) -> str:
     """并集补齐角色（保持原顺序，新令牌追加在后）。"""
@@ -96,6 +103,15 @@ async def seed_on_startup() -> str:
                 tenant=settings.SEED_TENANT,
                 roles=list(_REVIEWER_ROLES),
                 label="复核员",
+            )
+        for demo_username, demo_password, demo_roles in _DEMO_EMPLOYEES:
+            await _ensure_user(
+                session=session,
+                username=demo_username,
+                password=demo_password,
+                tenant=settings.SEED_TENANT,
+                roles=list(demo_roles),
+                label="演示",
             )
         await session.commit()
     return settings.SEED_USERNAME

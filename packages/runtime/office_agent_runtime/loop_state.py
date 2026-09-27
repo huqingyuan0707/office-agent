@@ -34,7 +34,12 @@ from office_agent_runtime.checkpoint import (
     summarize_run,
 )
 from office_agent_runtime.models import RunStep
-from office_agent_runtime.planner.llm import LlmFunctionCallPlanner, LlmPlanError
+from office_agent_runtime.planner.llm import (
+    LlmFunctionCallPlanner,
+    LlmPlanError,
+    profile_configured,
+)
+from office_agent_runtime.planner.react import ReACTPlanner
 from office_agent_runtime.planner.rule import RulePlanner
 from office_agent_runtime.spec import AgentSpec, PlannerStep
 from office_agent_runtime.validation import finalize_answer
@@ -131,11 +136,33 @@ def _plan_from_checkpoint(checkpoint: dict[str, Any]) -> tuple[list[PlannerStep]
 
 
 async def _choose_and_plan(spec: AgentSpec, goal: str) -> tuple[list[PlannerStep], str]:
-    """降级链：LLM 优先 → 失败降 Rule → 无规则报错（不静默编造）。
+    """降级链：plan 模式 LLM 优先 → 失败降 Rule → 无规则报错（不静默编造）。
 
-    返回 (planned_steps, planner_source)；source 是 "llm" 或 "rule"。
+    react 模式（混合串联）：规则快路径优先（关键词命中走确定性链，链内文档步
+    已切大模型成稿）；未中且 LLM 已配置 → 返回 ([], "react") 空计划起步，步骤由
+    LoopState.plan_next 逐步增量补；profile 未配置在受理即报错（受理与执行分离，
+    不让用户等一轮执行才看到失败）。
+    返回 (planned_steps, planner_source)；source 是 "llm" / "rule" / "react"。
     LLM 出站客户端只在本次规划内使用，finally 里关闭（自建连接不跨调用滞留）。
     """
+    if spec.llm_mode == "react":
+        if spec.rules:
+            steps = RulePlanner(spec).plan(goal)
+            if steps:
+                return steps, "rule"
+        if not spec.llm:
+            raise BusinessError(
+                ErrorCode.PARAM_INVALID,
+                f"智能体 {spec.name} 的 llm_mode=react 但未配置 llm，"
+                f"且目标未命中任何规则，无法执行",
+            )
+        if not profile_configured(spec.llm):
+            raise BusinessError(
+                ErrorCode.LLM_FAILED,
+                f"智能体 {spec.name} 的 llm_mode=react 且目标未命中规则，"
+                f"但 LLM profile「{spec.llm}」未在 LLM_PROVIDERS 配置，无法执行",
+            )
+        return [], "react"
     if spec.llm:
         planner = LlmFunctionCallPlanner.from_spec(spec)
         try:
@@ -265,7 +292,8 @@ class LoopState:
     async def prepare_plan(self) -> list[PlannerStep]:
         """计划持久化：首次执行时规划并写入 checkpoint（含 planner_source），
         续跑回放原计划 + 原来源（防 agent.yaml 中途变更导致步号与历史结果错位）；
-        无持久化计划时按当前配置走降级链重规划。计划为空时抛 BusinessError。"""
+        无持久化计划时按当前配置走降级链重规划。计划为空时抛 BusinessError
+        （react 起步除外——空计划交 plan_next 逐步增量补）。"""
         planned, src = _plan_from_checkpoint(self.checkpoint)
         if planned is None:
             planned, src = await _choose_and_plan(self.spec, self.goal)
@@ -273,15 +301,53 @@ class LoopState:
             self.checkpoint["planner_source"] = src
         self.planner_source = src
         if not planned:
+            if src == "react":
+                return []
             raise BusinessError(
                 ErrorCode.PARAM_INVALID,
                 f"目标未命中智能体 {self.spec.name} 的任何规划规则，且 LLM 规划不可用",
             )
         return planned
 
+    async def plan_next(self) -> PlannerStep | None:
+        """react 逐步再规划：LLM 看全部已完成步骤真实出参提议下一步。
+
+        增量追加 checkpoint["plan"]（条目与既有计划同形 {tool, args}，断点续跑经
+        _plan_from_checkpoint 回放不漂移）；LLM 判定收工返回 None（不追加）；
+        出站失败抛 LlmPlanError，由 graph 的边界分支决定失败收敛或带产出收敛。
+
+        出站前 commit（正常为 no-op）：防 session 残留 pending 写跨 LLM 长 I/O 持锁。
+        """
+        await self.db.commit()
+        planner = ReACTPlanner.from_spec(self.spec)
+        try:
+            step = await planner.next_step(self.goal, self.results)
+        finally:
+            await planner.aclose()
+        if step is None:
+            return None
+        plan = self.checkpoint.setdefault("plan", [])
+        plan.append({"tool": step.tool, "args": step.args})
+        self.total = len(plan)
+        self.save_checkpoint()
+        return step
+
     async def run_step(self, step: PlannerStep) -> bool:
-        """执行断点处的单步；返回 False 表示主循环须立即停下（失败收敛或审批挂起）。"""
+        """执行断点处的单步；返回 False 表示主循环须立即停下（失败收敛或审批挂起）。
+
+        出口统一 commit（SQLite 锁纪律，同 start_run/finish 口径）：步骤时间线与
+        检查点落库即释放写锁——下一步的 executor.call（LLM 成稿 60s+ 级长 I/O）
+        执行期间 session 不持 pending 写，并发 run/审批重放不再撞 "database is locked"
+        （2026-09-26 冒烟实测：pending RunStep 经 autoflush 拿写锁跨 120s 工具重试）。
+        """
         index = self.index
+        try:
+            return await self._run_step_inner(step, index)
+        finally:
+            await self.db.commit()
+
+    async def _run_step_inner(self, step: PlannerStep, index: int) -> bool:
+        """run_step 主体（commit 由外层 finally 统一负责）。"""
         if step.tool not in self.spec.tools:
             self.fail_step(
                 index,

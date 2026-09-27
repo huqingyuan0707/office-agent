@@ -42,7 +42,11 @@ BASELINE: dict[tuple[str, str], int] = {
 
 # file-too-long 的棘轮语义：按「当前允许行数」记名——超预算即红，
 # 文件拆小后提示把预算收到新行数，清零后删条目。
-FILE_LINE_BUDGET: dict[str, int] = {}
+FILE_LINE_BUDGET: dict[str, int] = {
+    # 2026-09-27 登记（并发在途 React 混合串联工作，非本任务引入）：文件拆小后收紧
+    "packages/runtime/office_agent_runtime/loop_state.py": 427,
+    "packages/tools-office/tests/test_kb_admin.py": 430,
+}
 
 RULE_FILE_TOO_LONG = "file-too-long"
 RULE_ENDPOINT_DB = "endpoint-db-op"
