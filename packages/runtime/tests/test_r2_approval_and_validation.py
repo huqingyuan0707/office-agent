@@ -269,7 +269,41 @@ def test_validate_answer_numbers_pure_function():
     assert empty["passed"] is True and empty["checked"] == []
 
 
-# ---------------- ⑤ 规则智能体（无 LLM）：数值校验不适用 ----------------
+# ---------------- ⑤ 规则快路径跳过 LLM 合成（2-3s 快路径锁定） ----------------
+
+
+def test_finalize_answer_rule_source_skips_llm_even_when_configured():
+    """规则来源即使配了 llm 也不出网：工具结果即答案，answer 留空零等待。
+
+    口径：react/plan 双配智能体的规则命中分支走本路径；llm/react 来源仍走合成。
+    全程不出网（若误调 LLM，MockTransport 缺失会直接抛错而非静默通过）。
+    """
+    import asyncio
+
+    from office_agent_runtime.spec import parse_agent_spec
+    from office_agent_runtime.validation import finalize_answer
+
+    spec = parse_agent_spec(
+        {
+            "name": "mixed-bot",
+            "description": "规则+LLM 双配",
+            "system_prompt": "你是测试助手。",
+            "tools": ["demo.echo"],
+            "max_steps": 2,
+            "llm": "default",
+            "llm_mode": "react",
+        }
+    )
+    results = {0: {"tool": "demo.echo", "status": "ok", "result": {"echo": "hi"}}}
+    block = asyncio.run(
+        finalize_answer(spec=spec, goal="请演示", results=results, planner_source="rule")
+    )
+    assert block["answer"] == ""
+    assert block["validation"]["applicable"] is False
+    assert "快路径" in str(block["validation"].get("reason") or "")
+
+
+# ---------------- ⑥ 规则智能体（无 LLM）：数值校验不适用 ----------------
 
 
 def test_validation_not_applicable_for_rule_agent(client, agent_yaml_dir):

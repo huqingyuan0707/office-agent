@@ -29,6 +29,7 @@ from office_agent_runtime.planner.llm import (
     _provider_of,
     _tool_schemas,
 )
+from office_agent_runtime.planner.llm_opts import build_chat_payload
 from office_agent_runtime.spec import PlannerStep
 
 logger = logging.getLogger(__name__)
@@ -74,12 +75,7 @@ class ReACTPlanner(LlmFunctionCallPlanner):
             }
         )
 
-        payload = {
-            "model": cfg.model,
-            "messages": messages,
-            "tools": tools,
-            "tool_choice": "auto",
-        }
+        payload = build_chat_payload(cfg.model, messages, tools)
         headers = {"Content-Type": "application/json"}
         if cfg.api_key:
             headers["Authorization"] = f"Bearer {cfg.api_key}"

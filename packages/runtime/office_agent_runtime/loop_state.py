@@ -399,7 +399,10 @@ class LoopState:
             # 事务跨网络等待会把并发写者撞成 "database is locked"（同 start_run 口径）
             await self.db.commit()
             validation_block = await finalize_answer(
-                spec=self.spec, goal=self.goal, results=self.results
+                spec=self.spec,
+                goal=self.goal,
+                results=self.results,
+                planner_source=self.planner_source,
             )
             self.checkpoint.update(validation_block)
             self.save_checkpoint()

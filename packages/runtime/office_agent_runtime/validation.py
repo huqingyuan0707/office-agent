@@ -7,7 +7,7 @@
 红线：
 - 不删除回答：未通过校验的回答原样保留并标「未通过数值校验」（标注失信，不静默改写）；
 - 降级不 500：LLM 未配置 / 调用失败只置 skipped 标记，绝不阻断已成功的工具步骤；
-- 校验是纯函数：数字两边用同一套词元化（\d+(?:\.\d+)?，忽略正负号），字符串里的
+- 校验是纯函数：数字两边用同一套词元化（\\d+(?:\\.\\d+)?，忽略正负号），字符串里的
   数字（日期、时间、百分比）与数值叶子统一比对，可单测、可回放。
 对齐：.trae/documents/智能体编排层实现方案.md §R2（回答校验）。
 """
@@ -96,22 +96,34 @@ def _append_evidence(
 
 
 async def finalize_answer(
-    *, spec: AgentSpec, goal: str, results: dict[int, dict[str, Any]]
+    *,
+    spec: AgentSpec,
+    goal: str,
+    results: dict[int, dict[str, Any]],
+    planner_source: str = "",
 ) -> dict[str, Any]:
     """run 收敛 DONE 后的终答合成 + 数值校验标注（降级绝不阻断）。
 
     - 未配置 LLM → 校验不适用标记（规则规划没有 LLM 回答，数字本就来自工具模板）；
+    - 规则快路径（planner_source == "rule"）→ 同样跳过 LLM 合成：工具结果即答案，
+      前端按末步结果/文档卡渲染；此举把知识咨询类单步 run 从 30s 级降到 1s 级，
+      是 2-3s 快路径的核心（实测 qwen3:8b 热机单次合成仍 ~20s，见性能基线）；
     - LLM 失败 → skipped 标记，回答留空，已完成的步骤不受影响；
     - 成功 → answer 原文 + validate_answer_numbers 报告（未通过也原样保留回答）。
     """
-    if not spec.llm:
+    if not spec.llm or planner_source == "rule":
+        reason = (
+            "规则快路径跳过 LLM 合成（工具结果即答案，前端按末步结果渲染，2-3s 快路径）"
+            if planner_source == "rule" and spec.llm
+            else "该智能体未配置 LLM，无 LLM 生成回答（数字均来自工具模板直出）"
+        )
         return {
             "answer": "",
             "validation": {
                 "applicable": False,
                 "passed": None,
                 "label": "数值校验不适用",
-                "reason": "该智能体未配置 LLM，无 LLM 生成回答（数字均来自工具模板直出）",
+                "reason": reason,
             },
         }
     observations = [

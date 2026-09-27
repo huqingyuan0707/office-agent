@@ -37,6 +37,7 @@ import httpx
 
 from office_agent_core import registry as tool_registry
 from office_agent_core.settings import settings
+from office_agent_runtime.planner.llm_opts import build_chat_payload
 from office_agent_runtime.spec import AgentSpec, PlannerStep
 
 logger = logging.getLogger(__name__)
@@ -240,17 +241,10 @@ class LlmFunctionCallPlanner:
             }
         )
 
-        payload = {
-            "model": cfg.model,
-            "messages": messages,
-            "tools": tools,
-            "tool_choice": "auto",
-        }
-
+        payload = build_chat_payload(cfg.model, messages, tools)
         headers = {"Content-Type": "application/json"}
         if cfg.api_key:
             headers["Authorization"] = f"Bearer {cfg.api_key}"
-
         data = await self._post_chat(cfg, payload, headers)
         return _extract_tool_calls(data, allowed_tools=frozenset(self._spec.tools))
 
@@ -282,7 +276,7 @@ class LlmFunctionCallPlanner:
         if cfg.api_key:
             headers["Authorization"] = f"Bearer {cfg.api_key}"
         # 终答合成不带 tools：要的是文本回答，不是继续提议工具调用
-        data = await self._post_chat(cfg, {"model": cfg.model, "messages": messages}, headers)
+        data = await self._post_chat(cfg, build_chat_payload(cfg.model, messages), headers)
         content = _extract_content(data).strip()
         if not content:
             raise LlmPlanError("LLM 未返回文本回答，无法生成最终答复")
