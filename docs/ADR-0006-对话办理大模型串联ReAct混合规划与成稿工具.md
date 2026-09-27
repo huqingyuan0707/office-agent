@@ -57,6 +57,23 @@
 - 可观测验证：`tests/smoke_compose_chain.py`（5 段 HTTP 冒烟）+ runtime 单测 12 例
   （占位符/llm_mode/react 全链路）+ tools-office 单测 6 例（成稿/降级/数字校验）。
 
+## 5.1 执行链路追踪（对话调试面板，2026-09-27 追加）
+
+- 决策：在 ReAct 混合规划之上加一层「执行链路」可观测——终答提示词允许模型输出
+  `<<<inner>>>` 块（内写【Step 思考】/【Step 路由】/【Step 工具调用】，仅管理员可见），
+  后端正则剥离 inner 与对外正文；规划走 tool_calls 结构化输出的步骤**不**要求模型自述
+  过程——意图/路由/工具/耗时由执行期真实数据组装（比模型自述更可信，且规则快路径零 LLM 也能出链路）。
+- 诚实约束：意图置信度与候选打分只写实测可得的——规则命中记 1.0 并注明「规则关键词命中，
+  非模型打分」，LLM/react 直定不写分数；候选智能体只标选中/未选中；token 计数未透出不写字段。
+- 存储与权限：trace 存 `Task.checkpoint["trace"]` 与 `Task.output["trace"]`（内嵌 JSON，
+  不新增表列、无需迁移）；run 概要不带 trace；`GET /runs/{id}` 仅 admin/`*` 透出，
+  普通用户响应无该键；超长按 `TRACE_INNER_MAX_CHARS`/`TRACE_RESULT_MAX_CHARS` 截断。
+- 前端：对话气泡右下角「展开执行详情」（仅管理员渲染，默认收起）+ `RunTracePanel`
+  浅灰折叠面板（意图/思考/路由/工具调用/工具返回/汇总 + 总耗时 + 收起按钮）；
+  历史会话经 run_id 拉取，链路随会话一起加载。
+- 回滚：前端隐藏按钮即回退（后端 trace 照常落库，不影响任何现有渲染）；
+  提示词去掉 inner 说明即回纯正文（解析缺块降级空分段，不阻断收敛）。
+
 ## 5. 落地清单
 
 - [x] 机制件 1：`{steps[*].result}` 整体注入占位符（planner/rule.py）
@@ -67,3 +84,8 @@
 - [x] 机制件 6：office-assistant / daily-report-assistant 切换 + 前端来源角标
 - [x] 测试：单测 18 例 + HTTP 冒烟 smoke_compose_chain.py
 - [x] 文档：本 ADR + AGENTS §5/§6 + README 中英 + .env.example 注释
+- [x] 执行链路追踪：`trace.py`（inner 解析 + 链路组装 + 管理门控）+ `run_finish.py`
+  （收尾逻辑拆分，loop_state 回 400 行内）+ `GET /runs/{id}.trace` 管理透出
+  + 前端 `RunTracePanel` 调试面板（§5.1）
+- [x] 测试：runtime 单测 10 例（`test_trace.py`）+ HTTP 冒烟 `tests/smoke_trace.py`（16 项断言）
+- [x] 文档：本 ADR §5.1 + README 中英对话表执行链路行

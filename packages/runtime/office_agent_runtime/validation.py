@@ -1,8 +1,9 @@
 """回答数值校验（R2：数值不可编造的基础版）+ LLM 终答合成钩子
 
-链路：run 收敛 DONE 后 → finalize_answer() 用 spec.llm 做一次终答合成（把本次 run
-      全部工具返回 JSON 交给 LLM 生成中文回答）→ validate_answer_numbers() 抽取回答中
-      的数字，逐一在工具返回 JSON 里找出处 → 校验标记随 checkpoint / run 概要透出。
+ 链路：run 收敛 DONE 后 → finalize_answer() 用 spec.llm 做一次终答合成（把本次 run
+      全部工具返回 JSON 交给 LLM 生成中文回答）→ split_inner() 把 <<<inner>>>
+      内部思考块与对外正文分离（前者仅管理员调试可见）→ validate_answer_numbers()
+      抽取回答中的数字，逐一在工具返回 JSON 里找出处 → 校验标记随 checkpoint 透出。
 
 红线：
 - 不删除回答：未通过校验的回答原样保留并标「未通过数值校验」（标注失信，不静默改写）；
@@ -19,6 +20,7 @@ from typing import Any
 
 from office_agent_runtime.planner.llm import LlmFunctionCallPlanner, LlmPlanError
 from office_agent_runtime.spec import AgentSpec
+from office_agent_runtime.trace import parse_inner_sections, split_inner
 
 #: 数字词元（不含正负号：日期「2026-09-22」拆成 2026/09/22，与工具串内词元同构可比）
 _NUMBER_RE = re.compile(r"\d+(?:\.\d+)?")
@@ -132,7 +134,7 @@ async def finalize_answer(
     ]
     planner = LlmFunctionCallPlanner.from_spec(spec)
     try:
-        answer = await planner.answer(goal, observations)
+        raw_answer = await planner.answer(goal, observations)
     except LlmPlanError as exc:
         return {
             "answer": "",
@@ -146,5 +148,12 @@ async def finalize_answer(
         }
     finally:
         await planner.aclose()
+    # inner 隔离：终答里的 <<<inner>>> 块是内部思考链路（仅管理员调试可见），
+    # 对外回答只留正文；无块即全文正文（旧模型/旧提示词零回归）。
+    inner_text, answer = split_inner(raw_answer)
     report = validate_answer_numbers(answer, observations)
-    return {"answer": answer, "validation": report}
+    return {
+        "answer": answer,
+        "validation": report,
+        "inner": {"sections": parse_inner_sections(inner_text), "has_inner": bool(inner_text)},
+    }

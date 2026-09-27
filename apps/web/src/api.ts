@@ -140,6 +140,26 @@ export interface RunStep {
   trace_id?: string
   created_at?: string
 }
+export interface RunTraceStep {
+  step_no: number
+  step_type: string
+  step_label?: string
+  content: string
+  tool_name?: string
+  params?: unknown
+  time_cost_ms?: number
+  truncated?: boolean
+}
+// 执行链路（GET /runs/{id} 仅管理员透出 trace；普通用户响应无该键，前端按有无渲染调试按钮）
+export interface RunTrace {
+  session_id?: string
+  run_id: string
+  agent: string
+  goal: string
+  planner_source?: string
+  steps: RunTraceStep[]
+  total_ms?: number
+}
 export interface RunPendingApproval {
   approval_id?: string
   tool?: string
@@ -160,6 +180,7 @@ export interface RunItem {
   validation?: unknown
   pending_approval?: RunPendingApproval
   approval_hint?: string
+  trace?: RunTrace
 }
 // 治理状态（全部可选：缺失字段不渲染、不编造）
 export interface GovernanceProvider {
@@ -194,6 +215,20 @@ export const setBase = (base: string) => localStorage.setItem(BASE_KEY, base)
 export const getUser = () => localStorage.getItem(USER_KEY) ?? ''
 export const setUser = (name: string) => localStorage.setItem(USER_KEY, name)
 export const clearUser = () => localStorage.removeItem(USER_KEY)
+
+// 当前登录角色（JWT payload 解码，仅做调试按钮显隐；真实数据门控在服务端按 Token 验签判定）
+export const getTokenRoles = () => {
+  const parts = getToken().split('.')
+  if (parts.length !== 3) return [] as string[]
+  try {
+    const payload = JSON.parse(atob(parts[1].replace(/-/g, '+').replace(/_/g, '/'))) as {
+      roles?: unknown
+    }
+    return Array.isArray(payload.roles) ? (payload.roles as string[]) : ([] as string[])
+  } catch {
+    return [] as string[]
+  }
+}
 
 // 401 回调：由 main.ts 注册到 router（会话失效 → 跳登录页），视图内不做二次跳转
 let unauthorizedHandler: (() => unknown) | null = null

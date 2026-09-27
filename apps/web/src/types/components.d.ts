@@ -67,6 +67,7 @@ declare module 'vue' {
     RejectDialog: typeof import('./../components/RejectDialog.vue')['default']
     RouterLink: typeof import('vue-router')['RouterLink']
     RouterView: typeof import('vue-router')['RouterView']
+    RunTracePanel: typeof import('./../components/RunTracePanel.vue')['default']
     StatusBadge: typeof import('./../components/StatusBadge.vue')['default']
   }
   export interface ComponentCustomProperties {

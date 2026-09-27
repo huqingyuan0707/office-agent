@@ -13,17 +13,19 @@
 // 对齐：AGENTS.md §4 前端红线（401 中央处理、箭头函数、var(--*) token + scoped）。
 import { inject, nextTick, onMounted, onUnmounted, ref } from 'vue'
 import { RouterLink } from 'vue-router'
-import { ChatDotRound, Delete, Download, Plus, Promotion, Service } from '@element-plus/icons-vue'
+import { ChatDotRound, Delete, Download, Memo, Plus, Promotion, Service } from '@element-plus/icons-vue'
 import {
   createConversation,
   deleteConversation,
   getConversation,
   getRun,
+  getTokenRoles,
   invokeTool,
   listConversations,
   sendConversationMessage,
 } from '../api'
 import type { ConversationItem, RunItem } from '../api'
+import RunTracePanel from '../components/RunTracePanel.vue'
 import StatusBadge from '../components/StatusBadge.vue'
 
 const shell = inject('shellError') as {
@@ -39,6 +41,7 @@ const loadingList = ref(false)
 const loadingDetail = ref(false)
 
 // 单条消息气泡：用户存 text；助手存 run（轮询更新）或 error（路由失败/追问建议）
+// showTrace：执行链路面板显隐（默认收起，随消息持有，轮询/切会话不丢）
 interface ChatMsg {
   key: number
   role: 'user' | 'agent'
@@ -46,6 +49,7 @@ interface ChatMsg {
   error?: string
   run?: RunItem
   polling?: boolean
+  showTrace?: boolean
 }
 
 const messages = ref<ChatMsg[]>([])
@@ -146,6 +150,17 @@ const stepType = (status: string) => {
 const argsBrief = (args: unknown) => {
   const text = JSON.stringify(args ?? {})
   return text.length > 70 ? `${text.slice(0, 70)}…` : text
+}
+
+// 执行链路调试可见性：仅管理员渲染「展开执行详情」按钮（JWT 角色纯显隐，数据门控在服务端）
+const isAdmin = () => {
+  const roles = getTokenRoles()
+  return roles.includes('admin') || roles.includes('*')
+}
+
+const toggleTrace = (msg: ChatMsg) => {
+  msg.showTrace = !msg.showTrace
+  scrollBottom()
 }
 
 // 示例句点击即执行：终答里「…」引住的短语（2-24 字、不含换行）拆成独立标签渲染
@@ -651,7 +666,20 @@ onUnmounted(() => {
                 />
               </template>
 
-              <span v-else class="muted waiting">正在挑选智能体…</span>
+              <!-- 执行链路调试：仅管理员可见（普通用户不渲染）；trace 随 run 轮询与历史加载到来 -->
+              <div v-if="isAdmin() && m.run && m.run.trace" class="trace-toggle">
+                <el-button size="small" text :icon="Memo" @click="toggleTrace(m)">
+                  {{ m.showTrace ? '收起执行详情' : '展开执行详情' }}
+                </el-button>
+              </div>
+              <RunTracePanel
+                v-if="m.run && m.run.trace && m.showTrace"
+                :trace="m.run.trace"
+                :session-id="activeId"
+                @close="toggleTrace(m)"
+              />
+
+              <span v-if="!m.error && !m.run" class="muted waiting">正在挑选智能体…</span>
             </div>
           </div>
         </template>
@@ -980,6 +1008,11 @@ onUnmounted(() => {
 }
 .waiting {
   font-size: 13px;
+}
+.trace-toggle {
+  display: flex;
+  justify-content: flex-end;
+  margin-top: 6px;
 }
 .composer {
   display: flex;

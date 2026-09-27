@@ -31,7 +31,6 @@ from office_agent_runtime.checkpoint import (
     parse_checkpoint,
     record_entry,
     step_entries,
-    summarize_run,
 )
 from office_agent_runtime.models import RunStep
 from office_agent_runtime.planner.llm import (
@@ -42,7 +41,7 @@ from office_agent_runtime.planner.llm import (
 from office_agent_runtime.planner.react import ReACTPlanner
 from office_agent_runtime.planner.rule import RulePlanner
 from office_agent_runtime.spec import AgentSpec, PlannerStep, compose_context_goal
-from office_agent_runtime.validation import finalize_answer
+from office_agent_runtime.validation import finalize_answer as finalize_answer
 from office_agent_server.models import Task
 from office_agent_server.rbac import CurrentUser
 
@@ -392,37 +391,7 @@ class LoopState:
         return True
 
     async def finish(self) -> dict[str, Any]:
-        """收敛收尾：R2 数值校验（降级不 500）+ 输出概要合成（不抛错，失败也走概要）。"""
-        validation_block: dict[str, Any] = {}
-        if self.task.status == AgentState.DONE.value:
-            # 先提交步骤写入释放锁再进终答合成：finalize_answer 是 30s 级 LLM I/O，
-            # 事务跨网络等待会把并发写者撞成 "database is locked"（同 start_run 口径）
-            await self.db.commit()
-            validation_block = await finalize_answer(
-                spec=self.spec,
-                goal=self.goal,
-                results=self.results,
-                planner_source=self.planner_source,
-            )
-            self.checkpoint.update(validation_block)
-            self.save_checkpoint()
+        """收敛收尾（实现见 run_finish.finish_run：数值校验 + 执行链路 + 概要合成）。"""
+        from office_agent_runtime.run_finish import finish_run
 
-        steps_done = sum(
-            1 for entry in step_entries(self.checkpoint) if entry.get("status") == "ok"
-        )
-        self.task.output = dumps(
-            {
-                "agent": self.spec.name,
-                "goal": self.goal,
-                "status": self.task.status,
-                "steps_done": steps_done,
-                "error": self.checkpoint.get("error", ""),
-                "answer": validation_block.get("answer", ""),
-                "validation": validation_block.get("validation"),
-            }
-        )
-        summary = summarize_run(self.task, self.checkpoint)
-        if validation_block:
-            summary["answer"] = validation_block.get("answer", "")
-            summary["validation"] = validation_block.get("validation")
-        return summary
+        return await finish_run(self)

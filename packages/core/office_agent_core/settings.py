@@ -130,6 +130,12 @@ class Settings(BaseSettings):
     REDIS_KEY_PREFIX: str = "oa"
     REDIS_TIMEOUT_SECONDS: float = 2.0
 
+    # ---- 执行链路追踪（对话调试面板；只做长度截断口径，落库位置是 Task.checkpoint/output 内嵌 JSON，不新增表列）----
+    # inner 块是 LLM 终答里 <<<inner>>>…<<</inner>>> 的内部推理原文（仅管理员可见）；
+    # 工具结果摘要是各步出参的展示截断（完整结果仍在 checkpoint steps 里供续跑取值）。
+    TRACE_INNER_MAX_CHARS: int = 4000
+    TRACE_RESULT_MAX_CHARS: int = 2000
+
     # ---- 主动消息推送（站内通知扫描阈值）----
     APPROVAL_STALE_HOURS: float = 24.0
     NOTIFICATION_MAX_PER_SCAN: int = 50

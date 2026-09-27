@@ -41,6 +41,7 @@ from office_agent_runtime.runner import (
     start_run,
 )
 from office_agent_runtime.spec import compose_context_goal
+from office_agent_runtime.trace import is_admin_roles
 from office_agent_server.db import get_db
 from office_agent_server.middleware import current_trace_id
 from office_agent_server.models import Task
@@ -87,8 +88,12 @@ def _step_view(row: RunStep) -> dict[str, Any]:
     }
 
 
-def _run_view(task: Task, steps: list[RunStep]) -> dict[str, Any]:
-    """运行详情出参：状态 + 检查点摘要 + 步骤时间线（含 R2 终答与数值校验标注）。"""
+def _run_view(task: Task, steps: list[RunStep], *, is_admin: bool = False) -> dict[str, Any]:
+    """运行详情出参：状态 + 检查点摘要 + 步骤时间线（含 R2 终答与数值校验标注）。
+
+    trace（执行链路）仅管理员透出：普通用户响应无该键（权限拦截在服务端做，
+    前端只按有无渲染按钮，不做二次鉴权）。
+    """
     from office_agent_runtime.checkpoint import parse_checkpoint
 
     checkpoint = parse_checkpoint(task.checkpoint)
@@ -115,6 +120,11 @@ def _run_view(task: Task, steps: list[RunStep]) -> dict[str, Any]:
     }
     if isinstance(pending, dict) and pending.get("approval_id"):
         view["pending_approval"] = pending
+    # 执行链路调试透出：checkpoint/output 二处同源，取先命中的非空者
+    if is_admin:
+        trace = checkpoint.get("trace") or output.get("trace")
+        if isinstance(trace, dict) and trace:
+            view["trace"] = trace
     return view
 
 
@@ -209,7 +219,7 @@ async def run_detail(
         await db.commit()
     # pending / none：状态不变（挂起等待 / 无挂起审批），直接读当前快照
     steps = await _run_steps(db, user.tenant, run_id)
-    view = _run_view(task, steps)
+    view = _run_view(task, steps, is_admin=is_admin_roles(list(user.roles)))
     if action == "pending":
         view["approval_hint"] = "运行挂起等待审批：审批单已提交，待复核员处理后自动继续"
     if action == "resumed":
