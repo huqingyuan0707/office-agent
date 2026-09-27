@@ -40,6 +40,7 @@ from office_agent_runtime.runner import (
     instant_greeting_run,
     start_run,
 )
+from office_agent_runtime.spec import compose_context_goal
 from office_agent_server.db import get_db
 from office_agent_server.middleware import current_trace_id
 from office_agent_server.models import Task
@@ -54,10 +55,13 @@ class CreateRunRequest(BaseModel):
 
     agent 可选：省略 = 对话主入口的「一句话自动路由」（router.route_agent_spec 按目标挑
     智能体）；显式指定 = 智能体页原有行为，两种发起方式共用同一条受理链。
+    context 可选：多轮上下文摘要（对话会话页把前文带过来，随新目标一起进规划，
+    支持「上面那个/再加一个/改成张三」类指代；存 checkpoint，续跑原样回放）。
     """
 
     agent: str = Field(default="", max_length=64)
     goal: str = Field(min_length=1, max_length=500)
+    context: str = Field(default="", max_length=2000)
 
 
 def _load_json(text: str, fallback: Any) -> Any:
@@ -163,13 +167,17 @@ async def create_run(
         summary = await instant_greeting_run(db, goal=goal, user=user)
         await db.commit()
         return ok(summary, "已回复")
-    spec = loader.find_agent_spec(wanted) if wanted else route_agent_spec(goal)
+    # 带 context 时路由与规划同口径吃「上下文 + 新目标」（多轮指代回落原智能体）；
+    # context 为空 = 首轮直发，行为与历史版本完全一致。
+    routing_goal = compose_context_goal(payload.context, goal)
+    spec = loader.find_agent_spec(wanted) if wanted else route_agent_spec(routing_goal)
     summary = await start_run(
         db,
         spec=spec,
         goal=goal,
         user=user,
         trace_id=current_trace_id(),
+        context=payload.context,
     )
     await db.commit()
     labels = {

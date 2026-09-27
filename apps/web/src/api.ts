@@ -47,12 +47,43 @@ export interface ToolList {
   total: number
   items: ToolItem[]
 }
+export interface TaskResultLink {
+  kind: string
+  label: string
+  href: string
+}
 export interface TaskItem {
   id: string
+  name: string
   type: string
   status: string
+  status_label: string
+  source: string
+  source_label: string
   progress: number
+  username: string
+  ref_kind: string
+  ref_id: string
+  ref_label: string
+  result_links: TaskResultLink[]
   created_at: string
+  updated_at: string
+  // 详情（GET /tasks/{id}）补充
+  input?: Record<string, unknown>
+  output?: Record<string, unknown>
+  error?: Record<string, unknown>
+  checkpoint?: Record<string, unknown>
+  error_hint?: string
+}
+export interface TaskStats {
+  scope: string
+  total: number
+  by_status: { [k: string]: number }
+  today: number
+  week: number
+  month: number
+  running: number
+  failed: number
 }
 export interface ApprovalItem {
   id: string
@@ -221,7 +252,71 @@ export const invokeTool = (name: string, args: unknown) =>
     body: JSON.stringify({ args }),
   })
 
-export const listTasks = () => request<TaskItem[]>('/tasks')
+// 任务控制台（后端 /tasks：数组契约；空库返回 [] 前端空态渲染）
+export interface TaskListParams {
+  status?: string
+  type?: string
+  source?: string
+  ref_kind?: string
+  q?: string
+  days?: number // 今日=1 / 本周=7 / 本月=30（不传=全部时间）
+  scope?: 'mine' | 'all' // all 仅 admin 可见全租户
+  page?: number
+  size?: number
+}
+export const listTasks = (params: TaskListParams = {}) => {
+  const query = new URLSearchParams()
+  Object.entries(params).forEach(([key, value]) => {
+    if (value !== undefined && value !== '') query.set(key, String(value))
+  })
+  const qs = query.toString()
+  return request<TaskItem[]>(`/tasks${qs ? `?${qs}` : ''}`)
+}
+
+export const taskStats = (scope: string = 'mine') =>
+  request<TaskStats>(`/tasks/stats?scope=${encodeURIComponent(scope)}`)
+
+export const getTask = (id: string) => request<TaskItem>(`/tasks/${encodeURIComponent(id)}`)
+
+export const createTask = (payload: {
+  name: string
+  type: string
+  source?: string
+  ref_kind?: string
+  ref_id?: string
+  ref_label?: string
+  status?: string
+  progress?: number
+  note?: string
+}) => {
+  const query = new URLSearchParams()
+  Object.entries(payload).forEach(([key, value]) => {
+    if (value !== undefined && value !== '') query.set(key, String(value))
+  })
+  return request<TaskItem>(`/tasks?${query.toString()}`, { method: 'POST' })
+}
+
+// 操作接口（写 tool_calls 审计）
+export const retryTask = (id: string) =>
+  request<TaskItem>(`/tasks/${encodeURIComponent(id)}/retry`, { method: 'POST' })
+
+export const cancelTask = (id: string) =>
+  request<TaskItem>(`/tasks/${encodeURIComponent(id)}/cancel`, { method: 'POST' })
+
+export const deleteTask = (id: string) =>
+  request<TaskItem>(`/tasks/${encodeURIComponent(id)}`, { method: 'DELETE' })
+
+// 导出：返回 base64 文本 → 视图 Blob 下载（读入写出，不触盘）
+export interface TaskExport {
+  format: string
+  filename: string
+  mime: string
+  content: string
+}
+export const exportTask = (id: string, fmt: string) =>
+  request<TaskExport>(`/tasks/${encodeURIComponent(id)}/export?fmt=${encodeURIComponent(fmt)}`, {
+    method: 'POST',
+  })
 
 export const listApprovals = () => request<ApprovalItem[]>('/approvals')
 
@@ -499,3 +594,59 @@ export const uploadKbFile = (file: File, visibility: string) => {
   form.append('visibility', visibility)
   return request<KbUploadResult>('/kb/files', { method: 'POST', body: form })
 }
+
+// ---------- 多轮对话会话（PRD §6：会话工作台） ----------
+// 契约：GET /conversations（{total,items} 按最近活跃倒序）；POST /conversations（{title?}）；
+//      GET /conversations/{id}（详情 + messages）；POST /conversations/{id}/messages（{text} →
+//      落用户消息 → 带最近上下文自动路由 start_run → 落助手消息，返回 {user_message, agent_message, run, error}）；
+//      DELETE /conversations/{id}（连带消息删除）。隔离：越权/不存在统一 1004。
+export interface ConversationItem {
+  id: string
+  title: string
+  created_at: string
+  updated_at: string
+}
+export interface ConversationList {
+  total: number
+  items: ConversationItem[]
+}
+export interface ConversationMessageItem {
+  id: string
+  role: 'user' | 'agent'
+  content: string
+  run_id?: string
+  created_at: string
+}
+export interface ConversationDetail extends ConversationItem {
+  messages: ConversationMessageItem[]
+}
+// 发消息返回：run 与 POST /runs 同形状（前端照常轮询 GET /runs/{id} 刷新时间线）；
+// 路由/规划失败时 run 为 null、error 为服务端中文 msg（如实进气泡，不编造）
+export interface SendMessageResult {
+  user_message: string
+  agent_message: string
+  run: RunItem | null
+  error: string
+}
+
+export const listConversations = () => request<ConversationList>('/conversations')
+
+export const createConversation = (title = '') =>
+  request<ConversationItem>('/conversations', {
+    method: 'POST',
+    body: JSON.stringify({ title }),
+  })
+
+export const getConversation = (id: string) =>
+  request<ConversationDetail>(`/conversations/${encodeURIComponent(id)}`)
+
+export const sendConversationMessage = (id: string, text: string) =>
+  request<SendMessageResult>(`/conversations/${encodeURIComponent(id)}/messages`, {
+    method: 'POST',
+    body: JSON.stringify({ text }),
+  })
+
+export const deleteConversation = (id: string) =>
+  request<{ deleted: string }>(`/conversations/${encodeURIComponent(id)}`, {
+    method: 'DELETE',
+  })

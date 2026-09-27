@@ -41,7 +41,7 @@ from office_agent_runtime.planner.llm import (
 )
 from office_agent_runtime.planner.react import ReACTPlanner
 from office_agent_runtime.planner.rule import RulePlanner
-from office_agent_runtime.spec import AgentSpec, PlannerStep
+from office_agent_runtime.spec import AgentSpec, PlannerStep, compose_context_goal
 from office_agent_runtime.validation import finalize_answer
 from office_agent_server.models import Task
 from office_agent_server.rbac import CurrentUser
@@ -96,11 +96,7 @@ def begin_acting(task: Task) -> None:
 
 
 def conclude_at_boundary(task: Task, checkpoint: dict[str, Any], save: Callable[[], None]) -> None:
-    """续跑边界（断点已在末尾）：图未再执行任何步骤，直接收敛 DONE。
-
-    入参：task 当前任务行、checkpoint 解析后的检查点、save 检查点落盘回调。
-    已在 DONE 的不重复流转（末步成功后 runner 侧已流转 DONE 的正常路径）。
-    """
+    """续跑边界（断点已在末尾）：图未再执行任何步骤，直接收敛 DONE（已在 DONE 不重复流转）。"""
     if task.status != AgentState.DONE.value:
         move_state(task, AgentState.OBSERVING)
         move_state(task, AgentState.REFLECTING)
@@ -225,6 +221,8 @@ class LoopState:
         self.checkpoint = parse_checkpoint(task.checkpoint)
         self.checkpoint.setdefault("agent", spec.name)
         self.checkpoint["goal"] = goal
+        # 会话多轮上下文（checkpoint 持久化，续跑回放注入规划；口径同 spec.compose_context_goal）
+        self.goal_for_plan = compose_context_goal(str(self.checkpoint.get("context") or ""), goal)
         self.results = _replay_results(self.checkpoint)
         self.index = next_step_of(self.checkpoint)
         self.pre_approved = approved_steps(self.checkpoint)
@@ -296,7 +294,7 @@ class LoopState:
         （react 起步除外——空计划交 plan_next 逐步增量补）。"""
         planned, src = _plan_from_checkpoint(self.checkpoint)
         if planned is None:
-            planned, src = await _choose_and_plan(self.spec, self.goal)
+            planned, src = await _choose_and_plan(self.spec, self.goal_for_plan)
             self.checkpoint["plan"] = [{"tool": s.tool, "args": s.args} for s in planned]
             self.checkpoint["planner_source"] = src
         self.planner_source = src
@@ -321,7 +319,7 @@ class LoopState:
         await self.db.commit()
         planner = ReACTPlanner.from_spec(self.spec)
         try:
-            step = await planner.next_step(self.goal, self.results)
+            step = await planner.next_step(self.goal_for_plan, self.results)
         finally:
             await planner.aclose()
         if step is None:

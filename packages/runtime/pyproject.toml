@@ -39,6 +39,7 @@ ignore = [
 [tool.ruff.lint.per-file-ignores]
 "__init__.py" = ["F401"]
 "office_agent_runtime/api.py" = ["B008"]  # FastAPI 官方写法：Depends 写在参数默认值
+"office_agent_runtime/conversations_api.py" = ["B008"]  # 同上：会话端点 FastAPI 官方写法
 
 [tool.ruff.lint.isort]
 known-first-party = ["office_agent_core", "office_agent_runtime", "office_agent_server"]

@@ -15,7 +15,13 @@ from fastapi import FastAPI
 
 
 def mount(app: FastAPI) -> None:
-    """把运行时端点挂到宿主应用（勿重复调用；重复 include 会注册两份路由）。"""
+    """把运行时端点挂到宿主应用（勿重复调用；重复 include 会注册两份路由）。
+
+    会话路由（conversations）与 /runs 同层挂载：对话工作台的「发消息 → 带上下文
+    发起 run → 落消息」链路与 /runs 直发共享同一受理链。
+    """
     from office_agent_runtime.api import router
+    from office_agent_runtime.conversations_api import router as conversations_router
 
     app.include_router(router, prefix="/api/v1")
+    app.include_router(conversations_router, prefix="/api/v1")

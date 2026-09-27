@@ -61,20 +61,32 @@ async def start_run(
     goal: str,
     user: CurrentUser,
     trace_id: str,
+    context: str = "",
 ) -> dict[str, Any]:
     """发起一次运行：建 Task 行（type="agent.run"）并同步执行主循环。
 
-    Task 表没有的列（agent / goal / 断点）全存 checkpoint 与 input，不硬塞；
+    Task 表没有的列（agent / goal / 断点 / 多轮上下文）全存 checkpoint 与 input，不硬塞；
     发起人就在 Task.username 既有列上。
+    context：会话多轮上下文（PRD §6 多轮上下文理解）——对话页把前文摘要随新目标一起带来，
+    经 checkpoint 持久化，续跑时原样回放，planner 据此理解「上面那个/再加一个」类指代。
     """
     task = Task(
         tenant=user.tenant,
         username=user.username,
         type=RUN_TASK_TYPE,
         status=AgentState.IDLE.value,
-        input=dumps({"agent": spec.name, "goal": goal}),
+        name=f"{spec.name}：{goal}"[:80],
+        source="chat",
+        input=dumps({"agent": spec.name, "goal": goal, "context": context}),
         checkpoint=dumps(
-            {"agent": spec.name, "goal": goal, "next_step": 0, "steps": [], "error": ""}
+            {
+                "agent": spec.name,
+                "goal": goal,
+                "context": context,
+                "next_step": 0,
+                "steps": [],
+                "error": "",
+            }
         ),
     )
     db.add(task)
@@ -122,6 +134,8 @@ async def instant_greeting_run(
         type=RUN_TASK_TYPE,
         status=AgentState.DONE.value,
         progress=1.0,
+        name=f"智能体：{goal}"[:80],
+        source="chat",
         input=dumps({"agent": "", "goal": goal}),
         output=dumps(payload),
         checkpoint=dumps(checkpoint),

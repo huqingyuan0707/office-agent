@@ -69,6 +69,8 @@ python skills/anti-shit-code/scripts/check_arch.py   # 架构健康门禁（分�
 .venv\Scripts\python.exe scripts\generate_data_asset_docs.py   # 只重跑 docs/data-assets 文档套件
 # HTTP 级冒烟（先启动服务：.venv\Scripts\python.exe -m office_agent_server）
 .venv\Scripts\python.exe tests\smoke_v1_features.py  # V1.0 七项功能 17 断言（可重复执行）
+.venv\Scripts\python.exe tests\smoke_approval.py     # M1 审批闭环：invoke 落单/同人 1001/复核员批准/驳回流 8 断言（可重复执行）
+.venv\Scripts\python.exe tests\smoke_docs.py         # 办公文档：docx/xlsx.read + docx/pptx.write 审批写盘/穿越拒绝 8 断言（可重复执行）
 .venv\Scripts\python.exe tests\smoke_mcp_im.py       # M3 协议桥 + IM 通知 5 断言（自带假对端，无需预启服务）
 .venv\Scripts\python.exe tests\smoke_v1_2_batch_a.py # V1.2 批次 A：PPT 生成/合规检测/预算查询 9 断言（可重复执行）
 .venv\Scripts\python.exe tests\smoke_personal_affairs.py # §2.2 个人事务：待办/日程/台账/主动推送 8 断言（可重复执行）
@@ -76,6 +78,8 @@ python skills/anti-shit-code/scripts/check_arch.py   # 架构健康门禁（分�
 .venv\Scripts\python.exe tests\smoke_approval_flow.py # §2.3 审批一键提交（送审→批准落台账→同键重放）+ 意见成稿 + 一键催办 10 断言（可重复执行）
 .venv\Scripts\python.exe tests\smoke_meeting_flow.py # §2.5 会议补充三件：资料包/要点梳理/落实跟进对账 5 断言（可重复执行）
 .venv\Scripts\python.exe tests\smoke_2_4_data.py # §2.4 数据查询分析新增三件：保存→批准→复用→excel/SVG→删除 11 断言（可重复执行）
+.venv\Scripts\python.exe tests\smoke_linkage_writeback.py # 联动模式②回流：ticket.create 恒送审→批准出站写回→同键重放 6 断言（可重复执行）
+.venv\Scripts\python.exe tests\smoke_v1_2_batch_c.py # V1.2 批次 C 工作流编排：建链/run 落单即停/批准执行/脏编排拒收/删除 404 7 断言（自带服务，可重复执行）
 .venv\Scripts\python.exe tests\smoke_hr_im.py # §2.7 群摘要+§2.8 人事行政：摘要→考勤→清单→查询→预订→冲突驳回 9 断言（可重复执行）
 .venv\Scripts\python.exe tests\smoke_project_ops.py # §2.9 台账/拆解+§2.10 财务+§2.11 通用工具 9 断言（可重复执行）
 .venv\Scripts\python.exe tests\smoke_mail.py     # §2.7 邮件归类/回复草稿/行动项提取/外发预审 6 断言（可重复执行）

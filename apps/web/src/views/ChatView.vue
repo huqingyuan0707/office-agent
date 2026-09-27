@@ -1,18 +1,29 @@
 <script setup lang="ts">
-// 职责：对话主入口页（Element Plus 版）—— 员工一句话直达（PRD §4.3 纯自然语言零门槛）：
-//       输入目标 → POST /runs 省略 agent 自动路由（后端挑智能体）→ 2s 轮询 run 详情 →
-//       气泡内呈现：路由到的智能体、步骤时间线、终答/末步结果、审批挂起提示（链去审批页）；
-//       末步结果是 markdown 文档产物（日报/纪要等）时渲染为固定格式文档卡（不摊参数），
+// 职责：对话办理工作台（Element Plus 版）—— 员工一句话自然语言办事（PRD §6 零门槛/多轮/可交付）：
+//       左侧会话列表（新建/切换/删除，按最近活跃倒序）→ 右侧对话气泡流：一句话发送 →
+//       POST /conversations/{id}/messages（落用户消息 → 带最近上下文自动路由 start_run →
+//       落助手消息记 run_id）→ 2s 轮询 GET /runs/{id} 刷新步骤时间线与终答/末步结果；
+//       逐轮内容即会议纪要上下文（同会话内「上面那个/再加一个/改成张三」等指代由后端
+//       compose_context_goal 拼接回放）；本轮路由/规划失败以服务端中文 msg 如实进气泡，
+//       并给出可点击追问建议一键补发；审批挂起显示批准链入口；末步 markdown 产物渲染文档卡，
 //       「下载 Word」经 office.docx.render 真接口取 base64 还原 Blob 客户端落盘。
-// 链路：router /chat → api.createRunAuto / api.getRun（真实接口零 mock：路由不中/调用失败
-//       均以服务端中文 msg 如实进气泡，失败置空不编造）；onUnmounted 清全部轮询定时器。
-// 对齐：AGENTS.md §4 前端红线（401 中央处理、箭头函数、var(--*) token + scoped）；
-//       .trae/documents/智能体编排层实现方案.md §4（POST /runs agent 可选即自动路由）。
-import { inject, nextTick, onUnmounted, ref } from 'vue'
+// 链路：router /chat → api 会话四接口（listConversations/createConversation/getConversation/
+//       sendConversationMessage/deleteConversation）+ api.getRun 轮询；零 mock：
+//       onUnmounted 清全部轮询定时器，onMounted 恢复最近会话。
+// 对齐：AGENTS.md §4 前端红线（401 中央处理、箭头函数、var(--*) token + scoped）。
+import { inject, nextTick, onMounted, onUnmounted, ref } from 'vue'
 import { RouterLink } from 'vue-router'
-import { Download, Promotion, Service } from '@element-plus/icons-vue'
-import { createRunAuto, getRun, invokeTool } from '../api'
-import type { RunItem } from '../api'
+import { ChatDotRound, Delete, Download, Plus, Promotion, Service } from '@element-plus/icons-vue'
+import {
+  createConversation,
+  deleteConversation,
+  getConversation,
+  getRun,
+  invokeTool,
+  listConversations,
+  sendConversationMessage,
+} from '../api'
+import type { ConversationItem, RunItem } from '../api'
 import StatusBadge from '../components/StatusBadge.vue'
 
 const shell = inject('shellError') as {
@@ -20,7 +31,14 @@ const shell = inject('shellError') as {
   clearError: () => unknown
 }
 
-// 单条消息：用户气泡存 text；助手侧存 run（轮询更新）或 error（路由失败等）
+// 会话列表（工作台左栏）：按最近活跃倒序，切换即载入该会话全部历史消息
+const conversations = ref<ConversationItem[]>([])
+const activeId = ref('')
+const activeTitle = ref('')
+const loadingList = ref(false)
+const loadingDetail = ref(false)
+
+// 单条消息气泡：用户存 text；助手存 run（轮询更新）或 error（路由失败/追问建议）
 interface ChatMsg {
   key: number
   role: 'user' | 'agent'
@@ -84,16 +102,23 @@ const pollRun = (msg: ChatMsg) => {
 
 const send = async (rawGoal?: string) => {
   const goal = (typeof rawGoal === 'string' ? rawGoal : input.value).trim()
-  if (!goal || sending.value) return
+  if (!goal || sending.value || !activeId.value) return
   input.value = ''
   sending.value = true
   shell.clearError()
   pushMsg({ role: 'user', text: goal })
   const msg = pushMsg({ role: 'agent' })
   try {
-    msg.run = await createRunAuto(goal)
-    scrollBottom()
-    pollRun(msg)
+    const res = await sendConversationMessage(activeId.value, goal)
+    if (res.run) {
+      msg.run = res.run
+      scrollBottom()
+      pollRun(msg)
+    } else {
+      // 后端已落库助手消息（纯寒暄/路由失败），直接呈现服务端文案，不重复发起 run
+      msg.error = res.error || '未收到可用回复'
+    }
+    void refreshList() // 会话 updated_at 变化，列表静默回排
   } catch (e) {
     msg.error = (e as Error).message || '发起运行失败'
   } finally {
@@ -140,11 +165,93 @@ const answerSegments = (text: string) => {
 }
 
 const quickSend = (goal: string) => {
-  if (sending.value || !goal.trim()) return
+  if (sending.value || !goal.trim() || !activeId.value) return
   void send(goal)
 }
 
-// 空态引导示例：与终答标签同口径，点击即发起
+// ---------- 会话列表（新建/切换/删除 + 追问建议） ----------
+const refreshList = async () => {
+  loadingList.value = true
+  try {
+    conversations.value = (await listConversations()).items
+  } catch (e) {
+    shell.showError((e as Error).message || '获取会话列表失败')
+  } finally {
+    loadingList.value = false
+  }
+}
+
+const titleOf = (c: ConversationItem) => (c.title && c.title !== '新对话' ? c.title : '新对话')
+
+const openConversation = async (id: string) => {
+  if (id === activeId.value) return
+  shell.clearError()
+  activeId.value = id
+  activeTitle.value = titleOf(conversations.value.find((c) => c.id === id) ?? { id, title: '新对话' } as ConversationItem)
+  loadingDetail.value = true
+  try {
+    const detail = await getConversation(id)
+    activeTitle.value = titleOf(detail)
+    messages.value = detail.messages.map((m) => {
+      const item: ChatMsg = { key: ++seq, role: m.role, text: m.content }
+      if (m.role === 'agent' && m.run_id) {
+        item.run = { run_id: m.run_id } as RunItem
+        void getRun(m.run_id)
+          .then((view) => {
+            item.run = view
+            scrollBottom()
+          })
+          .catch(() => {
+            item.error = '历史运行详情获取失败'
+          })
+      }
+      return item
+    })
+    scrollBottom()
+  } catch (e) {
+    shell.showError((e as Error).message || '打开会话失败')
+    activeId.value = ''
+  } finally {
+    loadingDetail.value = false
+  }
+}
+
+const newConversation = async () => {
+  shell.clearError()
+  try {
+    const item = await createConversation()
+    await refreshList()
+    await openConversation(item.id)
+  } catch (e) {
+    shell.showError((e as Error).message || '新建会话失败')
+  }
+}
+
+const removeConversation = async (id: string) => {
+  shell.clearError()
+  try {
+    await deleteConversation(id)
+    conversations.value = conversations.value.filter((c) => c.id !== id)
+    if (activeId.value === id) {
+      activeId.value = ''
+      messages.value = []
+    }
+  } catch (e) {
+    shell.showError((e as Error).message || '删除会话失败')
+  }
+}
+
+// 追问卡：仅对「路由/规划失败/缺信息」的服务端错误给出可点击补发建议（不替用户猜业务数据）
+const followUpHints = (msg: ChatMsg) => {
+  if (msg.role !== 'agent' || msg.run || !msg.error) return []
+  const e = msg.error
+  const hints: string[] = []
+  if (/缺少|缺失|missing/i.test(e)) hints.push('请补充信息：')
+  if (/未配置|不可用|依赖/i.test(e)) hints.push('请用现有能力尽量完成')
+  return hints.slice(0, 3)
+}
+
+// 空态引导示例：与终答标签同口径，点击即发起（需已选中会话）
 const emptyExamples = ['生成今天的工作日报', '记一下明天要跟进的事']
 
 // ---------- 文档卡：末步结果里 markdown 产物按固定格式渲染（PRD §2.1 一键导出 Word） ----------
@@ -321,6 +428,15 @@ const lastResultText = (run: RunItem) => {
   return ''
 }
 
+onMounted(async () => {
+  await refreshList()
+  if (conversations.value.length) {
+    await openConversation(conversations.value[0].id)
+  } else {
+    await newConversation()
+  }
+})
+
 onUnmounted(() => {
   timers.forEach((timer) => clearInterval(timer))
   timers.clear()
@@ -329,51 +445,111 @@ onUnmounted(() => {
 
 <template>
   <div class="chat-page">
-    <el-card class="chat-card" shadow="never">
-      <template #header>
-        <div class="chat-head">
-          <span class="card-title">对话办理</span>
-          <span class="muted head-hint">
-            用一句话说明要办的事，系统自动挑选智能体执行；涉及审批的写动作会挂起待复核员批准
-          </span>
+    <div class="conv-layout">
+      <!-- 左：会话列表（多轮上下文隔离在各会话内，最近活跃置顶） -->
+      <aside class="conv-side">
+        <div class="side-head">
+          <span class="card-title">会话</span>
+          <el-button size="small" type="primary" :icon="Plus" :loading="loadingList" @click="newConversation"
+            >新对话</el-button
+          >
         </div>
-      </template>
-
-      <el-scrollbar ref="listRef" class="msg-list">
-        <!-- 空态引导：示例短语渲染为可点击标签，点一下即发起（与终答标签同机制） -->
-        <el-empty v-if="!messages.length" :image-size="86">
-          <template #description>
-            <span class="empty-hint">还没有对话。试试：</span>
-            <el-tag
-              v-for="ex in emptyExamples"
-              :key="ex"
-              class="example-tag"
+        <el-scrollbar class="side-list">
+          <div
+            v-for="c in conversations"
+            :key="c.id"
+            class="conv-item"
+            :class="{ active: c.id === activeId }"
+            @click="openConversation(c.id)"
+          >
+            <el-icon class="conv-icon"><ChatDotRound /></el-icon>
+            <div class="conv-meta">
+              <span class="conv-title">{{ titleOf(c) }}</span>
+              <span class="conv-time">{{ c.updated_at.slice(11, 16) }}</span>
+            </div>
+            <el-button
+              class="conv-del"
               size="small"
-              type="primary"
-              effect="light"
-              round
-              @click="quickSend(ex)"
-            >
-              {{ ex }}
-            </el-tag>
-          </template>
-        </el-empty>
-
-        <template v-for="m in messages" :key="m.key">
-          <!-- 用户气泡：右对齐，品牌色实底 -->
-          <div v-if="m.role === 'user'" class="row user-row">
-            <div class="bubble user-bubble">{{ m.text }}</div>
+              text
+              type="danger"
+              :icon="Delete"
+              @click.stop="removeConversation(c.id)"
+            />
           </div>
+          <el-empty v-if="!conversations.length" :image-size="50" description="暂无会话" />
+        </el-scrollbar>
+      </aside>
 
-          <!-- 助手气泡：左对齐，头像 + 白底卡 -->
-          <div v-else class="row agent-row">
-            <el-avatar :size="30" class="agent-avatar">
-              <el-icon><Service /></el-icon>
-            </el-avatar>
-            <div class="bubble agent-bubble">
-              <el-alert v-if="m.error" type="error" :title="m.error" show-icon :closable="false" />
+      <el-card class="chat-card" shadow="never">
+        <template #header>
+          <div class="chat-head">
+            <div class="head-title-row">
+              <span class="card-title">对话办理</span>
+              <el-tag v-if="activeId" size="small" effect="plain" round>{{ activeTitle }}</el-tag>
+            </div>
+            <span class="muted head-hint">
+              用一句话说明要办的事，系统自动挑选智能体执行；同会话内可多轮补充修正，涉及审批的写动作会挂起待复核员批准
+            </span>
+          </div>
+        </template>
 
-              <template v-else-if="m.run">
+        <el-scrollbar ref="listRef" class="msg-list">
+          <!-- 未选中会话：空态引导先新建 -->
+          <el-empty v-if="!activeId" :image-size="86" description="新建或选择左侧会话开始对话" />
+          <!-- 打开会话加载中 -->
+          <el-skeleton v-else-if="loadingDetail" :rows="4" animated />
+          <!-- 空态引导：示例短语渲染为可点击标签，点一下即发起（与终答标签同机制） -->
+          <el-empty v-else-if="!messages.length" :image-size="86">
+            <template #description>
+              <span class="empty-hint">还没有对话。试试：</span>
+              <el-tag
+                v-for="ex in emptyExamples"
+                :key="ex"
+                class="example-tag"
+                size="small"
+                type="primary"
+                effect="light"
+                round
+                @click="quickSend(ex)"
+              >
+                {{ ex }}
+              </el-tag>
+            </template>
+          </el-empty>
+
+          <template v-else v-for="m in messages" :key="m.key">
+            <!-- 用户气泡：右对齐，品牌色实底 -->
+            <div v-if="m.role === 'user'" class="row user-row">
+              <div class="bubble user-bubble">{{ m.text }}</div>
+            </div>
+
+            <!-- 助手气泡：左对齐，头像 + 白底卡 -->
+            <div v-else class="row agent-row">
+              <el-avatar :size="30" class="agent-avatar">
+                <el-icon><Service /></el-icon>
+              </el-avatar>
+              <div class="bubble agent-bubble">
+                <div v-if="m.error">
+                  <el-alert type="error" :title="m.error" show-icon :closable="false" />
+                  <!-- 追问建议卡：只针对服务端缺信息/依赖不可用，点击即补发 -->
+                  <div v-if="followUpHints(m).length" class="follow-up">
+                    <span class="muted">可尝试：</span>
+                    <el-tag
+                      v-for="h in followUpHints(m)"
+                      :key="h"
+                      class="example-tag"
+                      size="small"
+                      type="warning"
+                      effect="light"
+                      round
+                      @click="quickSend(h)"
+                    >
+                      {{ h }}
+                    </el-tag>
+                  </div>
+                </div>
+
+                <template v-else-if="m.run">
                 <div class="run-head">
                   <el-tag size="small" type="primary" effect="dark" round>
                     {{ m.run.agent || '智能体' }}
@@ -496,13 +672,14 @@ onUnmounted(() => {
           type="primary"
           :icon="Promotion"
           :loading="sending"
-          :disabled="!input.trim()"
+          :disabled="!input.trim() || !activeId"
           @click="send()"
         >
           发送
         </el-button>
       </div>
     </el-card>
+    </div>
   </div>
 </template>
 
@@ -511,13 +688,100 @@ onUnmounted(() => {
   display: flex;
   justify-content: center;
 }
+.conv-layout {
+  display: flex;
+  gap: 14px;
+  width: min(1180px, 100%);
+  align-items: stretch;
+}
+.conv-side {
+  width: 236px;
+  flex: none;
+  background: #fff;
+  border: 1px solid var(--line);
+  border-radius: var(--radius-sm);
+  box-shadow: var(--shadow-card);
+  display: flex;
+  flex-direction: column;
+}
+.side-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  padding: 12px 14px;
+  border-bottom: 1px solid var(--line);
+}
+.side-list {
+  flex: 1;
+  max-height: 56vh;
+}
+.conv-item {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 10px 12px;
+  cursor: pointer;
+  border-left: 3px solid transparent;
+  border-bottom: 1px solid var(--line);
+}
+.conv-item:hover {
+  background: var(--brand-soft);
+}
+.conv-item.active {
+  background: var(--brand-soft);
+  border-left-color: var(--brand);
+}
+.conv-icon {
+  color: var(--muted);
+  flex: none;
+}
+.conv-item.active .conv-icon {
+  color: var(--brand);
+}
+.conv-meta {
+  flex: 1;
+  min-width: 0;
+}
+.conv-title {
+  display: block;
+  font-size: 13px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.conv-time {
+  font-size: 11px;
+  color: var(--muted);
+}
+.conv-del {
+  flex: none;
+  visibility: hidden;
+}
+.conv-item:hover .conv-del,
+.conv-item.active .conv-del {
+  visibility: visible;
+}
 .chat-card {
-  width: min(880px, 100%);
+  flex: 1;
+  min-width: 0;
 }
 .chat-head {
   display: flex;
   flex-direction: column;
   gap: 2px;
+}
+.head-title-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.follow-up {
+  margin-top: 8px;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex-wrap: wrap;
 }
 .msg-list {
   height: 56vh;

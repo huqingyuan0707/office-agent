@@ -58,7 +58,17 @@ class User(Base):
 
 
 class Task(Base):
-    """异步任务（长任务提交/轮询/检查点，状态机 pending/running/done/failed）。"""
+    """异步任务（任务控制台的落库位：长任务提交/轮询/检查点/操作留痕）。
+
+    状态机：pending(排队) / running(执行中) / waiting_approval(待确认) /
+    done(已完成) / failed(失败) / cancelled(已取消)。
+
+    业务口径扩展列（2026-09-27 任务控制台）：
+    - name：人类可读任务名（缺省由出参层按 type/checkpoint 推断，不强制落库）；
+    - source：任务来源——chat 对话办理 / docs 文档中心 / breakdown 任务拆解 /
+      scheduled 定时任务 / manual 手动登记（缺省 manual，不阻断旧数据读取）；
+    - ref_kind/ref_id/ref_label：关联对象三元组（项目/文档/审批单/会议等）。
+    """
 
     __tablename__ = "tasks"
 
@@ -68,6 +78,11 @@ class Task(Base):
     type: Mapped[str] = mapped_column(String(48), default="")
     status: Mapped[str] = mapped_column(String(16), default="pending", index=True)
     progress: Mapped[float] = mapped_column(Float, default=0)
+    name: Mapped[str] = mapped_column(String(200), default="")
+    source: Mapped[str] = mapped_column(String(24), default="", index=True)
+    ref_kind: Mapped[str] = mapped_column(String(24), default="")
+    ref_id: Mapped[str] = mapped_column(String(64), default="", index=True)
+    ref_label: Mapped[str] = mapped_column(String(200), default="")
     input: Mapped[str] = mapped_column(Text, default="{}")
     output: Mapped[str] = mapped_column(Text, default="{}")
     error: Mapped[str] = mapped_column(Text, default="{}")

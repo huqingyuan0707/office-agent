@@ -66,6 +66,20 @@ class AgentSpec:
         }
 
 
+def compose_context_goal(context: str, goal: str) -> str:
+    """多轮上下文目标拼接（路由与规划**同一口径**，见 router 红线）。
+
+    context 非空时拼接为「前文上下文 + 用户新目标」，使「上面那个/再加一个/改成张三」
+    这类指代能同时命中路由规则与规划规则；context 为空时原样返回新目标（首轮行为零变化，
+    与 POST /runs 直发完全一致）。四处共用：路由 route_agent_spec / 规划 prepare_plan /
+    ReACT plan_next / 会话 API 发消息。
+    """
+    trimmed = (context or "").strip()
+    if not trimmed:
+        return goal
+    return f"{trimmed}\n\n本次目标：{goal}"
+
+
 def parse_agent_spec(raw: Any) -> AgentSpec:
     """解析并校验 agent.yaml 文档（非法配置一律中文报错，绝不静默降级）。"""
     if not isinstance(raw, dict):

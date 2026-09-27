@@ -38,3 +38,36 @@ class RunStep(Base):
     approval_id: Mapped[str] = mapped_column(String(32), default="")
     trace_id: Mapped[str] = mapped_column(String(40), default="")
     created_at: Mapped[datetime] = mapped_column(default=_now)
+
+
+class Conversation(Base):
+    """多轮对话会话：员工一句话发起的对话工作台（PRD §4.3 会话入口）。
+
+    链路：POST /conversations 新建 → POST /conversations/{id}/messages 发消息 →
+      runtime 会话 API 构造最近上下文 → 复用 POST /runs 同一受理链发起 run →
+      ConversationMessage 记录用户/助手消息与 run_id，前端轮询 run 详情刷新。
+    口径：会话与消息按 (tenant, username) 隔离；删除会话连带消息；created_at 保留审计。
+    """
+
+    __tablename__ = "conversations"
+
+    id: Mapped[str] = mapped_column(String(32), primary_key=True, default=_uid)
+    tenant: Mapped[str] = mapped_column(String(64), nullable=False, index=True)
+    username: Mapped[str] = mapped_column(String(64), nullable=False, index=True)
+    title: Mapped[str] = mapped_column(String(120), default="新对话")
+    created_at: Mapped[datetime] = mapped_column(default=_now)
+    updated_at: Mapped[datetime] = mapped_column(default=_now, onupdate=_now)
+
+
+class ConversationMessage(Base):
+    """会话内消息留痕（用户消息 + 助手消息；助手消息可关联 run_id 供前端轮询详情）。"""
+
+    __tablename__ = "conversation_messages"
+
+    id: Mapped[str] = mapped_column(String(32), primary_key=True, default=_uid)
+    tenant: Mapped[str] = mapped_column(String(64), nullable=False, index=True)
+    conversation_id: Mapped[str] = mapped_column(String(32), index=True)
+    role: Mapped[str] = mapped_column(String(16), default="user")
+    content: Mapped[str] = mapped_column(Text, default="")
+    run_id: Mapped[str] = mapped_column(String(32), default="", index=True)
+    created_at: Mapped[datetime] = mapped_column(default=_now)
