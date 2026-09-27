@@ -1,7 +1,8 @@
 <script setup lang="ts">
 // 职责：执行链路调试面板（纯展示组件）—— 管理员查看单条 Agent 回复的完整执行过程
 // 链路：ChatView 传 run.trace（GET /runs/{id} 仅管理员透出）+ 会话 ID → 按执行时序渲染
-//      意图/思考/路由/工具调用/工具返回/汇总分段；默认收起，右上角收起/展开；零请求零 mock
+//      意图/思考/路由/工具调用/工具返回/汇总分段（思考蓝/路由绿/调用橙/返回灰）；默认收起，
+//      右上收起 + 导出JSON（trace 原样落盘供复现）；零请求零 mock
 // 对齐：AGENTS.md §4 前端红线（纯展示组件零请求；样式 var(--*) token + scoped；箭头函数）
 import type { RunTrace } from '../api'
 
@@ -14,26 +15,40 @@ const collapse = () => {
   emit('close')
 }
 
-// 步骤类型 → 左侧色条语义（未知类型一律灰，不猜不编造）
+// 步骤类型 → 左侧色条语义（思考蓝 / 路由绿 / 工具调用橙 / 工具返回灰，未知类型一律灰）
 const KIND_TONE: { [key: string]: string } = {
-  intent: '#1f6feb',
-  thought: '#8250df',
-  route: '#1a7f37',
-  tool_call: '#9a6700',
-  tool_result: '#0969da',
-  summary: '#cf222e',
+  intent: '#409eff',
+  thought: '#409eff',
+  route: '#67c23a',
+  tool_call: '#e6a23c',
+  tool_result: '#909399',
+  summary: '#f56c6c',
 }
 
 const toneOf = (stepType: string) => KIND_TONE[stepType] ?? '#8c959f'
 
 const costText = (ms: unknown) => (typeof ms === 'number' ? `${ms}ms` : '')
+
+// 导出调试日志：trace 原样下载 JSON（评测与问题复现用；与下载 Word 同一 Blob 链路）
+const exportJson = () => {
+  const text = JSON.stringify({ session_id: props.sessionId, trace: props.trace }, null, 2)
+  const url = URL.createObjectURL(new Blob([text], { type: 'application/json' }))
+  const a = document.createElement('a')
+  a.href = url
+  a.download = `trace-${props.trace.run_id || 'run'}.json`
+  a.click()
+  URL.revokeObjectURL(url)
+}
 </script>
 
 <template>
   <div class="trace-panel">
     <div class="trace-head">
       <span class="trace-title">【执行链路｜会话ID: {{ sessionId || '—' }}】</span>
-      <el-button size="small" text type="primary" @click="collapse">收起</el-button>
+      <div class="trace-actions">
+        <el-button size="small" text type="primary" @click="exportJson">导出JSON</el-button>
+        <el-button size="small" text type="primary" @click="collapse">收起</el-button>
+      </div>
     </div>
     <div class="trace-body">
       <div v-for="s in props.trace.steps" :key="`${s.step_no}-${s.step_type}`" class="trace-step">
@@ -79,6 +94,11 @@ const costText = (ms: unknown) => (typeof ms === 'number' ? `${ms}ms` : '')
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
+}
+.trace-actions {
+  display: flex;
+  gap: 4px;
+  flex: none;
 }
 .trace-body {
   padding: 4px 12px 10px;

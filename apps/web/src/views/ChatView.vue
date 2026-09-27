@@ -158,8 +158,14 @@ const isAdmin = () => {
   return roles.includes('admin') || roles.includes('*')
 }
 
+// 调试面板展开记忆：按 run_id 持有，切会话/重进历史不丢失展开状态（页级内存，随刷新清零）
+const traceOpen = new Map<string, boolean>()
+
+const traceKey = (msg: ChatMsg) => msg.run?.run_id ?? `local-${msg.key}`
+
 const toggleTrace = (msg: ChatMsg) => {
   msg.showTrace = !msg.showTrace
+  traceOpen.set(traceKey(msg), !!msg.showTrace)
   scrollBottom()
 }
 
@@ -214,6 +220,7 @@ const openConversation = async (id: string) => {
         void getRun(m.run_id)
           .then((view) => {
             item.run = view
+            item.showTrace = traceOpen.get(view.run_id) === true
             scrollBottom()
           })
           .catch(() => {
@@ -669,7 +676,7 @@ onUnmounted(() => {
               <!-- 执行链路调试：仅管理员可见（普通用户不渲染）；trace 随 run 轮询与历史加载到来 -->
               <div v-if="isAdmin() && m.run && m.run.trace" class="trace-toggle">
                 <el-button size="small" text :icon="Memo" @click="toggleTrace(m)">
-                  {{ m.showTrace ? '收起执行详情' : '展开执行详情' }}
+                  {{ m.showTrace ? '📋 收起' : '📋 执行链路' }}
                 </el-button>
               </div>
               <RunTracePanel
