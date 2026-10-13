@@ -367,6 +367,22 @@ docker compose -f deploy/docker-compose.yml up -d redis   # redis:8-alpine（刻
 - 刻意不做：LangGraph checkpointer 进 Redis、会话缓存、任务队列、业务数据缓存、redlock 库。
 - HTTP 级冒烟：`python tests/smoke_redis.py [redis_url]`（五项断言，可重复执行；默认死端口验证降级路径）。
 
+## Agent 评测（trajectory 评估 harness）
+
+冒烟测试验证「功能能用」，评测 harness 回答「Agent 做得好不好、改 prompt 后有没有退化」——数据集驱动、确定性 scorer 离线可跑、零新依赖：
+
+```powershell
+.venv\Scripts\python.exe -m office_agent_runtime.eval <dataset.yaml> [--plugins DIR] [--db PATH] [--json OUT] [--md OUT]
+```
+
+- **数据集**：YAML `cases` 列表，每条 = `{id, agent, goal, expect_tools, tool_match, expect_numbers, answer_contains}`（字段口径见 `packages/runtime/office_agent_runtime/eval/dataset.py`，坏数据中文报错不静默跳过）；
+- **执行**：in-process 复用 `runner.start_run`（与 `POST /runs`、审批续跑同一执行入口），trajectory 从 `Task.checkpoint` 提取（与断点回放同源），评测落独立临时库、不碰 dev/生产库；
+- **scorer 链**（可插拔，`Scorer` Protocol）：`tool_selection`（工具选择正确率，exact/subsequence）、`number_grounding`（复用 validation 同款数字溯源口径）、`answer_keyword`（终答关键词命中率）、`answer_judge`（LLM judge 预留位，未实现如实 skipped）；
+- **报告**：Markdown 人读 + JSON 机器可读（CI 存档、跨版本对比）；退出码 0=全过 / 1=有未过或空集 / 2=数据集错误；
+- **示例**：`packages/runtime/office_agent_runtime/eval/examples/demo.yaml`（含一条**故意失败**用例，演示「目标未命中规则」能被捕捉）。
+
+单测覆盖：数据集校验（正常/六类坏数据）、四 scorer 路径（含 skipped 语义）、harness 端到端（命中/未命中/智能体不存在/空集）——`packages/runtime/tests/test_eval_pipeline.py`。
+
 ## 数据库迁移
 
 `alembic` 是持久库 schema 演进唯一入口：async 引擎 `env.py`，URL 唯一出处 `Settings.DATABASE_URL`。

@@ -368,6 +368,22 @@ docker compose -f deploy/docker-compose.yml up -d redis   # redis:8-alpine (deli
 - HTTP-level smoke: `python tests/smoke_redis.py [redis_url]` (five assertions, re-runnable; defaults
   to a dead port to exercise the degradation path).
 
+## Agent Evaluation (trajectory eval harness)
+
+Smoke tests prove "features work"; the eval harness answers "is the agent doing well, did the prompt change regress anything" — dataset-driven, deterministic scorers, fully offline, zero new dependencies:
+
+```bash
+.venv/Scripts/python.exe -m office_agent_runtime.eval <dataset.yaml> [--plugins DIR] [--db PATH] [--json OUT] [--md OUT]
+```
+
+- **Dataset**: YAML `cases` list; each entry = `{id, agent, goal, expect_tools, tool_match, expect_numbers, answer_contains}` (field contract in `packages/runtime/office_agent_runtime/eval/dataset.py`; bad data fails with a Chinese, actionable error — never silently skipped);
+- **Execution**: in-process reuse of `runner.start_run` (the same execution entry as `POST /runs` and approval resume); trajectories are extracted from `Task.checkpoint` (same source as breakpoint replay); evaluation runs against its own temp DB, never the dev/prod one;
+- **Scorer chain** (pluggable, `Scorer` Protocol): `tool_selection` (tool-choice accuracy, exact/subsequence), `number_grounding` (reuses validation's number-grounding rules), `answer_keyword` (final-answer keyword hit rate), `answer_judge` (LLM-judge placeholder, honestly `skipped` until implemented);
+- **Report**: Markdown for humans + JSON for machines (CI artifacts, cross-version comparison); exit code 0 = all passed / 1 = failures or empty dataset / 2 = dataset error;
+- **Example**: `packages/runtime/office_agent_runtime/eval/examples/demo.yaml` (includes one **deliberately failing** case to show that "goal matched no rule" is caught).
+
+Unit tests cover dataset validation (valid + six bad-data paths), all four scorer paths (including skip semantics), and harness end-to-end (hit / miss / agent-not-found / empty) — `packages/runtime/tests/test_eval_pipeline.py`.
+
 ## Database Migrations
 
 `alembic` is the single entry point for schema evolution: async `env.py`, URL sourced only from `Settings.DATABASE_URL`. Model column changes must ship as `autogenerate` migrations (`create_all` never ALTERs); CI runs `alembic check` for drift.

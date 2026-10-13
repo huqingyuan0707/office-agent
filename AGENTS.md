@@ -88,6 +88,7 @@ python skills/anti-shit-code/scripts/check_arch.py   # 架构健康门禁（分�
 .venv\Scripts\python.exe tests\smoke_milvus.py   # ADR-0005 阶段二：Milvus 通道与三级降级链 6 断言（可带 [base_url] [期望通道]；可选组件，未配 URI 即断言现行为不变）
 .venv\Scripts\python.exe tests\smoke_redis.py    # ADR-0005 阶段三：Redis 缓存降级与调度环租约锁 5 断言（可带 [redis_url]；默认死端口验证降级）
 .venv\Scripts\python.exe tests\smoke_compose_chain.py # ADR-0006 对话办理大模型串联：doc.compose 注册/日报与跨域链末步成稿/react 自由目标/直接 invoke 5 段（LLM 成稿慢，客户端超时 300s）
+.venv\Scripts\python.exe -m office_agent_runtime.eval packages/runtime/office_agent_runtime/eval/examples/demo.yaml --plugins packages/runtime/office_agent_runtime/eval/examples/plugins  # Agent 评测 harness：示例数据集 4 用例（含 1 条故意失败）→ Markdown 报告 + 退出码 1（离线可跑，可重复执行）
 # 前端
 cd apps/web && npm run build
 ```
