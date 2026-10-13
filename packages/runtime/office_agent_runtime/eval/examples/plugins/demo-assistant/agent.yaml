@@ -1,0 +1,21 @@
+name: demo-assistant
+description: 评测演示智能体：待办查询 / 空闲查询 / 工作台账三步规则链（全读口径，零 LLM 可跑）
+system_prompt: |
+  你是评测演示助手，只能使用白名单内的工具。
+tools: [office.todo.list, office.schedule.freebusy, office.worklog.generate]
+max_steps: 4
+rules:
+  - match: ["待办", "todo"]
+    steps:
+      - tool: office.todo.list
+        args: {status: "open"}
+  - match: ["空闲"]
+    steps:
+      - tool: office.schedule.freebusy
+        args: {}
+  - match: ["台账", "周报"]
+    steps:
+      - tool: office.todo.list
+        args: {status: "done"}
+      - tool: office.worklog.generate
+        args: {period: "weekly"}

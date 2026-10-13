@@ -1,0 +1,37 @@
+# 评测示例数据集（跑法见 README「Agent 评测」一节）
+#
+#   .venv\Scripts\python.exe -m office_agent_runtime.eval ^
+#       packages/runtime/office_agent_runtime/eval/examples/demo.yaml ^
+#       --plugins packages/runtime/office_agent_runtime/eval/examples/plugins
+#
+# 字段口径（对齐 eval/dataset.py）：
+#   id               必填，用例唯一标识
+#   agent            必填，plugins/*/agent.yaml 里的 name
+#   goal             必填，用户目标（一句话）
+#   expect_tools     可选，期望的成功步骤工具序列（按步号升序）
+#   tool_match       可选，exact（默认，完全一致）/ subsequence（按序包含）
+#   expect_numbers   可选，期望出现在终答中的数字（需 LLM 终答，否则该 scorer skip）
+#   answer_contains  可选，终答应包含的关键词（需 LLM 终答，否则该 scorer skip）
+#
+# 注意：no-rule-matched 是**故意失败**的用例——证明评测能捕捉「目标未命中规则」
+#       的运行失败（该用例会让整批退出码为 1，属预期）。
+cases:
+  - id: todo-list-open
+    agent: demo-assistant
+    goal: 看看我的待办清单
+    expect_tools: [office.todo.list]
+
+  - id: freebusy-today
+    agent: demo-assistant
+    goal: 查一下我今天的空闲时间
+    expect_tools: [office.schedule.freebusy]
+
+  - id: worklog-chain
+    agent: demo-assistant
+    goal: 生成本周工作台账
+    expect_tools: [office.todo.list, office.worklog.generate]
+
+  - id: no-rule-matched
+    agent: demo-assistant
+    goal: 帮我预订去月球的机票
+    expect_tools: []
