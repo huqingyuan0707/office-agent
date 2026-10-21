@@ -416,6 +416,7 @@ After cloning, run `git config core.hooksPath githooks` once to enable commit ho
 | R0-R3 | Orchestration runtime: AgentSpec / dual planners / approval suspend + resume / numeric validation / run panel | ✅ |
 | V1.0 | PRD §5.1 office features (reports / minutes / knowledge / OCR / compare / planner / templates) + notifications | ✅ |
 | M3 | mcp-bridge standard MCP bridge (transport routing + tools/list auto-discovery) + IM approval notifications | ✅ |
+| Feature progress reconciliation | `docs/功能进度.md` (PRD line-by-line reconciliation + ordered backlog) with gaps F1-F6 closed (fine-grained tool permissions / real batch task creation / sensitive-operation alerts / rewriting & translation / PPT outline / batch image extraction) | ✅ |
 
 ## Documentation
 
