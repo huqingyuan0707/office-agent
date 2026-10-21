@@ -5,7 +5,9 @@
   结构化子任务（标题/交付物/责任人/期限/优先级/依赖）；参与人缺失或工期缺失时
   **不臆造**：对应字段留空并在 missing_info 里给出可照做的追问提示（PRD §6.5.1）；
 - office.task.commit（office:write + 恒送审 + 幂等键必带）：确认后的批量建单，
-  审批闸门即 PRD §6.5.4 的二次确认，复核人批准后才真正执行。
+  审批闸门即 PRD §6.5.4 的二次确认，复核人批准后才真正执行——**真实落待办存储**
+  （与 office.todo.create 同一存储与字段口径，待办归属各责任人），
+  同 (tenant, idem_key) 重放回放原回执绝不双单；责任人通知由宿主侧站内通知通道发出。
 
 链路：__init__.register_all() → registry.register(spec) → executor.call 执行 handler。
 红线：纯本地实现，不触及 ORM / FastAPI；责任人只从入参参与人中识别，绝不凭空造人。
@@ -21,6 +23,8 @@ from typing import Any
 from office_agent_core.contracts import ToolContext, ToolSpec
 from office_agent_core.errors import BusinessError, ErrorCode
 from office_agent_core.registry import register
+
+from .affairs_commit import commit_todos
 
 logger = logging.getLogger(__name__)
 
@@ -90,6 +94,19 @@ def _validate_date(value: str) -> str:
     except ValueError as exc:
         raise BusinessError(
             ErrorCode.PARAM_INVALID, f"参数 start_date 必须是 YYYY-MM-DD 格式（当前：{value}）"
+        ) from exc
+    return value
+
+
+def _validate_due(value: str) -> str:
+    """due_date 口径校验：给了就必须是 YYYY-MM-DD（缺日期不臆造，留空即不设截止）。"""
+    if not value:
+        return ""
+    try:
+        date.fromisoformat(value)
+    except ValueError as exc:
+        raise BusinessError(
+            ErrorCode.PARAM_INVALID, f"参数 due_date 必须是 YYYY-MM-DD 格式（当前：{value}）"
         ) from exc
     return value
 
@@ -164,11 +181,18 @@ async def _task_decompose(ctx: ToolContext, args: dict[str, Any]) -> dict[str, A
 
 
 async def _task_commit(ctx: ToolContext, args: dict[str, Any]) -> dict[str, Any]:
-    """office.task.commit：批量建单回执（审批通过后由 decide 路径触发执行）。
+    """office.task.commit：批量建单**真实落地**（审批通过后由 decide 路径触发执行）。
 
-    演示实现无外部副作用，只返回建单回执；真实接入时在此落待办存储并推送责任人通知。
+    落盘口径：逐条写入本地事务存储（与 office.todo.create 同一存储与字段口径），
+    待办归属各责任人（owner），责任人可在自己的 office.todo.list 看到；
+    幂等口径：同 (tenant, idem_key) 重复提交回放原回执（replayed=True）绝不双单；
+    不臆造：缺责任人（owner）执行期诚实 1001 拒收（PRD §6.5.1 缺人员信息必须先追问）。
     """
     idem_key = str(args.get("idem_key") or "").strip()
+    if len(idem_key) < 8:
+        raise BusinessError(
+            ErrorCode.PARAM_INVALID, "参数 idem_key 至少 8 字符（批量建单的幂等回放依据）"
+        )
     tasks_raw = args.get("tasks")
     if not isinstance(tasks_raw, list) or not tasks_raw:
         raise BusinessError(ErrorCode.PARAM_INVALID, "参数 tasks 必须为非空数组（每项含 title）")
@@ -178,34 +202,62 @@ async def _task_commit(ctx: ToolContext, args: dict[str, Any]) -> dict[str, Any]
             f"单次最多创建 {_MAX_SUBTASKS} 条任务（当前 {len(tasks_raw)} 条）",
         )
 
-    created: list[dict[str, str]] = []
+    items: list[dict[str, Any]] = []
     for index, item in enumerate(tasks_raw, 1):
-        if not isinstance(item, dict) or not str(item.get("title") or "").strip():
+        if not isinstance(item, dict):
+            raise BusinessError(ErrorCode.PARAM_INVALID, f"第 {index} 项任务必须是对象")
+        title = str(item.get("title") or "").strip()
+        if not title:
             raise BusinessError(
                 ErrorCode.PARAM_INVALID, f"第 {index} 项任务缺少 title（不臆造任务标题）"
             )
         owner = str(item.get("owner") or "").strip()
-        created.append(
+        if not owner:
+            raise BusinessError(
+                ErrorCode.PARAM_INVALID,
+                f"第 {index} 项任务（{title}）缺少责任人（owner）："
+                "请先指派责任人再建单（缺人员信息不臆造接收人）",
+            )
+        priority = str(item.get("priority") or "medium").strip()
+        if priority not in ("low", "medium", "high"):
+            raise BusinessError(
+                ErrorCode.PARAM_INVALID,
+                f"第 {index} 项任务（{title}）priority 只能是 low/medium/high",
+            )
+        items.append(
             {
-                "title": str(item["title"]).strip(),
+                "title": title,
                 "owner": owner,
-                "due_date": str(item.get("due_date") or "").strip(),
-                "priority": str(item.get("priority") or "medium").strip(),
+                "due_date": _validate_due(str(item.get("due_date") or "").strip()),
+                "priority": priority,
                 "description": str(item.get("description") or "").strip(),
-                "notified": "true" if owner else "false",
             }
         )
-    notified_owners = sorted({item["owner"] for item in created if item["owner"]})
+
+    receipt = await commit_todos(ctx.tenant, idem_key, items)
+    created = list(receipt.get("created") or [])
+    owners = sorted({str(row.get("owner") or "") for row in created if row.get("owner")})
     return {
         "idem_key": idem_key,
-        "created": created,
+        "created": [
+            {
+                "id": row.get("id", ""),
+                "title": row.get("title", ""),
+                "owner": row.get("owner", ""),
+                "due_date": row.get("due_date", ""),
+                "priority": row.get("priority", ""),
+                "status": row.get("status", ""),
+            }
+            for row in created
+        ],
         "count": len(created),
-        "notified_owners": notified_owners,
+        "notified_owners": owners,
+        "replayed": bool(receipt.get("replayed")),
         "note": (
-            "演示实现：待办原值回执，无外部副作用；真实接入时在此落待办存储/通知渠道。"
-            "未指派责任人的任务不发送通知（不臆造接收人）"
+            "待办已批量落本地事务存储（各责任人可在 office.todo.list 看到自己名下的任务）；"
+            "责任人通知由宿主侧站内通知通道发出（未指派责任人的任务不建单、不通知）"
         ),
-        "committed_at": _now_text(),
+        "committed_at": str(receipt.get("created_at") or _now_text()),
     }
 
 
@@ -248,7 +300,9 @@ def specs() -> tuple[ToolSpec, ...]:
         ToolSpec(
             name="office.task.commit",
             scope=SCOPE_WRITE,
-            description="批量创建任务（写动作）：恒送审 + idem_key 必填——审批闸门即批量建单的二次确认，复核人批准后才执行；未指派责任人的任务不发送通知",
+            description="批量创建任务（写动作）：恒送审 + idem_key 必填——审批闸门即批量建单的二次确认，"
+            "复核人批准后才真正落待办存储（各责任人名下可见）；同 idem_key 重放回放原回执绝不双单；"
+            "缺责任人执行期诚实拒收（不臆造接收人）",
             params={
                 "type": "object",
                 "properties": {

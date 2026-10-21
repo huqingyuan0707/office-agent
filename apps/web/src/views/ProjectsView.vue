@@ -94,6 +94,12 @@ const doCommit = async () => {
   if (!subtasks.value.length) return
   pageError.value = ''
   commitHint.value = ''
+  // 前置校验与后端口径一致：缺责任人不建单（不臆造接收人）——先在页内拦一道给出可操作提示
+  const missing = subtasks.value.filter((t) => !t.owner.trim())
+  if (missing.length) {
+    pageError.value = `还有 ${missing.length} 条子任务未指派责任人，请先在表格里填写责任人再建单（缺责任人不建单、不通知）`
+    return
+  }
   try {
     const data = await invokeTool('office.task.commit', {
       tasks: subtasks.value.map((t) => ({

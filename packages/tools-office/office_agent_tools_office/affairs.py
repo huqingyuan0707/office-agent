@@ -69,7 +69,7 @@ def _store_path() -> Path:
 def _read_store() -> dict[str, Any]:
     path = _store_path()
     if not path.exists():
-        return {"todos": [], "schedules": []}
+        return {"todos": [], "schedules": [], "commits": []}
     try:
         payload = json.loads(path.read_text(encoding="utf-8"))
     except json.JSONDecodeError as exc:
@@ -78,6 +78,7 @@ def _read_store() -> dict[str, Any]:
         raise BusinessError(ErrorCode.PARAM_INVALID, "事务存储损坏（根节点非对象）")
     payload.setdefault("todos", [])
     payload.setdefault("schedules", [])
+    payload.setdefault("commits", [])
     return payload
 
 
@@ -126,7 +127,7 @@ def _new_id() -> str:
 # ---------------- 存储写入原语（审批通过后的执行路径调用） ----------------
 
 
-async def add_todo(
+def _todo_record(
     tenant: str,
     owner: str,
     *,
@@ -135,10 +136,13 @@ async def add_todo(
     priority: str = "medium",
     due_date: str = "",
 ) -> dict[str, Any]:
-    """落一条待办（todo.create 执行体；due_date 空 = 不设截止）。"""
+    """待办记录构造（纯函数：单条建单与批量建单共用同一字段口径）。
+
+    due_date 非空必须是 YYYY-MM-DD（坏值抛 1001，绝不臆造日期）。
+    """
     if due_date:
         _parse_date(due_date, "due_date")
-    record = {
+    return {
         "id": _new_id(),
         "tenant": tenant,
         "owner": owner,
@@ -151,6 +155,26 @@ async def add_todo(
         "updated_at": _now_text(),
         "completed_at": "",
     }
+
+
+async def add_todo(
+    tenant: str,
+    owner: str,
+    *,
+    title: str,
+    description: str = "",
+    priority: str = "medium",
+    due_date: str = "",
+) -> dict[str, Any]:
+    """落一条待办（todo.create 执行体；due_date 空 = 不设截止）。"""
+    record = _todo_record(
+        tenant,
+        owner,
+        title=title,
+        description=description,
+        priority=priority,
+        due_date=due_date,
+    )
 
     async with _STORE_LOCK:
         payload = await asyncio.to_thread(_read_store)

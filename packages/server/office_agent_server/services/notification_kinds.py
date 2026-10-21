@@ -14,6 +14,7 @@ KIND_TODO_DUE = "todo_due"
 KIND_MEETING_UPCOMING = "meeting_upcoming"
 KIND_MILESTONE_ALERT = "milestone_alert"
 KIND_WEEKLY_DRAFT_HINT = "weekly_draft_hint"
+KIND_TASK_ASSIGNED = "task_assigned"
 
 #: 通知类型中文名（展示层唯一出处）
 KIND_LABELS: dict[str, str] = {
@@ -24,4 +25,5 @@ KIND_LABELS: dict[str, str] = {
     KIND_MEETING_UPCOMING: "会议临近通知",
     KIND_MILESTONE_ALERT: "项目节点预警",
     KIND_WEEKLY_DRAFT_HINT: "周报草稿提示",
+    KIND_TASK_ASSIGNED: "任务指派通知",
 }

@@ -249,7 +249,7 @@ HTTP 级冒烟：`python tests/smoke_meeting_flow.py`（5 项断言，可重复�
 
 HTTP 级冒烟：`python tests/smoke_hr_im.py`（§2.7 群摘要 + §2.8 人事行政 9 项断言，可重复执行：摘要→考勤→清单→查询→预订→冲突驳回）。
 
-| 项目台账与任务拆解（PRD §2.9/§6） | `office.project.query` + `office.task.decompose` / `commit` | 台账含里程碑/风险/责任人/进度（内置 + CSV 叠加，按名/责任人/状态/有无风险过滤，附中文简报）；拆解按生命周期出交付物/责任人/工期/优先级/依赖，缺人缺期留空追问不臆造，commit 写恒送审即二次确认；`/projects` 页台账 + 拆解两步式接线（页内可改责任人） |
+| 项目台账与任务拆解（PRD §2.9/§6） | `office.project.query` + `office.task.decompose` / `commit` | 台账含里程碑/风险/责任人/进度（内置 + CSV 叠加，按名/责任人/状态/有无风险过滤，附中文简报）；拆解按生命周期出交付物/责任人/工期/优先级/依赖，缺人缺期留空追问不臆造；**commit 写恒送审即二次确认，批准后真实落待办存储**（待办归属各责任人，同 `idem_key` 回放绝不双单，缺责任人执行期 1001 拒收），责任人收到站内通知（`task_assigned`，去重）；`/projects` 页台账 + 拆解两步式接线（页内可改责任人，缺责任人先提示再建单） |
 | 财务简易辅助（PRD §2.10） | `office.finance.reimburse` / `expense`（+ 既有 `office.budget.query`） | 个人报销进度与在途金额（审批中+已通过未打款）；部门费用总额/笔数/按类目 + 项目命中预算台账联带剩余额度；金额只取原值，转不出整行跳过计数；`/finance` 页三块全接线 |
 | 行政后勤通用工具（PRD §2.11） | `office.desk.ticket` / `tickets` | IT 报修/资产申领/工单三类白名单，ticket 写恒送审落本地台账，tickets 读免审；外部系统同步由 linkage 承担；`/desk` 页新建（清单 + 落单给审批 id）；场景串联与可视化编排见工作流（`/workflows`），细粒度权限=工具 scope + 智能体白名单既有机制 |
 | 定时任务调度（PRD §2.11） | `GET/POST/PUT/DELETE /jobs` + `/jobs/{id}/run` + `/jobs/tick` | 内置 asyncio 调度环（`SCHEDULER_ENABLED` 默认关、`SCHEDULER_TICK_SECONDS` 可配）；作业白名单 notify_scan（通知扫描链幂等去重绝不刷屏）/ workflow_run（按编排顺序执行，写步骤仍落单即停）；daily/weekly 按业务时区换算、interval 最小 30 秒；执行身份=创建人实时角色（查无/冻结如实 failed）；run-now 手动触发不推进定时节奏；未开环时可由外部 cron 调 `/jobs/tick`；`/jobs` 页全接线（列表/新建/启停/立即执行/手动扫描） |

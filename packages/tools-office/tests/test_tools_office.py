@@ -230,35 +230,24 @@ async def test_task_decompose_rejects_bad_duration() -> None:
         await task_planner._task_decompose(CTX, {"goal": "项目", "start_date": "2026/09/01"})
 
 
-async def test_task_commit_returns_receipts_with_notify_flags() -> None:
-    data = await task_planner._task_commit(
-        CTX,
-        {
-            "tasks": [
-                {
-                    "title": "需求调研",
-                    "owner": "张三",
-                    "due_date": "2026-10-09",
-                    "priority": "high",
-                },
-                {"title": "自行跟进事项"},
-            ],
-            "idem_key": "decompose-0001",
-        },
-    )
-    assert data["count"] == 2
-    assert data["created"][0]["notified"] == "true"
-    assert data["created"][1]["notified"] == "false"
-    assert data["notified_owners"] == ["张三"]
-    assert "不臆造接收人" in data["note"]
+async def test_task_commit_requires_owner_title_and_caps_size() -> None:
+    """建单口径：缺标题/缺责任人/超量一律拒收（缺人员信息不臆造接收人）。
 
-
-async def test_task_commit_requires_title_and_caps_size() -> None:
+    真实落盘与幂等回放的口径见 tests/test_task_commit.py（独立文件，本文件只守入参红线）。
+    """
     with pytest.raises(BusinessError):
         await task_planner._task_commit(CTX, {"tasks": [{"owner": "张三"}], "idem_key": "k" * 8})
     with pytest.raises(BusinessError):
         await task_planner._task_commit(
-            CTX, {"tasks": [{"title": f"t{i}"} for i in range(51)], "idem_key": "k" * 8}
+            CTX, {"tasks": [{"title": "自行跟进"}], "idem_key": "k" * 8}
+        )
+    with pytest.raises(BusinessError):
+        await task_planner._task_commit(
+            CTX,
+            {
+                "tasks": [{"title": f"t{i}", "owner": "张三"} for i in range(51)],
+                "idem_key": "k" * 8,
+            },
         )
 
 

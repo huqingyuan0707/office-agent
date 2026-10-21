@@ -8,7 +8,7 @@
 ⑤ kb.ask：知识库问答（读，内置条目 + KB_DIR 文件检索，空命中如实降级）；
 ⑥ ocr.image：图片OCR（读，Pillow 元数据 + Tesseract 可选引擎，缺失降级）；
 ⑦ office.doc.compare：文档对比（读，两份 docx 段落级 diff + 变更摘要）；
-⑧ office.task.decompose / office.task.commit：任务拆解（读）与批量建单（写，恒送审+幂等）；
+⑧ office.task.decompose / office.task.commit：任务拆解（读）与批量建单（写，恒送审+幂等；批准后**真实落待办存储**——待办归属各责任人，同 idem_key 回放不双单，缺责任人执行期拒收，责任人通知由宿主侧站内通知通道发出）；
 ⑨ office.template.save / office.template.apply：自定义模板（写送审落盘 / 读填充复用）；
 ⑩ office.data.query / analyze / export：数据自助分析（读，演示台账 + CSV 叠加 / 统计 + 趋势 + 异常 / markdown-csv 文本与 xlsx-base64 导出不写盘，渲染收口 data_export）；
 ⑪ office.meeting.agenda / book / risks：会议协作（读议程模板直出 / 写预约恒送审 / 读风险关键词预警，无命中不编造）；

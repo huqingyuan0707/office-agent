@@ -4,6 +4,7 @@
 - create_approval()：需审批工具 invoke 时建审批单（pending），只落单不执行；
 - decide_approval()：批准后以**提交人身份**执行原工具；驳回则置 rejected；
   红线：审批人 == 提交人直接抛 1001（同人自审自批口子）；
+  放行前的两道复核：细粒度权限策略（角色被禁用则不生效）+ 建单类工具的责任人校验；
 - urge_approval()：一键催办（PRD §2.3）——只有本人（或管理员）可催 pending 单，
   旁路发 IM 提醒，不改审批状态、不落库（IM 未配置如实 not_configured，绝不 500）。
 
@@ -27,7 +28,7 @@ from office_agent_core.errors import BusinessError, ErrorCode
 from office_agent_server.db import _now
 from office_agent_server.models import Approval, User
 from office_agent_server.security import split_roles
-from office_agent_server.services import im_notifier
+from office_agent_server.services import im_notifier, task_commit
 from office_agent_server.services.tool_policy import assert_tool_enabled
 
 logger = logging.getLogger(__name__)
@@ -247,23 +248,52 @@ async def decide_approval(
             roles=applicant_roles,
             trace_id=trace_id,
         )
-        try:
-            # 细粒度权限复核：以**提交人当前**角色集再查一次禁用策略——
-            # 申请与批准之间管理员可能禁用了该工具，批准即生效不能绕过新策略。
-            await assert_tool_enabled(
-                db, tenant=row.tenant, roles=applicant_roles, tool_name=row.action
+        # 建单类工具的前置校验（PRD §6.5.2 只能分配给有权限的在册人员）：
+        # 校验不过则**不执行**工具，避免落半截台账。
+        guard = await task_commit.precheck(db, tenant=row.tenant, tool=row.action, args=tool_args)
+        if not guard.get("ok"):
+            message = str(guard.get("message") or "前置校验未通过")
+            execution_result = {
+                "status": "failed",
+                "message": message,
+                "code": ErrorCode.PARAM_INVALID,
+            }
+            logger.warning(
+                "approved tool precheck failed: id=%s tool=%s err=%s", row.id, row.action, message
             )
-            execution_result = await executor.call(
-                ctx, name=row.action, args=tool_args, trace_id=trace_id
-            )
-        except BusinessError as exc:
-            execution_result = {"status": "failed", "message": exc.msg, "code": exc.code}
-            logger.exception(
-                "approved tool execute failed: id=%s tool=%s err=%s", row.id, row.action, exc.msg
-            )
-        except Exception as exc:
-            execution_result = {"status": "failed", "message": str(exc)[:200]}
-            logger.exception("approved tool unexpected error: id=%s tool=%s", row.id, row.action)
+        else:
+            try:
+                # 细粒度权限复核：以**提交人当前**角色集再查一次禁用策略——
+                # 申请与批准之间管理员可能禁用了该工具，批准即生效不能绕过新策略。
+                await assert_tool_enabled(
+                    db, tenant=row.tenant, roles=applicant_roles, tool_name=row.action
+                )
+                execution_result = await executor.call(
+                    ctx, name=row.action, args=tool_args, trace_id=trace_id
+                )
+            except BusinessError as exc:
+                execution_result = {"status": "failed", "message": exc.msg, "code": exc.code}
+                logger.exception(
+                    "approved tool execute failed: id=%s tool=%s err=%s",
+                    row.id,
+                    row.action,
+                    exc.msg,
+                )
+            except Exception as exc:
+                execution_result = {"status": "failed", "message": str(exc)[:200]}
+                logger.exception(
+                    "approved tool unexpected error: id=%s tool=%s", row.id, row.action
+                )
+            else:
+                # 建单成功后通知责任人（旁路：通知失败只降级，不影响已生效的建单）
+                payload = execution_result.get("result")
+                await task_commit.after_commit(
+                    db,
+                    tenant=row.tenant,
+                    tool=row.action,
+                    result=payload if isinstance(payload, dict) else {},
+                    applicant=row.applicant,
+                )
 
     return {
         "approval_id": row.id,
