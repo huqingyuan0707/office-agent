@@ -6,7 +6,7 @@
 
 口径：
 - 隔离：全部按 (tenant, username) 过滤，端点只传当前用户，越权等同不存在（1004）；
-- 上下文只取当前会话最近 N 条用户/助手消息拼摘要，不跨会话、不带第三方内容；
+- 上下文只取当前会话最近 N 条**用户消息**拼摘要（助手回复含引导/示例文案，混入会污染路由与规则匹配），不跨会话、不带第三方内容；
 - 消息落库即审计留痕，run_id 关联 Task 行可追溯；
 - 只写本模块的表，run 创建走 runner 既有链（受理与执行分离口径不变）。
 对齐：AGENTS.md §3（业务进 services 纯函数、薄端点）+ PRD §6 多轮上下文理解/可审计。
@@ -14,9 +14,10 @@
 
 from __future__ import annotations
 
+from datetime import timedelta
 from typing import Any
 
-from sqlalchemy import delete, select
+from sqlalchemy import delete, func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from office_agent_core.errors import BusinessError, ErrorCode
@@ -119,14 +120,27 @@ async def append_message(
     """落一条会话消息（用户/助手），并刷新会话 updated_at。
 
     先校验会话归属（不存在/越权统一 1004），杜绝向幽灵会话落消息。
+    created_at 保证会话内严格递增：系统时钟精度不足时（同刻度连落两条）仍按落库顺序展示。
     """
     await _get_owned(db, tenant, username, conversation_id)
+    last_at = (
+        await db.execute(
+            select(func.max(ConversationMessage.created_at)).where(
+                ConversationMessage.tenant == tenant,
+                ConversationMessage.conversation_id == conversation_id,
+            )
+        )
+    ).scalar_one_or_none()
+    created_at = _now()
+    if last_at is not None and created_at <= last_at:
+        created_at = last_at + timedelta(microseconds=1)
     msg = ConversationMessage(
         tenant=tenant,
         conversation_id=conversation_id,
         role=role,
         content=content,
         run_id=run_id,
+        created_at=created_at,
     )
     db.add(msg)
     await db.flush()

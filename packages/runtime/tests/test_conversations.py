@@ -163,6 +163,43 @@ def test_second_message_carries_conversation_context(client, conv_headers, agent
     assert first_run_id, "首轮 run 应存在"
 
 
+async def test_recent_context_keeps_user_messages_only(client, conv_headers, agent_yaml_dir):
+    """上下文只取用户消息：助手引导文案（含「工作日报/日程」等示例词）不得混入，
+    否则会污染后续路由与规则匹配（真实服务曾因此把「查待办」误路由到日报智能体）。"""
+    from office_agent_core.settings import settings
+    from office_agent_runtime import conversations
+    from office_agent_server.db import session_factory
+
+    conv_id = _create_conversation(client, conv_headers)
+    # session_factory 是 async_sessionmaker：内层调用取会话后才能作异步上下文（同 db.get_db 口径）；
+    # 租户取 settings.SEED_TENANT（登录账号真实租户，硬编码会撞 (tenant, username) 隔离 1004）
+    async with session_factory()() as db:
+        await conversations.append_message(
+            db,
+            tenant=settings.SEED_TENANT,
+            username="admin",
+            conversation_id=conv_id,
+            role="user",
+            content="你好",
+        )
+        await conversations.append_message(
+            db,
+            tenant=settings.SEED_TENANT,
+            username="admin",
+            conversation_id=conv_id,
+            role="agent",
+            content="你好！我是智能办公助手。请用一句话说明要办的事，例如：「生成今天的工作日报」",
+        )
+        await db.commit()
+        context = await conversations.recent_context(
+            db, tenant=settings.SEED_TENANT, conversation_id=conv_id
+        )
+    assert context == "用户：你好", f"上下文只应含用户消息，实际：{context!r}"
+    assert "助手：" not in context and "工作日报" not in context, (
+        "助手引导文案不得进上下文（示例词会污染路由）"
+    )
+
+
 # ---------------- ④ 越权 / 异常 ----------------
 
 
