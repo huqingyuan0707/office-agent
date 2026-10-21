@@ -114,11 +114,14 @@ def test_compose_via_llm_payload_and_401_degrade(monkeypatch):
             )
         return httpx.Response(401, json={"error": "bad key"})
 
-    # doc_compose 内部自建 AsyncClient：patch 模块级工厂换 MockTransport（monkeypatch 自动还原）；
-    # lambda 内须调 patch 前捕获的真实类，否则递归调到已被 patch 的同名属性
+    # 出站实现已收口到 llm_text.chat_text（与润色/翻译共用）：patch 该模块的 httpx 工厂
+    # 换 MockTransport（monkeypatch 自动还原）；lambda 内须调 patch 前捕获的真实类，
+    # 否则递归调到已被 patch 的同名属性
+    from office_agent_tools_office import llm_text
+
     real_client = httpx.AsyncClient
     monkeypatch.setattr(
-        doc_compose.httpx,
+        llm_text.httpx,
         "AsyncClient",
         lambda timeout=None: real_client(transport=httpx.MockTransport(handler)),
     )

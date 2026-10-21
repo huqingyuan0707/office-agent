@@ -220,12 +220,12 @@ HTTP 级冒烟：`python tests/smoke_v1_features.py`（17 项断言，可重复�
 |---|---|---|
 | 文案生成（补月报） | `office.report.generate`（daily/weekly/monthly） | 月报按月窗口聚合实测计数；数值只取入参原值，缺板块留白 |
 | 通用文案起草 | `office.memo.compose` | 通知/邮件/方案/总结/汇报五类模板直出，缺板块留白不编造 |
-| 文本处理 | `office.text.summarize` / `office.text.normalize` | 抽取式摘要（单篇 + `texts` 多篇整合，全部原文原句）+ 格式统一只动空白不改编正文；文案润色改写需大模型，明确后置（见模块末尾说明） |
+| 文本处理 | `office.text.summarize` / `office.text.normalize` / `office.text.rewrite` | 抽取式摘要（单篇 + `texts` 多篇整合，全部原文原句）+ 格式统一只动空白不改编正文；**文案润色改写**（`office.text.rewrite`：formal/concise/plain/professional/persuasive/shorter 六档，保持事实与数字不变，改写引入的新数字进失信清单只标注不拦截；LLM 不可用 → 原文直出 + `degraded`，绝不编造） |
 | 文档解析 | `office.file.read` | docx 段落/表格文本/图片清单、xlsx 每表行列数与前 N 行、csv/txt/md 直读、**PDF 走 pypdf 逐页文本抽取**（页数如实返回；引擎缺失/加密/损坏如实降级或 1001，不编造半页文字）；读口径免审，缺文件 404 |
 | 文件内容问答 | `office.file.ask` | 对 DOCS_DIR 指定文件按**段落**检索并只摘录原文片段作答（问「文件里 X 是什么」定位到具体段）；复用 `retrieval.py` 三级降级链（Milvus → 向量全量重算 → 字符；失败逐级回退并在 `retrieval_mode`/`retrieval_fallback_reason` 标注）；零命中/无文字层 degraded 不编造。**如实边界**：向量通道余弦对任意文本都给分，乱码问句实测仍得 0.37~0.39（门槛 0.35 是取舍杆非分界线），故 `score` 原样暴露供自判 |
 | 文档批量处理 | `office.docs.rename` | 批量重命名（≤20 对）写口径恒送审、目标已存在拒绝覆盖、重放诚实失败（idempotent=False）；批量提图并入 `office.file.read` 图片清单、多篇批量摘要复用 `texts` 多篇模式；批量转 PDF 需系统 LibreOffice，明确后置 |
 | 自定义模板 | `office.template.save` → `office.template.apply` | 保存周报/请假说明等模板，应用时缺值占位符保持原样并在 `unfilled` 列出 |
-| 内部术语库 | `office.terms.translate` | 内置术语表 + `DOCS_DIR/terms.csv` 叠加，按源词长度降序确定性替换（专业名词统一），零命中原样返回；整句多语种机翻需大模型，明确后置 |
+| 内部术语库 | `office.terms.translate` / `office.text.translate` | 内置术语表 + `DOCS_DIR/terms.csv` 叠加，按源词长度降序确定性替换（专业名词统一），零命中原样返回；**整句多语种翻译**（`office.text.translate`：英/日/韩/法/德/西/俄/繁中/越白名单，忠实原意不改数字，LLM 不可用 → 原文直出 + `degraded`） |
 | 文档对比 | `office.doc.compare` | 段落级 diff + 变更摘要，只报实测差异 |
 | Word 导出 | `office.docx.render` | 标题 + markdown 子集（标题/列表/表格/加粗）直出 .docx 二进制 base64 **不写盘**（与 `data.export` excel 同口径，读免审）；对话页末步结果是日报/纪要等文档产物时渲染为固定格式文档卡（不摊参数），「下载 Word」经本工具还原 Blob 客户端落盘；只做格式转换不改写文字；python-docx 缺失不注册 |
 

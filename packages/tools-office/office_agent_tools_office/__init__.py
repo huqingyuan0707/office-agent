@@ -17,7 +17,7 @@
 ⑭ office.compliance.scan：合规风险检测（读，隐私/违规用语/泄密凭据三类规则，只摘录不推断）；
 ⑮ office.budget.query：预算查询（读，演示台账 + CSV 叠加，剩余额度确定性计算带溯源）；
 ⑯ office.memo.compose：通用文案起草（读，通知/邮件/方案/总结/汇报五类模板直出，缺板块留白）；
-⑰ office.text.summarize / normalize：文本处理（读，抽取式摘要单篇+多篇整合/格式统一只动空白，润色改写后置）；
+⑰ office.text.summarize / normalize：文本处理（读，抽取式摘要单篇+多篇整合/格式统一只动空白，润色改写见 ㉛）；
 ⑱ office.file.read / docs.rename / file.ask：文件解析、批量重命名与文件内容问答（读 docx 表格文本图片清单/xlsx 行列与前 N 行/纯文本直读/PDF pypdf 逐页文本；ask 按段落检索摘录原文作答，向量优先失败回退字符检索；写重命名恒送审禁覆盖）；
 ⑲ office.todo.list / update / delete、office.schedule.create / freebusy、office.worklog.generate：个人事务管理（PRD §2.2——本地事务存储，读免审；写恒送审审批通过才落盘；到期/会前/节点预警由 server 通知扫描链共用同一存储生成；实现拆两文件：affairs.py 待办域+存储原语，affairs_schedule.py 日程域）。
 ⑳ office.meeting.materials / digest / followup：会议全流程补充三件（PRD §2.5 缺口——会前资料包逐文件真实抽取汇编、会中速记按关键词归类决议/行动/风险要点原句摘录、会后行动项×待办台账五态对账跟进；实时语音转录需音频基建如实后置；meeting_flow.py，全读免审）。
@@ -41,6 +41,10 @@ base64 直出**不写盘**（与 data.export excel 同口径），供对话页�
 §机制件 3——素材=各步骤真实出参（{steps[*].result} 注入）→ LLM 撰写中文 markdown
 + 数字溯源校验标注；LLM_PROVIDERS 未配置/出站失败降级素材原文直出（degraded），
 绝不编造正文；tools-office 自读环境变量不 import runtime；见 doc_compose.py，读免审）。
+㉛ office.text.rewrite / office.text.translate：文案润色改写 + 整句多语种翻译
+（PRD §2.1/§5.4——按风格改写保持事实与数字不变；译成指定语言忠实原意；
+LLM 未配置/出站失败降级**原文直出**（degraded），绝不编造改写或译文；
+出站与数字校验收口 llm_text.py（与 doc_compose 共用同一实现）；见 rewrite.py，读免审）。
 
 链路：server lifespan → 本包 register_all() → 各模块 specs() → registry 注册 ToolSpec；
 executor 按 spec 执行。
@@ -82,6 +86,7 @@ from . import (
     pptx_gen,
     projects,
     resources,
+    rewrite,
     summarize,
     task_planner,
     templates,
@@ -122,6 +127,7 @@ __all__ = [
     "projects",
     "register_all",
     "resources",
+    "rewrite",
     "specs",
     "summarize",
     "task_planner",
@@ -157,6 +163,7 @@ _MODULES = (
     budget,
     compose,
     summarize,
+    rewrite,
     file_read,
     file_ask,
     image_ask,
