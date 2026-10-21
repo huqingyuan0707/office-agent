@@ -5,9 +5,11 @@
       → POST /agent/tools/{name}/invoke（受控试调：鉴权 → 分流 → 执行/落审批单）。
 
 薄封装红线：本文件只解析入参 + 调内核/services + ok()/fail()；
-            鉴权、参数校验、超时重试、熔断、审计全在 office_agent_core 内，端点不复制一份。
+             鉴权、参数校验、超时重试、熔断、审计全在 office_agent_core 内，端点不复制一份。
+细粒度权限红线：Scope 之外再加一道「角色 × 工具」禁用闸门（services/tool_policy）——
+             被禁用的工具不进清单、invoke 直接 4006，两处同源判定。
 送审分流红线：spec.requires_approval=True 的工具 invoke 不落 executor，只落审批单后返回
-            pending_approval——写动作的唯一放行口是审批中心。
+             pending_approval——写动作的唯一放行口是审批中心。
 trace 红线：trace 取入站 ``X-Trace-Id``（中间件沿用），不从请求体取，
             这样跨系统联动时两侧审计里的 trace 是同一条线。
 """
@@ -28,6 +30,7 @@ from office_agent_server.middleware import current_trace_id
 from office_agent_server.rbac import CurrentUser, get_current_user
 from office_agent_server.responses import ok
 from office_agent_server.services.approval_flow import create_approval
+from office_agent_server.services.tool_policy import assert_tool_enabled, disabled_tools
 
 router = APIRouter(prefix="/agent", tags=["agent"])
 
@@ -46,12 +49,20 @@ def _tool_view(name: str) -> dict[str, Any]:
 
 
 @router.get("/tools")
-async def list_tools(user: CurrentUser = Depends(get_current_user)) -> dict[str, Any]:
-    """已注册工具清单（注册中心为空给中文提示不报错）。"""
-    _ = user
+async def list_tools(
+    db: AsyncSession = Depends(get_db),
+    user: CurrentUser = Depends(get_current_user),
+) -> dict[str, Any]:
+    """已注册工具清单（注册中心为空给中文提示不报错）。
+
+    细粒度权限：被管理员对该角色禁用的工具**不在清单里**（前端不必再各自过滤一遍）。
+    """
     data = registry.list_tools()
+    blocked = await disabled_tools(db, tenant=user.tenant, roles=list(user.roles))
     items: list[dict[str, Any]] = [
-        {**item, "breaker": executor.breaker_snapshot(item["name"])} for item in data["items"]
+        {**item, "breaker": executor.breaker_snapshot(item["name"])}
+        for item in data["items"]
+        if item["name"] not in blocked
     ]
     msg = "获取成功" if items else "暂无已注册工具，请检查插件是否已配置对应的上游提供方"
     return ok({"total": len(items), "items": items}, msg)
@@ -81,6 +92,7 @@ async def invoke_tool(
 
     # --- 策略鉴权 + 参数校验（分流前统一校验，避免「先过了审批再被拒」的口子） ---
     policy.ensure_allowed(roles=list(user.roles), spec=spec, args=payload.args)
+    await assert_tool_enabled(db, tenant=user.tenant, roles=list(user.roles), tool_name=spec.name)
     errors = validate_args(spec.params, payload.args)
     if errors:
         raise BusinessError(ErrorCode.PARAM_INVALID, "；".join(errors))

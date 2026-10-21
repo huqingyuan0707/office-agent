@@ -38,6 +38,32 @@ class Notification(Base):
     read_at: Mapped[datetime | None] = mapped_column(default=None)
 
 
+class ToolPolicy(Base):
+    """角色 × 工具的启停策略（细粒度权限管控，PRD §2.11 / §4.1）。
+
+    口径：
+    - 唯一键 (tenant, role, tool_name)：一条策略 = 一个角色对一个工具的裁决；
+    - enabled=0 即「该角色禁用该工具」，enabled=1 即「显式启用」（默认即允许，
+      保留该行只为了让管理面能显示「已启用」而不是「没配过」）；
+    - 无策略行 = 允许（默认放行，存量行为零变化）；
+    - role="*" 表示对所有非通配用户生效；持通配角色（roles 含 "*"）的超级用户
+      豁免任何策略——管理员不会被自己的策略锁死（逃生通道）。
+    """
+
+    __tablename__ = "tool_policies"
+    __table_args__ = (
+        UniqueConstraint("tenant", "role", "tool_name", name="uq_tool_policy_tenant_role_tool"),
+    )
+
+    id: Mapped[str] = mapped_column(String(32), primary_key=True, default=_uid)
+    tenant: Mapped[str] = mapped_column(String(64), nullable=False, index=True)
+    role: Mapped[str] = mapped_column(String(64), nullable=False, index=True)
+    tool_name: Mapped[str] = mapped_column(String(64), nullable=False, index=True)
+    enabled: Mapped[int] = mapped_column(Integer, default=1)
+    created_at: Mapped[datetime] = mapped_column(default=_now)
+    updated_at: Mapped[datetime] = mapped_column(default=_now, onupdate=_now)
+
+
 class User(Base):
     """登录用户（租户内用户名唯一，角色逗号分隔存文本）。
 

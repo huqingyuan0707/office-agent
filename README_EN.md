@@ -128,6 +128,8 @@ Unified envelope `{code, msg, data, trace_id}`; `code == 0` means success; auth 
 | POST | /notifications/scan | generate notifications (approval-stale / task-failed / daily briefing; admin/approver, idempotent rescans) |
 | POST | /notifications/{id}/read | mark as read (idempotent receipt) |
 | GET | /governance/status | governance status (tool count / circuit breaker / observability counters) |
+| GET | /admin/overview | operations overview (users/tasks/approvals by status + top tools + last decisions) |
+| GET/POST/DELETE | /admin/tool-policies | fine-grained permission policies (role × tool on/off; management plane applies directly, no approval) |
 | GET | /agents | available agents (rescans plugins/*/agent.yaml per request — hot reload) |
 | POST | /runs | `{agent, goal}` — accepted synchronously; execution errors surface in the timeline, never a 500 |
 | GET | /runs/{id} | run status + step timeline (suspended approvals resolved inline; approved → resume) |
@@ -264,6 +266,7 @@ HTTP-level smoke: `python tests/smoke_v1_2_batch_a.py` (9 assertions, re-runnabl
 
 HTTP-level smoke: `python tests/smoke_2_4_data.py` (11 assertions, re-runnable: full save → approve → reuse → excel/SVG → delete chain).
 | Admin operations dashboard | `/admin` (Admin page) + `GET /admin/overview` (admin only) | `services/admin_stats.py` read-only aggregation across four tables (users by status / tasks by status / approvals by status / Top-8 tools by calls / last 5 decided approvals); non-admin gets an honest 403, never downgraded fake data |
+| Fine-grained tool permissions (PRD §2.11 / §4.1) | `/admin` (Admin page · tool-permission block) + `GET/POST/DELETE /admin/tool-policies` | role × tool on/off (`tool_policies` table): default allow (no policy = zero behaviour change), wildcard super-user exempt (admins are never locked out by their own policy), `role="*"` = global disable; four enforcement points share one source — the tool disappears from the listing, invoke returns 4006, agent steps are refused, and approval release re-checks the **applicant's current** roles (a tool disabled after the request does not take effect); write actions still pass the approval gate, this policy only decides "may call" |
 
 ## Chat-first entry (one sentence in: no agent picking, no parameter filling)
 

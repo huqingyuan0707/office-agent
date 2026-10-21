@@ -1,12 +1,14 @@
-"""管理员运营总览端点（平台使用统计看板 + 数据资产目录只读查询）
+"""管理员运营总览端点（平台使用统计看板 + 数据资产目录只读查询 + 细粒度权限策略）
 
 链路：GET /admin/overview → require_any_perm("admin") → services/admin_stats →
       四表只读聚合 → ok()；
-      GET /admin/data-assets[...] → services/data_assets → data_assets 表只读查询 → ok()。
+      GET /admin/data-assets[...] → services/data_assets → data_assets 表只读查询 → ok()；
+      GET/POST/DELETE /admin/tool-policies → services/tool_policy → tool_policies 表
+      （角色 × 工具的启停；管理面直接生效不走审批）。
 口径：租户内聚合只看本租户（跨租户不可见）；非 admin 角色 403（看板页如实提示权限不足，
       不降级给假数据）；数据资产目录对管理端只读（改目录去 data_asset_catalog.py 重跑种子）；
       本模块只做鉴权 + 调 service + ok()，不在端点内拼聚合逻辑。
-对齐：AGENTS.md §3（分层红线/端点薄封装）；智能办公Agent 产品需求文档.md §2.13。
+对齐：AGENTS.md §3（分层红线/端点薄封装）；智能办公Agent 产品需求文档.md §2.13、§2.11。
 """
 
 from __future__ import annotations
@@ -14,8 +16,10 @@ from __future__ import annotations
 from typing import Any
 
 from fastapi import APIRouter, Depends, Query
+from pydantic import BaseModel, Field
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from office_agent_core import registry
 from office_agent_server.db import get_db
 from office_agent_server.rbac import CurrentUser, require_any_perm
 from office_agent_server.responses import fail, ok
@@ -24,6 +28,12 @@ from office_agent_server.services.data_assets import (
     asset_detail,
     categories_overview,
     list_assets,
+)
+from office_agent_server.services.tool_policy import (
+    delete_policy,
+    list_policies,
+    tenant_roles,
+    upsert_policy,
 )
 
 router = APIRouter(prefix="/admin", tags=["admin"])
@@ -39,6 +49,65 @@ async def overview(
 ) -> dict[str, Any]:
     """租户运营总览（用户/任务/审批计数 + 工具调用 Top + 最近裁决）。"""
     return ok(await collect_overview(db, tenant=user.tenant), "获取成功")
+
+
+class ToolPolicyRequest(BaseModel):
+    """工具策略入参（端点私有 DTO）。"""
+
+    role: str = Field(min_length=1, max_length=64)
+    tool_name: str = Field(min_length=1, max_length=64)
+    enabled: bool = True
+
+
+@router.get("/tool-policies")
+async def tool_policies(
+    db: AsyncSession = Depends(get_db),
+    user: CurrentUser = Depends(require_any_perm(*ADMIN_PERMS)),
+) -> dict[str, Any]:
+    """细粒度权限策略清单（角色 × 工具的启停）+ 可选角色与工具目录。
+
+    管理面直接生效不走审批（与知识库后台同一口径）：配置即配置变更。
+    """
+    items = await list_policies(db, tenant=user.tenant)
+    roles = await tenant_roles(db, user.tenant)
+    tools = [
+        {
+            "name": spec["name"],
+            "scope": spec.get("scope", ""),
+            "description": spec.get("description", ""),
+        }
+        for spec in registry.list_tools()["items"]
+    ]
+    return ok({"items": items, "roles": roles, "tools": tools}, "获取成功")
+
+
+@router.post("/tool-policies")
+async def upsert_tool_policy(
+    payload: ToolPolicyRequest,
+    db: AsyncSession = Depends(get_db),
+    user: CurrentUser = Depends(require_any_perm(*ADMIN_PERMS)),
+) -> dict[str, Any]:
+    """设置一条策略（enabled=false 即「该角色禁用该工具」；同角色同工具重复提交即更新）。"""
+    row = await upsert_policy(
+        db,
+        tenant=user.tenant,
+        role=payload.role,
+        tool_name=payload.tool_name,
+        enabled=payload.enabled,
+    )
+    return ok(row, "策略已生效")
+
+
+@router.delete("/tool-policies")
+async def delete_tool_policy(
+    role: str = Query(min_length=1, max_length=64, description="角色名"),
+    tool_name: str = Query(min_length=1, max_length=64, description="工具名"),
+    db: AsyncSession = Depends(get_db),
+    user: CurrentUser = Depends(require_any_perm(*ADMIN_PERMS)),
+) -> dict[str, Any]:
+    """删除一条策略（该角色恢复默认放行）。"""
+    result = await delete_policy(db, tenant=user.tenant, role=role, tool_name=tool_name)
+    return ok(result, result.get("note") or "已删除")
 
 
 @router.get("/data-assets")

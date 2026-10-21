@@ -132,6 +132,8 @@ curl.exe -s http://127.0.0.1:8200/api/v1/runs/<run_id> -H "Authorization: Bearer
 | POST | /notifications/scan | 扫描生成通知（审批超时/任务失败/今日简报；admin/approver，幂等可重扫） |
 | POST | /notifications/{id}/read | 标记已读（幂等回执） |
 | GET | /governance/status | 治理状态（工具数 / 熔断 / 可观测计数） |
+| GET | /admin/overview | 运营总览（用户/任务/审批分状态 + 工具调用 Top + 最近已决） |
+| GET/POST/DELETE | /admin/tool-policies | 细粒度权限策略（角色 × 工具启停；管理面直接生效不走审批） |
 | GET | /agents | 可用智能体清单（实扫 plugins/*/agent.yaml，热更新零重启） |
 | POST | /runs | `{agent, goal}` 发起运行（受理即跑，错误进时间线不抛 500） |
 | GET | /runs/{id} | 运行状态 + 步骤时间线（审批挂起态内联裁决，批准即续跑） |
@@ -274,6 +276,7 @@ HTTP 级冒烟：`python tests/smoke_v1_2_batch_a.py`（9 项断言，可重复�
 
 HTTP 级冒烟：`python tests/smoke_2_4_data.py`（11 项断言，可重复执行：保存→批准→复用→excel/SVG→删除全链）。
 | 管理员运营看板 | `/admin`（管理页）+ `GET /admin/overview`（仅 admin） | `services/admin_stats.py` 四表只读聚合（用户分状态 / 任务分状态 / 审批分状态 / 工具调用 Top8 / 最近已决 5 单）；非 admin 403 如实提示权限不足，不降级给假数据 |
+| 工具细粒度权限（PRD §2.11 / §4.1） | `/admin`（管理页·工具权限块）+ `GET/POST/DELETE /admin/tool-policies` | 角色 × 工具启停（`tool_policies` 表）：默认放行（无策略=存量行为零变化）、通配超级用户豁免（管理员不被自己的策略锁死）、`role="*"` 为全局禁用；执行面四处同源拦截——工具清单里不出现该工具、invoke 4006、Agent 步骤被拒、审批放行时按**提交人当前**角色复核（申请后被禁用则批准不生效）；写动作仍走审批闸门，本策略只管「能不能调」 |
 
 ## 对话主入口（一句话直达：员工不选智能体、不填参数）
 

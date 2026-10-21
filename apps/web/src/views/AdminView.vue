@@ -1,14 +1,15 @@
 <script setup lang="ts">
 // 职责：管理页（Element Plus 版）—— GET /admin/overview 聚合渲染（用户计数 / 任务与审批分状态 /
-//       工具调用 Top / 最近裁决）；非 admin 403 → 壳红条如实提示权限不足，不降级给假数据
-// 链路：router /admin → api.adminOverview → 分卡渲染：字段缺失不渲染不编造；看板只读聚合，
-//       名单明细不出聚合口（要查单去审批/任务页）
+//       工具调用 Top / 最近裁决）；细粒度权限块（GET/POST/DELETE /admin/tool-policies，按角色禁用工具）；
+//       非 admin 403 → 壳红条如实提示权限不足，不降级给假数据
+// 链路：router /admin → api.adminOverview + api.toolPolicies → 分卡渲染：字段缺失不渲染不编造；
+//       看板只读聚合，名单明细不出聚合口（要查单去审批/任务页）
 // 对齐：AGENTS.md §4 前端红线（真实接口零 mock、失败置空 + 报错提示、var(--*) token + scoped）+
-//       PRD §2.13 运营看板
+//       PRD §2.13 运营看板、§2.11 工具细粒度权限
 import { inject, onMounted, ref } from 'vue'
 import { RouterLink } from 'vue-router'
-import { adminOverview } from '../api'
-import type { AdminOverview } from '../api'
+import { adminOverview, deleteToolPolicy, saveToolPolicy, toolPolicies } from '../api'
+import type { AdminOverview, ToolPolicyCatalog } from '../api'
 
 const shell = inject('shellError') as {
   showError: (msg: string) => unknown
@@ -27,6 +28,13 @@ const STATUS_LABEL = {
 
 const overview = ref<AdminOverview | null>(null)
 const loading = ref(true)
+
+// 细粒度权限：策略清单 + 可选角色/工具目录（全部来自后端真实接口）
+const policyCatalog = ref<ToolPolicyCatalog | null>(null)
+const policyRole = ref('')
+const policyTool = ref('')
+const policyBlocked = ref(true)
+const policySaving = ref(false)
 
 const labelOf = (status: string) => (STATUS_LABEL as { [key: string]: string })[status] ?? status
 
@@ -57,7 +65,47 @@ const loadOverview = async () => {
   }
 }
 
-onMounted(loadOverview)
+const loadPolicies = async () => {
+  try {
+    const data = await toolPolicies()
+    policyCatalog.value = data
+    policyRole.value = policyRole.value || data.roles[0] || ''
+    policyTool.value = policyTool.value || data.tools[0]?.name || ''
+  } catch (e) {
+    policyCatalog.value = null
+    shell.showError((e as Error).message || '工具权限策略加载失败')
+  }
+}
+
+const submitPolicy = async () => {
+  if (!policyRole.value || !policyTool.value) {
+    shell.showError('请先选择角色与工具')
+    return
+  }
+  policySaving.value = true
+  try {
+    await saveToolPolicy(policyRole.value, policyTool.value, !policyBlocked.value)
+    await loadPolicies()
+  } catch (e) {
+    shell.showError((e as Error).message || '策略保存失败')
+  } finally {
+    policySaving.value = false
+  }
+}
+
+const removePolicy = async (role: string, toolName: string) => {
+  try {
+    await deleteToolPolicy(role, toolName)
+    await loadPolicies()
+  } catch (e) {
+    shell.showError((e as Error).message || '策略删除失败')
+  }
+}
+
+onMounted(async () => {
+  await loadOverview()
+  await loadPolicies()
+})
 </script>
 
 <template>
@@ -141,6 +189,66 @@ onMounted(loadOverview)
         <el-table-column prop="count" label="调用次数" width="120" align="right" />
         <template #empty>
           <el-empty description="暂无调用记录" :image-size="60" />
+        </template>
+      </el-table>
+    </el-card>
+
+    <!-- 细粒度权限：按角色启用/禁用工具（管理面直接生效，写动作仍走审批闸门） -->
+    <el-card class="block-gap" shadow="never">
+      <template #header>
+        <div class="page-head">
+          <span class="card-title">工具权限</span>
+          <el-tag size="small" type="info" round>
+            策略 {{ policyCatalog?.items.length ?? 0 }} 条
+          </el-tag>
+        </div>
+      </template>
+      <el-form :inline="true" class="policy-form">
+        <el-form-item label="角色">
+          <el-select v-model="policyRole" placeholder="选择角色" style="width: 200px">
+            <el-option v-for="role in policyCatalog?.roles ?? []" :key="role" :label="role" :value="role" />
+          </el-select>
+        </el-form-item>
+        <el-form-item label="工具">
+          <el-select v-model="policyTool" placeholder="选择工具" style="width: 280px" filterable>
+            <el-option
+              v-for="tool in policyCatalog?.tools ?? []"
+              :key="tool.name"
+              :label="tool.name"
+              :value="tool.name"
+            />
+          </el-select>
+        </el-form-item>
+        <el-form-item label="对该角色禁用">
+          <el-switch v-model="policyBlocked" />
+        </el-form-item>
+        <el-form-item>
+          <el-button type="primary" :loading="policySaving" @click="submitPolicy">保存策略</el-button>
+        </el-form-item>
+      </el-form>
+      <el-table :data="policyCatalog?.items ?? []" size="small" style="width: 100%">
+        <el-table-column prop="role" label="角色" width="180" />
+        <el-table-column prop="tool_name" label="工具" min-width="220">
+          <template #default="{ row }">
+            <span class="mono">{{ row.tool_name }}</span>
+          </template>
+        </el-table-column>
+        <el-table-column label="状态" width="120">
+          <template #default="{ row }">
+            <el-tag :type="row.enabled ? 'success' : 'danger'" size="small" effect="light" round>
+              {{ row.enabled ? '已启用' : '已禁用' }}
+            </el-tag>
+          </template>
+        </el-table-column>
+        <el-table-column label="操作" width="140">
+          <template #default="{ row }">
+            <el-button link type="danger" size="small" @click="removePolicy(row.role, row.tool_name)">
+              删除（恢复默认）
+            </el-button>
+          </template>
+        </el-table-column>
+        <template #empty>
+          <el-empty description="暂无策略（默认全部放行）" :image-size="60" />
         </template>
       </el-table>
     </el-card>

@@ -395,6 +395,35 @@ export interface AdminOverview {
 }
 
 export const adminOverview = () => request<AdminOverview>('/admin/overview')
+
+// 细粒度权限（PRD §2.11「按角色启用/禁用工具」：GET/POST/DELETE /admin/tool-policies；
+// 管理面直接生效不走审批——配置即配置变更；enabled=false 即该角色禁用该工具）
+export interface ToolPolicyItem {
+  id: string
+  role: string
+  tool_name: string
+  enabled: boolean
+  updated_at?: string
+}
+export interface ToolPolicyCatalog {
+  items: ToolPolicyItem[]
+  roles: string[]
+  tools: { name: string; scope: string; description: string }[]
+}
+
+export const toolPolicies = () => request<ToolPolicyCatalog>('/admin/tool-policies')
+
+export const saveToolPolicy = (role: string, toolName: string, enabled: boolean) =>
+  request<ToolPolicyItem>('/admin/tool-policies', {
+    method: 'POST',
+    body: JSON.stringify({ role, tool_name: toolName, enabled }),
+  })
+
+export const deleteToolPolicy = (role: string, toolName: string) =>
+  request<{ role: string; tool_name: string; deleted: boolean; note: string }>(
+    `/admin/tool-policies?role=${encodeURIComponent(role)}&tool_name=${encodeURIComponent(toolName)}`,
+    { method: 'DELETE' },
+  )
 // 工作流编排（定义 CRUD + 顺序执行；步骤引用 registry 工具名，执行走同一条内核链，
 // 写步骤落单即停 pending_approval；远程工具步骤天然可编排，出站溯源随步返回）
 export interface WorkflowStep {

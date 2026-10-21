@@ -33,17 +33,14 @@ from office_agent_runtime.checkpoint import (
     step_entries,
 )
 from office_agent_runtime.models import RunStep
-from office_agent_runtime.planner.llm import (
-    LlmFunctionCallPlanner,
-    LlmPlanError,
-    profile_configured,
-)
 from office_agent_runtime.planner.react import ReACTPlanner
 from office_agent_runtime.planner.rule import RulePlanner
+from office_agent_runtime.planning import choose_and_plan, plan_from_checkpoint
 from office_agent_runtime.spec import AgentSpec, PlannerStep, compose_context_goal
 from office_agent_runtime.validation import finalize_answer as finalize_answer
 from office_agent_server.models import Task
 from office_agent_server.rbac import CurrentUser
+from office_agent_server.services.tool_policy import assert_tool_enabled
 
 logger = logging.getLogger(__name__)
 
@@ -102,89 +99,6 @@ def conclude_at_boundary(task: Task, checkpoint: dict[str, Any], save: Callable[
         checkpoint["error"] = ""
         move_state(task, AgentState.DONE)
         save()
-
-
-def _plan_from_checkpoint(checkpoint: dict[str, Any]) -> tuple[list[PlannerStep] | None, str]:
-    """检查点里的持久化计划 → (PlannerStep 列表, planner_source) 元组。
-
-    返回 (None, "") 表示无持久化计划；损坏的 plan 给 None 让调用方重规划。
-    续跑回放「原计划 + 原来源」而非按当前 agent.yaml 重规划：agent.yaml 在
-    失败与续跑之间被修改时，重规划的步号与 checkpoint 回放的历史结果会错位；
-    工具级白名单仍按当前 spec 在执行前硬拦。
-    """
-    raw = checkpoint.get("plan")
-    src = str(checkpoint.get("planner_source") or "").strip() or "rule"
-    if not isinstance(raw, list) or not raw:
-        return None, ""
-    steps: list[PlannerStep] = []
-    for entry in raw:
-        if (
-            not isinstance(entry, dict)
-            or not isinstance(entry.get("tool"), str)
-            or not isinstance(entry.get("args"), dict)
-        ):
-            raise BusinessError(
-                ErrorCode.PARAM_INVALID, "检查点中的计划数据损坏，无法续跑；请重新发起运行"
-            )
-        steps.append(PlannerStep(tool=entry["tool"], args=entry["args"]))
-    return steps, src
-
-
-async def _choose_and_plan(spec: AgentSpec, goal: str) -> tuple[list[PlannerStep], str]:
-    """降级链：plan 模式 LLM 优先 → 失败降 Rule → 无规则报错（不静默编造）。
-
-    react 模式（混合串联）：规则快路径优先（关键词命中走确定性链，链内文档步
-    已切大模型成稿）；未中且 LLM 已配置 → 返回 ([], "react") 空计划起步，步骤由
-    LoopState.plan_next 逐步增量补；profile 未配置在受理即报错（受理与执行分离，
-    不让用户等一轮执行才看到失败）。
-    返回 (planned_steps, planner_source)；source 是 "llm" / "rule" / "react"。
-    LLM 出站客户端只在本次规划内使用，finally 里关闭（自建连接不跨调用滞留）。
-    """
-    if spec.llm_mode == "react":
-        if spec.rules:
-            steps = RulePlanner(spec).plan(goal)
-            if steps:
-                return steps, "rule"
-        if not spec.llm:
-            raise BusinessError(
-                ErrorCode.PARAM_INVALID,
-                f"智能体 {spec.name} 的 llm_mode=react 但未配置 llm，"
-                f"且目标未命中任何规则，无法执行",
-            )
-        if not profile_configured(spec.llm):
-            raise BusinessError(
-                ErrorCode.LLM_FAILED,
-                f"智能体 {spec.name} 的 llm_mode=react 且目标未命中规则，"
-                f"但 LLM profile「{spec.llm}」未在 LLM_PROVIDERS 配置，无法执行",
-            )
-        return [], "react"
-    if spec.llm:
-        planner = LlmFunctionCallPlanner.from_spec(spec)
-        try:
-            steps = await planner.plan(goal)
-        except LlmPlanError as exc:
-            if not spec.rules:
-                raise BusinessError(
-                    ErrorCode.LLM_FAILED,
-                    f"智能体 {spec.name} 指定了 LLM 规划（profile={spec.llm}）"
-                    f"但 LLM 不可用，且未配置 rules 规则规划，无法执行：{exc.msg}",
-                ) from None
-            logger.warning(
-                "LLM planner 规划失败：%s（agent=%s），降级 RulePlanner", exc.msg, spec.name
-            )
-        else:
-            if steps:
-                return steps, "llm"
-            # LLM 返回空（无 tool_calls）：视为不可用，降级规则规划
-            logger.warning("LLM planner 未返回 tool_calls（agent=%s），降级 RulePlanner", spec.name)
-        finally:
-            await planner.aclose()
-    if spec.rules:
-        return RulePlanner(spec).plan(goal), "rule"
-    raise BusinessError(
-        ErrorCode.PARAM_INVALID,
-        f"智能体 {spec.name} 未配置 llm 也未配置 rules，无法规划",
-    )
 
 
 class LoopState:
@@ -291,9 +205,9 @@ class LoopState:
         续跑回放原计划 + 原来源（防 agent.yaml 中途变更导致步号与历史结果错位）；
         无持久化计划时按当前配置走降级链重规划。计划为空时抛 BusinessError
         （react 起步除外——空计划交 plan_next 逐步增量补）。"""
-        planned, src = _plan_from_checkpoint(self.checkpoint)
+        planned, src = plan_from_checkpoint(self.checkpoint)
         if planned is None:
-            planned, src = await _choose_and_plan(self.spec, self.goal_for_plan)
+            planned, src = await choose_and_plan(self.spec, self.goal_for_plan)
             self.checkpoint["plan"] = [{"tool": s.tool, "args": s.args} for s in planned]
             self.checkpoint["planner_source"] = src
         self.planner_source = src
@@ -310,7 +224,7 @@ class LoopState:
         """react 逐步再规划：LLM 看全部已完成步骤真实出参提议下一步。
 
         增量追加 checkpoint["plan"]（条目与既有计划同形 {tool, args}，断点续跑经
-        _plan_from_checkpoint 回放不漂移）；LLM 判定收工返回 None（不追加）；
+        plan_from_checkpoint 回放不漂移）；LLM 判定收工返回 None（不追加）；
         出站失败抛 LlmPlanError，由 graph 的边界分支决定失败收敛或带产出收敛。
 
         出站前 commit（正常为 no-op）：防 session 残留 pending 写跨 LLM 长 I/O 持锁。
@@ -353,6 +267,15 @@ class LoopState:
                 f"工具 {step.tool} 不在智能体 {self.spec.name} 的白名单内，已拒绝执行"
                 "（planner 只能提议白名单内的工具）",
             )
+            return False
+        # 细粒度权限：被管理员对该角色禁用的工具，Agent 侧同样硬拦
+        # （Agent 不能成为绕过禁用策略的后门——与 invoke 端点同一判定源）。
+        try:
+            await assert_tool_enabled(
+                self.db, tenant=self.user.tenant, roles=list(self.user.roles), tool_name=step.tool
+            )
+        except BusinessError as exc:
+            self.fail_step(index, step.tool, step.args, exc.msg)
             return False
         try:
             args = RulePlanner.resolve_args(step.args, self.results)

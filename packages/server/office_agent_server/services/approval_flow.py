@@ -28,6 +28,7 @@ from office_agent_server.db import _now
 from office_agent_server.models import Approval, User
 from office_agent_server.security import split_roles
 from office_agent_server.services import im_notifier
+from office_agent_server.services.tool_policy import assert_tool_enabled
 
 logger = logging.getLogger(__name__)
 
@@ -247,6 +248,11 @@ async def decide_approval(
             trace_id=trace_id,
         )
         try:
+            # 细粒度权限复核：以**提交人当前**角色集再查一次禁用策略——
+            # 申请与批准之间管理员可能禁用了该工具，批准即生效不能绕过新策略。
+            await assert_tool_enabled(
+                db, tenant=row.tenant, roles=applicant_roles, tool_name=row.action
+            )
             execution_result = await executor.call(
                 ctx, name=row.action, args=tool_args, trace_id=trace_id
             )
