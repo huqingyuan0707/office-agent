@@ -8,8 +8,8 @@
 //       PRD §2.13 运营看板、§2.11 工具细粒度权限
 import { inject, onMounted, ref } from 'vue'
 import { RouterLink } from 'vue-router'
-import { adminOverview, deleteToolPolicy, saveToolPolicy, toolPolicies } from '../api'
-import type { AdminOverview, ToolPolicyCatalog } from '../api'
+import { adminOverview, deleteToolPolicy, listNotifications, saveToolPolicy, toolPolicies } from '../api'
+import type { AdminOverview, NotificationItem, ToolPolicyCatalog } from '../api'
 
 const shell = inject('shellError') as {
   showError: (msg: string) => unknown
@@ -65,6 +65,19 @@ const loadOverview = async () => {
   }
 }
 
+// 敏感操作告警（PRD §2.13）：治理角色用户的站内告警（写动作生效才产生）
+const sensitiveAlerts = ref<NotificationItem[]>([])
+
+const loadAlerts = async () => {
+  try {
+    const data = await listNotifications(20)
+    sensitiveAlerts.value = data.items.filter((item) => item.kind === 'sensitive_operation')
+  } catch (e) {
+    sensitiveAlerts.value = []
+    shell.showError((e as Error).message || '敏感操作告警加载失败')
+  }
+}
+
 const loadPolicies = async () => {
   try {
     const data = await toolPolicies()
@@ -105,6 +118,7 @@ const removePolicy = async (role: string, toolName: string) => {
 onMounted(async () => {
   await loadOverview()
   await loadPolicies()
+  await loadAlerts()
 })
 </script>
 
@@ -189,6 +203,38 @@ onMounted(async () => {
         <el-table-column prop="count" label="调用次数" width="120" align="right" />
         <template #empty>
           <el-empty description="暂无调用记录" :image-size="60" />
+        </template>
+      </el-table>
+    </el-card>
+
+    <!-- 敏感操作实时告警（PRD §2.13：写动作生效才告警，治理角色可见） -->
+    <el-card class="block-gap" shadow="never">
+      <template #header>
+        <div class="page-head">
+          <span class="card-title">敏感操作告警</span>
+          <el-tag size="small" type="info" round>
+            {{ sensitiveAlerts.length }} 条
+          </el-tag>
+        </div>
+      </template>
+      <el-table :data="sensitiveAlerts" size="small" style="width: 100%">
+        <el-table-column prop="title" label="事项" min-width="220">
+          <template #default="{ row }">
+            <span>{{ row.title }}</span>
+          </template>
+        </el-table-column>
+        <el-table-column prop="content" label="详情" min-width="320">
+          <template #default="{ row }">
+            <span class="alert-content">{{ row.content }}</span>
+          </template>
+        </el-table-column>
+        <el-table-column prop="created_at" label="时间" width="180">
+          <template #default="{ row }">
+            <span class="mono">{{ row.created_at }}</span>
+          </template>
+        </el-table-column>
+        <template #empty>
+          <el-empty description="暂无敏感操作告警（写动作生效后会出现在这里）" :image-size="60" />
         </template>
       </el-table>
     </el-card>
@@ -316,6 +362,11 @@ onMounted(async () => {
 }
 .sub-title {
   margin-top: 0;
+}
+.alert-content {
+  white-space: pre-line;
+  font-size: 12px;
+  color: var(--sub);
 }
 .more-link {
   margin-left: auto;

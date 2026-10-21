@@ -316,6 +316,7 @@ HTTP 级冒烟：`python tests/smoke_personal_affairs.py`（8 项断言，可重
 | 图片/截图问答 | `office.image.ask` | 先 OCR 取真实文本（复用 `ocr.image` 同一引擎探针）再按段落检索摘录作答；引擎缺失/识别为空/零命中如实 `degraded`，图片元数据来自 Pillow 实测 |
 | 示例智能体 | `plugins/office-assistant` | 白名单追加 `office.kb.search_unified` 与 `office.image.ask`，跨域链可直达联查与图片问答 |
 | 知识库后台（PRD §2.13） | `/kb-admin`（知识库后台页）+ `POST/GET/DELETE /kb/files`、`GET /kb/stats`（仅 admin，管理面直接生效不走审批） | 资料上传（pdf/docx/xlsx/csv/txt/md 拖拽多选，后缀/体积前置校验，可见范围 public 或角色名）→ 入盘即解析切块（与 `kb.ask` 同一提取/切块口径，上传即刻可检索）→ 向量化如实标注（`milvus` 已落库 / `on_demand_embedding` 按需算 / `unconfigured` 未配）；知识库维护（清单×目录联查三态：已入库 / 已入盘未解析 / 文件缺失，KPI + 按源删除连向量块一并清理，重传同名先清旧块）+ 统计（按格式分组 + 向量存储口径 + embedding_model）；解析失败只降级入账 `degraded_reason` 不 500 |
+| 敏感操作实时告警（PRD §2.13） | `/admin`（管理页·敏感操作告警卡）+ `services/sensitive_alert.py` + IM 旁路 | 写动作**生效**（审批批准 + 工具执行成功）才告警：站内通知 kind=`sensitive_operation` 收件人=本租户治理角色（admin/approver/`*`）用户并**排除申请人本人** + `im_notifier.notify_sensitive_operation` 群机器人推送（只带定位信息不带业务明细，未配置 webhook 如实 not_configured 不发网络）；执行失败只留失败审计**不发**「已生效」告警（不制造虚假安全感） |
 
 HTTP 级冒烟：`python tests/smoke_kb_26.py`（8 项断言，可重复执行；向量通道下报销问句实测命中 0.6452）；知识库后台由单测覆盖（tools-office 17 例 + server 7 例：全格式入库/三态联查/权限门槛/上传即可检索/按源删除）。
 

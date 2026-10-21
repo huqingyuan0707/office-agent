@@ -396,6 +396,23 @@ export interface AdminOverview {
 
 export const adminOverview = () => request<AdminOverview>('/admin/overview')
 
+// 站内通知（PRD §2.2 主动推送 / §2.13 敏感操作告警；只看本人通知，登录即可读自己的）
+export interface NotificationItem {
+  id: string
+  kind: string
+  kind_label: string
+  title: string
+  content: string
+  ref_id: string
+  created_at: string
+  read: boolean
+}
+
+export const listNotifications = (size = 20) =>
+  request<{ items: NotificationItem[]; total: number; page: number; size: number }>(
+    `/notifications?size=${size}`,
+  )
+
 // 细粒度权限（PRD §2.11「按角色启用/禁用工具」：GET/POST/DELETE /admin/tool-policies；
 // 管理面直接生效不走审批——配置即配置变更；enabled=false 即该角色禁用该工具）
 export interface ToolPolicyItem {

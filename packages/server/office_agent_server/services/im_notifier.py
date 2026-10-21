@@ -39,6 +39,7 @@ logger = logging.getLogger(__name__)
 KIND_APPROVAL_CREATED = "approval_created"
 KIND_APPROVAL_STALE = "approval_stale"
 KIND_APPROVAL_URGE = "approval_urge"
+KIND_SENSITIVE_OPERATION = "sensitive_operation"
 
 #: 支持的厂商消息体（其余取值按 generic 处理并告警，不静默丢消息）
 VENDOR_GENERIC = "generic"
@@ -268,4 +269,25 @@ async def notify_approval_stale(
         content="\n".join(lines) + tail + "\n请尽快复核或转交他人处理",
         ref_id=items[0].get("approval_id", "") if items else "",
         tenant=tenant,
+    )
+
+
+async def notify_sensitive_operation(
+    *, tenant: str, tool_name: str, applicant: str, approver: str, approval_id: str
+) -> dict[str, Any]:
+    """敏感操作已生效 → 提醒群（PRD §2.13 实时告警的 IM 旁路）。
+
+    与审批提醒同一纪律：**只给定位信息不带业务明细**（工具/申请人/审批人/单号），
+    群消息不泄露单据内容；未配置 webhook 时直接返回 not_configured，不发网络。
+    """
+    return await fire(
+        kind=KIND_SENSITIVE_OPERATION,
+        title="【敏感操作】写动作已生效",
+        content=(
+            f"工具：{tool_name}\n申请人：{applicant}\n审批人：{approver}\n"
+            f"审批单号：{approval_id}\n写动作已生效，请在审批中心回溯明细"
+        ),
+        ref_id=approval_id,
+        tenant=tenant,
+        username=applicant,
     )

@@ -28,7 +28,7 @@ from office_agent_core.errors import BusinessError, ErrorCode
 from office_agent_server.db import _now
 from office_agent_server.models import Approval, User
 from office_agent_server.security import split_roles
-from office_agent_server.services import im_notifier, task_commit
+from office_agent_server.services import im_notifier, sensitive_alert, task_commit
 from office_agent_server.services.tool_policy import assert_tool_enabled
 
 logger = logging.getLogger(__name__)
@@ -293,6 +293,16 @@ async def decide_approval(
                     tool=row.action,
                     result=payload if isinstance(payload, dict) else {},
                     applicant=row.applicant,
+                )
+                # 敏感操作实时告警（PRD §2.13）：写动作**生效**才告警，失败只留失败审计
+                await sensitive_alert.alert_sensitive_operation(
+                    db,
+                    tenant=row.tenant,
+                    tool_name=row.action,
+                    applicant=row.applicant,
+                    approver=approver,
+                    approval_id=row.id,
+                    args=tool_args,
                 )
 
     return {

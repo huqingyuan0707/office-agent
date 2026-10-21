@@ -49,8 +49,11 @@ def test_notifications_list_only_mine_and_read_receipt(client):
 
     r_items = client.get("/api/v1/notifications", headers=reviewer).json()["data"]
     assert r_items["total"] >= 1
-    assert all(item["kind"] == "daily_briefing" for item in r_items["items"])
-    assert all(item["kind_label"] == "今日简报" for item in r_items["items"])
+    # 只断言「本人通知里有今日简报且标签正确」——不做排他断言：
+    # 治理角色还会收到敏感操作告警（sensitive_operation）等其它类型。
+    briefings = [item for item in r_items["items"] if item["kind"] == "daily_briefing"]
+    assert briefings, "扫描后应给本人生成今日简报"
+    assert all(item["kind_label"] == "今日简报" for item in briefings)
 
     unread_before = client.get(
         "/api/v1/notifications", params={"unread_only": "true"}, headers=reviewer
