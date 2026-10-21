@@ -45,6 +45,12 @@ base64 直出**不写盘**（与 data.export excel 同口径），供对话页�
 （PRD §2.1/§5.4——按风格改写保持事实与数字不变；译成指定语言忠实原意；
 LLM 未配置/出站失败降级**原文直出**（degraded），绝不编造改写或译文；
 出站与数字校验收口 llm_text.py（与 doc_compose 共用同一实现）；见 rewrite.py，读免审）。
+㉜ office.pptx.outline：PPT 大纲生成（PRD §2.12——文档/周报文本或 DOCS_DIR 内文件
+→ 每页标题+要点的大纲，结构与 office.pptx.generate 的 slides 入参同形可直接喂它；
+LLM 不可用按标题行/段落规则分段降级（degraded），绝不编造；见 pptx_outline.py，读免审）。
+㉝ office.docs.extract_images：文档批量提取图片（PRD §2.1——docx/pptx 容器内媒体文件
+批量导出到文档工作目录 extracted/ 子目录，零新依赖读 zip 条目；写口径恒送审 + idem_key；
+非 docx/pptx 1001、缺文件 404、无图如实 0 张；见 docs_images.py）。
 
 链路：server lifespan → 本包 register_all() → 各模块 specs() → registry 注册 ToolSpec；
 executor 按 spec 执行。
@@ -70,6 +76,7 @@ from . import (
     desk,
     doc_compare,
     doc_compose,
+    docs_images,
     docx_render,
     file_ask,
     file_read,
@@ -84,6 +91,7 @@ from . import (
     meeting_flow,
     ocr,
     pptx_gen,
+    pptx_outline,
     projects,
     resources,
     rewrite,
@@ -110,6 +118,7 @@ __all__ = [
     "desk",
     "doc_compare",
     "doc_compose",
+    "docs_images",
     "docx_render",
     "file_ask",
     "file_read",
@@ -124,6 +133,7 @@ __all__ = [
     "meeting_flow",
     "ocr",
     "pptx_gen",
+    "pptx_outline",
     "projects",
     "register_all",
     "resources",
@@ -144,6 +154,7 @@ _MODULES = (
     doc_compare,
     doc_compose,
     docx_render,
+    docs_images,
     task_planner,
     templates,
     data_analysis,
@@ -159,6 +170,7 @@ _MODULES = (
     approval_submit,
     approval_opinion,
     pptx_gen,
+    pptx_outline,
     compliance,
     budget,
     compose,
